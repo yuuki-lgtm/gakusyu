@@ -9,16 +9,16 @@ const React = require("react");
 const OPEN = '<script type="text/babel" data-presets="react">';
 const EXPORTS = [
   // 定数
-  "KEY", "SUBJECTS", "HUE", "FORMATS", "ETYPES", "INT", "STABLE_LEVEL",
+  "KEY", "SUBJECTS", "HUE", "FORMATS", "ETYPES", "INT", "STABLE_LEVEL", "MKINDS", "SUBJ_CODE", "KIND_CODE",
   // 日付など
   "today", "addDays", "diffDays", "pct", "blank",
   // 中核ロジック
-  "migrate", "mergeData", "sbFetch", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "parseJSON",
+  "migrate", "mergeData", "sbFetch", "matPath", "stUpload", "stGet", "stRemove", "pagesToRanges", "b64ToBlob", "bufToB64", "matsOf", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "parseJSON",
   // 印刷
   "escHTML", "safeSvg", "paperHTML", "fileHTML", "paperText", "genToPaper", "isIOS",
   // 画面
   "App", "HomeTab", "TodayTab", "TodayPrint", "ItemCard", "WeekTab", "MakePapers", "PaperRow", "GradeFlow", "ReadingMaker", "WritingFlow", "ManualTest",
-  "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",
+  "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "MaterialReg", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",
 ];
 
 function extractSource() {

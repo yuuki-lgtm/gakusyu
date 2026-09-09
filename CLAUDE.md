@@ -30,15 +30,24 @@
   tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解', source, rows:[{fmt,total,correct}], total, correct, unitIds, paperId, updatedAt}],
   papers:[{id, code, subject, date, kind, title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg}], imgs:[b64], status:'printed'|'graded', model, updatedAt}],
   log:{'YYYY-MM-DD':true}, exams:[{id,name,date,unitIds,actual:{教科:点},updatedAt}],
-  writing:[{id,date,subject,len,structure,surface,note,updatedAt}], deleted:[id] }
+  writing:[{id,date,subject,len,structure,surface,note,updatedAt}],
+  materials:[{id, subject, kind, page, path, updatedAt}], deleted:[id] }
 ```
 - 定数: `FORMATS`（出題形式8種）、`ETYPES`（誤答の種類4種）、`INT=[1,3,7,14,30,60]`、`STABLE_LEVEL=4`
 - `applyJudgment(item, r)` が間隔反復の核。変えるときは必ずテストを通す。
 - `migrate()` で旧データ（v2）を引き継ぐ。壊さない。
 - 同期は Supabase の1行に全体をJSONで保存。`mergeData()` で項目単位に新しい方を採用。`deleted` は墓標。
 
+## 教材画像（ワーク・教科書）
+- 教材画像は Supabase Storage（非公開バケット `materials`）に置き、端末には索引だけ持つ。家庭内の私的使用に限る。
+- 単位は「教科 × 教材種別（ワーク／教科書）× ページ」。パスは `共有ID/math/wb/12.jpg`（`SUBJ_CODE`・`KIND_CODE`）。共有IDがアクセスの鍵。
+- 索引 `materials:[{id, subject, kind:'ワーク'|'教科書', page, path, updatedAt}]`。同じページの再取り込みは同じ id を上書き。画像の base64 は localStorage に入れない（5MB制限）。
+- 単元は教科書のページ範囲 `pages` とワークのページ範囲 `wbPages` を別々に持つ。`parsePages()` で数値の配列にする。
+- 作問は選んだ単元の教科書・ワークのページを自動で添付する（参考資料。用紙には印刷しない）。どちらか片方だけでも、なくても動く。
+- ×の登録は「教科→教材→ページ→問題番号」の選択式。AIが該当問題を読んで項目名を作る。項目は `src:{path, kind, page, q}` を持ち、類題生成でその画像を渡す。
+
 ## 画面
-ホーム（いまやること1つ）／今日（回収）／テスト（作る・撮る・読解・記述・手入力）／登録（単元・項目・一覧）／分析／定期／依頼文／設定
+ホーム（いまやること1つ）／今日（回収）／テスト（作る・撮る・読解・記述・手入力）／登録（単元・項目・一覧・教材）／分析／定期／依頼文／設定
 
 ## AI
 - Anthropic API を直接呼ぶ（`anthropic-dangerous-direct-browser-access`）。キーは localStorage。
@@ -62,7 +71,6 @@
 
 ## やらないこと
 - 通知、ゲーミフィケーション、子ども向けダッシュボード、画面上での出題。
-- 教科書全ページの取り込み（容量と著作権）。
 - 機能を足す前に「続くか」を問う。迷ったら足さない。
 
 ## 次の作業

@@ -31,6 +31,10 @@ const FORMATS = ["知識・用語", "計算", "図・作図・グラフ", "資�
 const ETYPES = ["知らなかった", "分かっていたが間違えた", "読み間違えた", "時間切れ・空欄"];
 const INT = [1, 3, 7, 14, 30, 60];
 const STABLE_LEVEL = 4;
+/* 教材（ワーク・教科書）のページ画像は Supabase Storage に置き、端末には索引だけ持つ */
+const MKINDS = ["ワーク", "教科書"];
+const SUBJ_CODE = { 数学: "math", 英語: "eng", 社会: "soc", 理科: "sci", 国語: "jpn" };
+const KIND_CODE = { ワーク: "wb", 教科書: "tb" };
 
 const today = () => new Date().toISOString().slice(0, 10);
 const addDays = (d, n) => { const t = new Date(d + "T00:00:00"); t.setDate(t.getDate() + n); return t.toISOString().slice(0, 10); };
@@ -39,7 +43,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const now = () => new Date().toISOString();
 const pct = (c, t) => (t ? Math.round((c / t) * 100) : null);
 
-const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], papers: [], log: {}, exams: [], writing: [], deleted: [] });
+const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], papers: [], log: {}, exams: [], writing: [], materials: [], deleted: [] });
 
 /* v2 → v3 移行。既存データを引き継ぐ */
 function migrate(d) {
@@ -76,7 +80,43 @@ async function pushRemote(data) { await sbFetch("state", { method: "POST", heade
 function mergeData(a, b) {
   const del = new Set([...(a.deleted || []), ...(b.deleted || [])]);
   const byId = (xs, ys) => { const m = new Map(); [...(xs || []), ...(ys || [])].forEach((r) => { if (del.has(r.id)) return; const p = m.get(r.id); if (!p || (r.updatedAt || "") > (p.updatedAt || "")) m.set(r.id, r); }); return [...m.values()]; };
-  return { v: 3, updatedAt: now(), units: byId(a.units, b.units), items: byId(a.items, b.items), tests: byId(a.tests, b.tests), papers: byId(a.papers, b.papers), exams: byId(a.exams, b.exams), writing: byId(a.writing, b.writing), log: { ...(a.log || {}), ...(b.log || {}) }, deleted: [...del] };
+  return { v: 3, updatedAt: now(), units: byId(a.units, b.units), items: byId(a.items, b.items), tests: byId(a.tests, b.tests), papers: byId(a.papers, b.papers), exams: byId(a.exams, b.exams), writing: byId(a.writing, b.writing), materials: byId(a.materials, b.materials), log: { ...(a.log || {}), ...(b.log || {}) }, deleted: [...del] };
+}
+
+/* ---- 教材画像（Supabase Storage、非公開バケット） ---- */
+const MBUCKET = "materials";
+const matPath = (subject, kind, page) => `${LS(SB_ROOM)}/${SUBJ_CODE[subject]}/${KIND_CODE[kind]}/${page}.jpg`;
+const stBase = () => `${LS(SB_URL).replace(/\/$/, "")}/storage/v1`;
+const stHeaders = () => ({ apikey: LS(SB_KEY), Authorization: `Bearer ${LS(SB_KEY)}` });
+function bufToB64(buf) { const a = new Uint8Array(buf); let s = ""; for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(s); }
+function b64ToBlob(b64, type = "image/jpeg") { const bin = atob(b64); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type }); }
+async function stUpload(path, blob) {
+  const res = await fetch(`${stBase()}/object/${MBUCKET}/${path}`, { method: "POST", headers: { ...stHeaders(), "Content-Type": blob.type || "image/jpeg", "x-upsert": "true" }, body: blob });
+  if (!res.ok) throw new Error(`教材の保存エラー (${res.status})`);
+}
+const _matCache = new Map(); // path → base64。端末に残さない（メモリだけ）
+async function stGet(path) {
+  if (_matCache.has(path)) return _matCache.get(path);
+  const res = await fetch(`${stBase()}/object/authenticated/${MBUCKET}/${path}`, { headers: stHeaders() });
+  if (!res.ok) throw new Error(`教材の読み出しエラー (${res.status})`);
+  const b64 = bufToB64(await res.arrayBuffer());
+  if (_matCache.size >= 40) _matCache.delete(_matCache.keys().next().value);
+  _matCache.set(path, b64);
+  return b64;
+}
+async function stRemove(paths) {
+  if (!paths.length) return;
+  const res = await fetch(`${stBase()}/object/${MBUCKET}`, { method: "DELETE", headers: { ...stHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ prefixes: paths }) });
+  if (!res.ok) throw new Error(`教材の削除エラー (${res.status})`);
+  paths.forEach((p) => _matCache.delete(p));
+}
+/* [10,11,12,15] → "10–12, 15" */
+function pagesToRanges(nums) {
+  const xs = [...new Set(nums.filter((n) => Number.isInteger(n)))].sort((a, b) => a - b);
+  const out = []; let s = null, p = null;
+  xs.forEach((n) => { if (s === null) { s = p = n; } else if (n === p + 1) { p = n; } else { out.push(s === p ? `${s}` : `${s}–${p}`); s = p = n; } });
+  if (s !== null) out.push(s === p ? `${s}` : `${s}–${p}`);
+  return out.join(", ");
 }
 
 async function once(model, content, system, maxTokens) {
@@ -786,6 +826,23 @@ function paperText(p) {
 let _libs = null;
 const loadScript = (src) => new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const el = document.createElement("script"); el.src = src; el.onload = res; el.onerror = () => rej(new Error("ライブラリを読み込めません（通信を確認）")); document.head.appendChild(el); });
 const loadLibs = () => (_libs = _libs || Promise.all([loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"), loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")]));
+const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+const loadPdfjs = () => loadScript(PDFJS + "pdf.min.js").then(() => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js"; });
+/* PDF を1ページずつ JPEG（base64）にして onPage に渡す。全ページを一度にメモリへ載せない */
+async function pdfToJpegs(file, onPage, maxW = 1500) {
+  await loadPdfjs();
+  const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const v0 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: Math.min(3, maxW / v0.width) });
+    const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+    await onPage(c.toDataURL("image/jpeg", 0.8).split(",")[1], n, pdf.numPages);
+    c.width = c.height = 0;
+  }
+  return pdf.numPages;
+}
 
 async function buildPDF(p, onStep) {
   await loadLibs();
@@ -886,10 +943,11 @@ function RegTab({ d, save, initial }) {
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
   return (<div className="pane">
     <p className="tabhint">単元は学期に1回＋週1の進度更新。項目は、平日のワークの×・学校ワーク・返却テストで落としたものを入れる場所です。自作テストの×は「テスト→撮る」で自動です。</p>
-    <div className="seg"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着一覧</button></div>
+    <div className="seg"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着一覧</button><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>教材</button></div>
     {mode === "unit" && <UnitReg d={d} save={save} />}
     {mode === "item" && <ItemReg d={d} save={save} />}
     {mode === "list" && <ItemList d={d} save={save} />}
+    {mode === "mat" && <MaterialReg d={d} save={save} />}
   </div>);
 }
 
@@ -974,6 +1032,76 @@ function ItemList({ d, save }) {
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
         {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{i.etype ? ` · ${i.etype}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div></div><button className="btn-x" onClick={() => save({ ...d, items: d.items.filter((x) => x.id !== i.id), deleted: [...d.deleted, i.id] })}>×</button></div>); })}</div>); })}</>);
+}
+
+/* ---- 教材（ワーク・教科書）の取り込み ---- */
+
+const matsOf = (d, subject, kind) => (d.materials || []).filter((m) => m.subject === subject && m.kind === kind).sort((a, b) => a.page - b.page);
+
+function MaterialReg({ d, save }) {
+  const [subject, setSubject] = useState("数学");
+  const [kind, setKind] = useState(MKINDS[0]);
+  const [start, setStart] = useState("1");
+  const [files, setFiles] = useState([]);
+  const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [msg, setMsg] = useState("");
+  const sec = useElapsed(busy);
+  const mine = matsOf(d, subject, kind);
+  const isPdf = files.length === 1 && /pdf$/i.test(files[0].type || files[0].name);
+  const pick = (e) => { setErr(""); setMsg(""); setFiles(Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true }))); e.target.value = ""; };
+
+  const upload = async () => {
+    if (!syncOn()) { setErr("先に「設定」で共有（Supabase）を設定してください。教材画像は共有先にだけ保存します。"); return; }
+    const s0 = parseInt(start, 10);
+    if (!(s0 >= 1)) { setErr("最初のページ番号を入れてください。"); return; }
+    setErr(""); setMsg(""); setBusy("準備中");
+    const recs = [];
+    const put = async (b64, k, total) => {
+      const page = s0 + k; setBusy(`保存中 ${k + 1}/${total}`);
+      await stUpload(matPath(subject, kind, page), b64ToBlob(b64));
+      const old = (d.materials || []).find((m) => m.subject === subject && m.kind === kind && m.page === page);
+      recs.push({ id: old ? old.id : uid(), subject, kind, page, path: matPath(subject, kind, page), updatedAt: now() });
+    };
+    try {
+      if (isPdf) await pdfToJpegs(files[0], (b64, n, total) => put(b64, n - 1, total));
+      else for (let k = 0; k < files.length; k++) { setBusy(`画像を圧縮 ${k + 1}/${files.length}`); await put(await compressImage(files[k], 1500, 0.8), k, files.length); }
+      const ids = new Set(recs.map((r) => r.id));
+      save({ ...d, materials: [...(d.materials || []).filter((m) => !ids.has(m.id)), ...recs] });
+      setFiles([]); setStart(String(s0 + recs.length));
+      setMsg(`${recs.length}ページを保存しました（p.${s0}〜${s0 + recs.length - 1}）`);
+    } catch (e) {
+      if (recs.length) save({ ...d, materials: [...(d.materials || []).filter((m) => !recs.some((r) => r.id === m.id)), ...recs] });
+      setErr(`${e.message || "保存できませんでした"}${recs.length ? `。p.${s0}〜${s0 + recs.length - 1} までは保存済み` : ""}`);
+    }
+    setBusy("");
+  };
+  const removeAll = async () => {
+    setBusy("削除中"); setErr(""); setMsg("");
+    try { await stRemove(mine.map((m) => m.path)); const ids = new Set(mine.map((m) => m.id)); save({ ...d, materials: d.materials.filter((m) => !ids.has(m.id)), deleted: [...d.deleted, ...ids] }); setMsg("削除しました"); }
+    catch (e) { setErr(e.message || "削除できませんでした"); }
+    setBusy("");
+  };
+
+  return (<>
+    <section className="sec">
+      <p className="lead">ワークと教科書を一度だけ取り込みます。以後は作問と×の登録で写真を撮らずに済みます。画像は共有先（Supabase）にだけ置き、この端末には残しません。家庭内の私的使用に限ります。</p>
+      <SubjRow value={subject} onChange={(s) => { setSubject(s); setFiles([]); setMsg(""); }} />
+      <div className="seg sm">{MKINDS.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setFiles([]); setMsg(""); }}>{k}</button>))}</div>
+      <div className="mat-sum">{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）` : "なし"}</div>); })}</div>
+      <Fld label="最初のページ番号（ファイルは名前順にこの番号から振ります）"><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
+      <label className="ph-btn">{busy ? `${busy}… ${sec}秒` : "PDF か ページの画像（複数可）を選ぶ"}<input type="file" accept="image/*,application/pdf" multiple hidden disabled={!!busy} onChange={pick} /></label>
+      {files.length > 0 && !busy && (<div className="mat-pre">
+        <div>{isPdf ? `PDF「${files[0].name}」` : `画像 ${files.length} 枚`} → {subject}の{kind} p.{start}{!isPdf && files.length > 1 ? `〜${(parseInt(start, 10) || 0) + files.length - 1}` : isPdf ? "〜（ページ数はPDFから）" : ""}</div>
+        {!isPdf && <ol className="mat-files">{files.slice(0, 6).map((f, k) => (<li key={k}>p.{(parseInt(start, 10) || 0) + k}　{f.name}</li>))}{files.length > 6 && <li>…ほか {files.length - 6} 枚</li>}</ol>}
+        <p className="ph-note">ページ番号が違うときは、上の番号を直してから保存。同じページを入れ直すと上書きされます。</p>
+        <button className="btn-main" onClick={upload}>この内容で保存する</button></div>)}
+      {err && <div className="errbox"><p>{err}</p></div>}
+      {msg && <p className="msg">{msg}</p>}
+    </section>
+    {mine.length > 0 && (<section className="sec"><h3 className="s-h">{subject}の{kind} <span className="cnt">{mine.length}ページ</span></h3>
+      <p className="lead">p.{pagesToRanges(mine.map((m) => m.page))}。ページ番号を間違えたときは、いったん全部消してから入れ直してください。</p>
+      <button className="btn-x wide-x" onClick={removeAll} disabled={!!busy}>{subject}の{kind}を全部削除</button></section>)}
+    <section className="sec"><h3 className="s-h">取り込み方</h3><ol className="flow"><li>スキャンアプリ（iPhoneの「メモ」やプリンタ付属のもの）で1冊をPDFにするか、1ページずつ撮る。</li><li>見開きで撮ると左右2ページが1枚になるので、片ページずつ。</li><li>ページ番号は本の印刷どおりに。単元のページ範囲と照合します。</li></ol></section>
+  </>);
 }
 
 /* ============ 分析 ============ */
@@ -1130,7 +1258,7 @@ function Settings({ d, save, setSync }) {
   return (<div className="pane">
     <section className="sec"><h3 className="s-h">夫婦でデータを共有する</h3>
       <p className="lead">Supabaseの無料枠を使います。supabase.com でプロジェクトを作り、SQL Editor で下を実行してください。所要15分、費用ゼロ。</p>
-      <pre className="sql">{`create table state (\n  id text primary key,\n  data jsonb,\n  updated_at timestamptz default now()\n);\nalter table state enable row level security;\ncreate policy rw on state for all\n  to anon using (true) with check (true);`}</pre>
+      <pre className="sql">{`create table state (\n  id text primary key,\n  data jsonb,\n  updated_at timestamptz default now()\n);\nalter table state enable row level security;\ncreate policy rw on state for all\n  to anon using (true) with check (true);\n\n-- 教材画像（ワーク・教科書）用の非公開バケット\ninsert into storage.buckets (id, name, public)\n  values ('materials', 'materials', false);\ncreate policy mat on storage.objects for all\n  to anon using (bucket_id = 'materials')\n  with check (bucket_id = 'materials');`}</pre>
       <Fld label="プロジェクトURL（Settings → API）"><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" /></Fld>
       <Fld label="anon キー"><input type="password" value={anon} onChange={(e) => setAnon(e.target.value)} placeholder="eyJ..." /></Fld>
       <Fld label="共有ID（知っている人だけがデータに触れます）"><input value={room} onChange={(e) => setRoom(e.target.value)} placeholder="fam-..." /></Fld>
@@ -1154,6 +1282,9 @@ const CSS = `
 .ctr{text-align:center;cursor:pointer}.sql{background:#1E2321;color:#D8DED8;font-size:10px;line-height:1.6;padding:10px;border-radius:3px;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;margin:0 0 12px;white-space:pre}
 .msg.fixed{position:sticky;bottom:8px;background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
 .tp{margin-bottom:12px}.tp .btn-sm.wide{margin-top:0}
+.mat-sum{font-size:12px;color:var(--ink2);line-height:1.8;margin:-4px 0 10px}.mat-sum b{color:var(--ink);margin-right:4px}
+.mat-pre{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;font-size:12px;line-height:1.6}.mat-files{margin:6px 0 0;padding-left:18px;font-size:11px;color:var(--ink3)}
+.mimg{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff}.pnav{display:flex;align-items:center;gap:6px;margin:6px 0 8px}.pnav .btn-sm{flex:0 0 auto}.pnav .pcur{flex:1;text-align:center;font-size:12px;color:var(--ink2)}.root input.pnum{width:72px;text-align:center}
 .pend-n{font-size:11px;color:#C08A3E;margin:6px 0 0}
 .pmk{margin-left:8px;display:inline-flex;gap:3px}.pm{width:24px;height:22px;border:1px solid var(--line);background:var(--card);border-radius:3px;font-size:12px;cursor:pointer;color:var(--ink3);padding:0}.pm.o.on{background:#2F6F5E;color:#fff;border-color:#2F6F5E}.pm.x.on{background:#A8443B;color:#fff;border-color:#A8443B}
 .drill-n{font-size:11px;color:var(--ink2);margin:2px 0 8px;line-height:1.6}.drill-w{font-size:11px;color:#A8443B;margin:5px 0 0}

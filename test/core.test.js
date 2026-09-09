@@ -255,3 +255,85 @@ describe("sbFetch（Supabase への読み書き）", () => {
     await withFetch(401, '{"message":"x"}', async () => await assert.rejects(() => m.sbFetch("state"), /同期エラー \(401\)/));
   });
 });
+
+describe("教材画像（Supabase Storage）", () => {
+  const withFetch = async (status, body, fn) => {
+    const orig = globalThis.fetch;
+    const calls = [];
+    globalThis.fetch = async (url, opts) => { calls.push({ url, opts }); return { ok: status >= 200 && status < 300, status, text: async () => body, json: async () => JSON.parse(body), arrayBuffer: async () => Uint8Array.from(Buffer.from(body, "latin1")).buffer }; };
+    m.stubs.localStorage.setItem("sb_url", "https://example.supabase.co/");
+    m.stubs.localStorage.setItem("sb_key", "anon-key");
+    m.stubs.localStorage.setItem("sb_room", "fam-x");
+    try { return await fn(calls); } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "sb_room"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  };
+  test("パスは 共有ID/教科/教材/ページ.jpg", async () => {
+    await withFetch(200, "", async () => {
+      assert.equal(m.matPath("数学", "ワーク", 12), "fam-x/math/wb/12.jpg");
+      assert.equal(m.matPath("国語", "教科書", 3), "fam-x/jpn/tb/3.jpg");
+    });
+  });
+  test("アップロードは非公開バケットへ x-upsert 付きの POST", async () => {
+    await withFetch(200, '{"Key":"materials/fam-x/math/wb/12.jpg"}', async (calls) => {
+      await m.stUpload("fam-x/math/wb/12.jpg", new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" }));
+      assert.equal(calls[0].url, "https://example.supabase.co/storage/v1/object/materials/fam-x/math/wb/12.jpg");
+      assert.equal(calls[0].opts.method, "POST");
+      assert.equal(calls[0].opts.headers["x-upsert"], "true");
+      assert.equal(calls[0].opts.headers.apikey, "anon-key");
+      assert.equal(calls[0].opts.headers.Authorization, "Bearer anon-key");
+      assert.equal(calls[0].opts.headers["Content-Type"], "image/jpeg");
+    });
+  });
+  test("読み出しは authenticated 経由で base64 を返し、2回目はメモリのキャッシュ", async () => {
+    await withFetch(200, "abc", async (calls) => {
+      const b64 = await m.stGet("fam-x/math/wb/99.jpg");
+      assert.equal(b64, Buffer.from("abc").toString("base64"));
+      assert.equal(calls[0].url, "https://example.supabase.co/storage/v1/object/authenticated/materials/fam-x/math/wb/99.jpg");
+      assert.equal(await m.stGet("fam-x/math/wb/99.jpg"), b64);
+      assert.equal(calls.length, 1);
+    });
+  });
+  test("削除はまとめて DELETE。空なら呼ばない", async () => {
+    await withFetch(200, "[]", async (calls) => {
+      await m.stRemove([]);
+      assert.equal(calls.length, 0);
+      await m.stRemove(["a.jpg", "b.jpg"]);
+      assert.equal(calls[0].opts.method, "DELETE");
+      assert.deepEqual(JSON.parse(calls[0].opts.body), { prefixes: ["a.jpg", "b.jpg"] });
+    });
+  });
+  test("失敗はステータス付きのエラー", async () => {
+    await withFetch(403, "", async () => {
+      await assert.rejects(() => m.stUpload("x", new Blob([])), /教材の保存エラー \(403\)/);
+      await assert.rejects(() => m.stGet("y"), /教材の読み出しエラー \(403\)/);
+      await assert.rejects(() => m.stRemove(["z"]), /教材の削除エラー \(403\)/);
+    });
+  });
+  test("base64 と Blob の往復", async () => {
+    const b64 = Buffer.from([0, 1, 2, 250, 255]).toString("base64");
+    const blob = m.b64ToBlob(b64);
+    assert.equal(blob.type, "image/jpeg");
+    assert.equal(m.bufToB64(await blob.arrayBuffer()), b64);
+    assert.equal(m.bufToB64(new Uint8Array(70000).buffer).length, Math.ceil(70000 / 3) * 4);
+  });
+  test("pagesToRanges は連続をまとめる。重複・非整数は無視", () => {
+    assert.equal(m.pagesToRanges([12, 10, 11, 15, 15, 17, 18]), "10–12, 15, 17–18");
+    assert.equal(m.pagesToRanges([]), "");
+    assert.equal(m.pagesToRanges([3, "x", 3.5, undefined]), "3");
+  });
+  test("matsOf は教科×教材でページ順。materials が無くても落ちない", () => {
+    assert.deepEqual(m.matsOf(F.demo(), "数学", "ワーク").map((x) => x.page), [10, 11, 12]);
+    assert.deepEqual(m.matsOf({ v: 3 }, "数学", "ワーク"), []);
+  });
+  test("mergeData は materials も id 単位で統合し、墓標で消える", () => {
+    const a = { ...m.blank(), materials: [{ id: "m1", page: 1, updatedAt: "2026-01-01T00:00:00Z" }, { id: "m2", page: 2 }] };
+    const b = { ...m.blank(), materials: [{ id: "m1", page: 9, updatedAt: "2026-02-01T00:00:00Z" }], deleted: ["m2"] };
+    const r = m.mergeData(a, b);
+    assert.deepEqual(r.materials.map((x) => [x.id, x.page]), [["m1", 9]]);
+    assert.deepEqual(m.mergeData({ v: 3 }, { v: 3 }).materials, []);
+  });
+  test("migrate は materials を補う", () => {
+    assert.deepEqual(m.migrate({ v: 3, units: [], items: [] }).materials, []);
+    assert.deepEqual(m.migrate(null).materials, []);
+    assert.deepEqual(m.migrate({ v: 2 }).materials, []);
+  });
+});

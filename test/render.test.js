@@ -27,6 +27,7 @@ const SCREENS = (d) => [
   ["登録/単元", m.RegTab, { d, save: noop, initial: "unit" }],
   ["登録/項目", m.RegTab, { d, save: noop, initial: "item" }],
   ["登録/一覧", m.RegTab, { d, save: noop, initial: "list" }],
+  ["登録/教材", m.RegTab, { d, save: noop, initial: "mat" }],
   ["登録/既定", m.RegTab, { d, save: noop, initial: null }],
   ["分析", m.AnaTab, { d }],
   ["定期", m.ExamTab, { d, save: noop }],
@@ -106,4 +107,12 @@ test("デモ: 定期に今後の試験と返却済みの試験が出る", () => 
   const { html } = render(m.ExamTab, { d: F.demo(), save: noop });
   assert.ok(html.includes("2学期中間"));
   assert.ok(html.includes("1学期期末"));
+});
+test("デモ: 登録/教材 に取り込み済みのページ範囲が出る。空データは「なし」", () => {
+  const { html } = render(m.RegTab, { d: F.demo(), save: noop, initial: "mat" });
+  assert.ok(html.includes("3ページ（p.10–12）"), "数学ワークの範囲");
+  assert.ok(html.includes("1ページ（p.12）"), "数学教科書の範囲");
+  assert.ok(html.includes("を全部削除"));
+  const e = render(m.RegTab, { d: F.empty(), save: noop, initial: "mat" }).html;
+  assert.ok(e.includes("なし") && !e.includes("を全部削除"));
 });
