@@ -18,7 +18,7 @@ const EXPORTS = [
   "escHTML", "safeSvg", "paperHTML", "fileHTML", "paperText", "genToPaper", "isIOS",
   // 画面
   "App", "HomeTab", "TodayTab", "TodayPrint", "ItemCard", "WeekTab", "MakePapers", "PaperRow", "GradeFlow", "ReadingMaker", "WritingFlow", "ManualTest",
-  "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "MaterialReg", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",
+  "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "MaterialReg", "MatPicker", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",
 ];
 
 function extractSource() {
