@@ -143,3 +143,7 @@ test("MatPicker: 単元と対応しないページはその旨を出す。教材
   assert.ok(html.includes("単元と未対応"));
   assert.equal(render(m.MatPicker, { d, subject: "社会", us: [], onResult: noop }).html, "");
 });
+test("デモ: 今日のカードに元の問題（教材のページと番号）が出る", () => {
+  const { html } = render(m.TodayTab, { d: F.demo(), save: noop });
+  assert.ok(html.includes("元 ワーク p.11 「3」"));
+});

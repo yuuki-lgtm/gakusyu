@@ -379,6 +379,13 @@ function TodayPrint({ items, total, unitOf }) {
 
 const JUDGE = [["x", "できなかった", "ng"], ["o", "解けた", "mid"], ["oo", "説明もできた", "okb"]];
 
+/* 類題生成の入力。元の問題（教材ページ）があれば画像を先に付ける */
+const srcLabel = (s) => (s && s.path ? `${s.kind} p.${s.page} 「${s.q}」` : "");
+function genContent(item, b64, text) {
+  if (!b64 || !item.src) return text;
+  return [{ type: "text", text: `【元の問題】${srcLabel(item.src)} — 子どもが落とした問題。同じ考え方・同じ形式を問い、数値や設定は変える。問題文をそのまま写さない。` }, imgBlock(b64), { type: "text", text }];
+}
+
 function ItemCard({ item: i, unit: u, onConfirm, onStore, ctx }) {
   const pend = i.pending && i.pending.d === today() ? i.pending : null;
   const [selfR, setSelfR] = useState(pend ? pend.self : null);
@@ -409,13 +416,14 @@ function ItemCard({ item: i, unit: u, onConfirm, onStore, ctx }) {
         setShowA(false); setPm({});
         const prev = q?.problems?.map((p) => p.q).join(" / ") || "なし";
         const isRead = i.fmt === "長文読解", isWrite = i.fmt === "記述・作文" || i.fmt === "英作文";
+        let b64 = null; if (i.src && i.src.path) { try { b64 = await stGet(i.src.path); } catch { b64 = null; } } // 読めなければ画像なしで続ける
         const t = isRead
-          ? await callAI(`${context}\n直前の問題（重複させない）: ${prev}\n\nこの読解技能だけを問う練習問題を。150〜250字のオリジナルの短い文章を1つ書き、その文章についてこの技能を問う設問を2問。`,
+          ? await callAI(genContent(i, b64, `${context}\n直前の問題（重複させない）: ${prev}\n\nこの読解技能だけを問う練習問題を。150〜250字のオリジナルの短い文章を1つ書き、その文章についてこの技能を問う設問を2問。`),
               `日本の中学1年生向け。文章は完全オリジナルで既存作品の引用をしない。設問の解答には根拠の箇所を示す。whyは「どこを見て、どう判断したか」を子どもに言わせる問い。\nJSONのみ: {"passage":"","problems":[{"q":"","a":""}],"why":"","point":"","script":""}`, 2600, model)
           : isWrite
-          ? await callAI(`${context}\n\nこの誤りの種類だけを練習する短い課題を3問。各問は1〜2文を書かせる程度の分量にし、この種類の誤りが起きやすい場面を意図的に含める。`,
+          ? await callAI(genContent(i, b64, `${context}\n\nこの誤りの種類だけを練習する短い課題を3問。各問は1〜2文を書かせる程度の分量にし、この種類の誤りが起きやすい場面を意図的に含める。`),
               `日本の中学1年生向け。aは模範解答と、この誤りが起きやすい箇所の指摘。whyは「書いたあと何を確認するか」を子どもに言わせる問い。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"","script":""}`, 2400, model)
-          : await callAI(`${context}\n直前に出した問題（重複させない）: ${prev}\n\nこの項目だけを狙った練習問題を3問。1問目は最も基本の形、2問目は本題、3問目は同じ考え方を別の見た目で。あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。`,
+          : await callAI(genContent(i, b64, `${context}\n直前に出した問題（重複させない）: ${prev}\n\nこの項目だけを狙った練習問題を3問。1問目は最も基本の形、2問目は本題、3問目は同じ考え方を別の見た目で。あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。`),
           `日本の中学1年生を教える講師。厳守: 中1範囲を超えない／習った範囲から逸脱しない／直前の問題と同じ数値・設定にしない／ヒントや選択肢を付けず白紙から解かせる／数学は途中式を書かせる／安定している項目は既知として扱ってよい／未定着の項目を前提にしない。\nwhyは「なぜその手順になるのか」を子どもの言葉で言わせる問い。scriptは採点後の声かけ。できている点を先に述べ、直す点は1つだけ。専門用語なし。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"落とし続ける原因の推定","script":""}`, 2600, model);
         const p = parseJSON(t); setQ(p); onStore(i.id, { gen: p });
       } else {
@@ -439,7 +447,8 @@ function ItemCard({ item: i, unit: u, onConfirm, onStore, ctx }) {
         {i.fmt && <em className="tag">{i.fmt}</em>}
         {i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}
         {i.nextDue > today() && <em className="early">予定 {i.nextDue.slice(5)}</em>}
-        <em className="lv">間隔 {INT[i.level || 0]}日</em></div>
+        <em className="lv">間隔 {INT[i.level || 0]}日</em>
+        {srcLabel(i.src) && <em className="tag">元 {srcLabel(i.src)}</em>}</div>
       <div className="c-label">{i.label}</div>
       {i.note && <div className="c-note">{i.note}</div>}
 

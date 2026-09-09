@@ -406,3 +406,22 @@ describe("作問に添付する教材ページ", () => {
     assert.equal(m.matsLabel([]), "");
   });
 });
+
+describe("類題生成に元の問題を渡す", () => {
+  const src = { path: "fam/math/wb/11.jpg", kind: "ワーク", page: 11, q: "3" };
+  test("src と画像があれば、見出し・画像・本文の順の配列", () => {
+    const c = m.genContent({ src }, "AAAA", "本文");
+    assert.equal(c.length, 3);
+    assert.ok(c[0].type === "text" && c[0].text.includes("ワーク p.11 「3」") && c[0].text.includes("そのまま写さない"));
+    assert.deepEqual(c[1], { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAAA" } });
+    assert.deepEqual(c[2], { type: "text", text: "本文" });
+  });
+  test("画像が読めなかった・src が無いときは本文だけ", () => {
+    assert.equal(m.genContent({ src }, null, "本文"), "本文");
+    assert.equal(m.genContent({}, "AAAA", "本文"), "本文");
+  });
+  test("srcLabel", () => {
+    assert.equal(m.srcLabel(src), "ワーク p.11 「3」");
+    assert.equal(m.srcLabel(null), ""); assert.equal(m.srcLabel({}), "");
+  });
+});
