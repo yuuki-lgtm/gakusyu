@@ -380,3 +380,29 @@ describe("単元とページの紐づけ", () => {
     assert.equal(m.unitPageLabel({}), "");
   });
 });
+
+describe("作問に添付する教材ページ", () => {
+  test("単元のページ範囲に入る教材だけを教材ごとに集める", () => {
+    const d = F.demo();
+    const r = m.materialsForUnits(d, "数学", d.units.filter((u) => u.id === "u1"));
+    assert.deepEqual(r.map((x) => [x.kind, x.page]), [["ワーク", 10], ["ワーク", 11], ["教科書", 12]]);
+    assert.deepEqual(m.materialsForUnits(d, "数学", d.units.filter((u) => u.id === "u2")).map((x) => x.page), [12], "u2 はワーク p.12-19 のみ");
+    assert.deepEqual(m.materialsForUnits(d, "社会", d.units.filter((u) => u.subject === "社会")), []);
+    assert.deepEqual(m.materialsForUnits({ v: 3 }, "数学", [{ pages: "p.1" }]), []);
+  });
+  test("上限を超えたら教材ごとに均等に間引く。片方しか無ければ全部そちらに", () => {
+    const mats = (kind, n) => Array.from({ length: n }, (_, k) => ({ id: kind + k, subject: "理科", kind, page: k + 1, path: "" }));
+    const d = { ...m.blank(), materials: [...mats("ワーク", 20), ...mats("教科書", 20)] };
+    const units = [{ pages: "p.1-20", wbPages: "p.1-20" }];
+    const r = m.materialsForUnits(d, "理科", units, 8);
+    assert.equal(r.length, 8);
+    assert.deepEqual(r.map((x) => x.kind), ["ワーク", "ワーク", "ワーク", "ワーク", "教科書", "教科書", "教科書", "教科書"]);
+    assert.deepEqual(r.filter((x) => x.kind === "ワーク").map((x) => x.page), [1, 6, 11, 16]);
+    const one = m.materialsForUnits({ ...d, materials: mats("教科書", 20) }, "理科", units, 8);
+    assert.equal(one.length, 8); assert.ok(one.every((x) => x.kind === "教科書"));
+  });
+  test("matsLabel は教材ごとのページ範囲", () => {
+    assert.equal(m.matsLabel([{ kind: "教科書", page: 3 }, { kind: "ワーク", page: 5 }, { kind: "ワーク", page: 4 }]), "ワーク p.4–5、教科書 p.3");
+    assert.equal(m.matsLabel([]), "");
+  });
+});

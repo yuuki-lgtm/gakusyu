@@ -122,3 +122,8 @@ test("デモ: 登録/単元 に教科書とワークのページ範囲が出る"
   assert.ok(html.includes("ページ未設定"), "ページの無い単元");
   assert.ok(html.includes("教科書の目次を撮る"));
 });
+test("デモ: テスト/作る に自動で添付される教材が出る。空データは出ない", () => {
+  const { html } = render(m.WeekTab, { d: F.demo(), save: noop, initial: "make" });
+  assert.ok(html.includes("添付される教材：数学 ワーク p.10–12、教科書 p.12 ／ 英語 教科書 p.8 ／ 社会 なし"), html.match(/添付される教材：[^<]*/)?.[0]);
+  assert.ok(!render(m.WeekTab, { d: F.empty(), save: noop, initial: "make" }).html.includes("添付される教材"));
+});

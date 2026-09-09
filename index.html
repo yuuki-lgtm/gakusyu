@@ -133,6 +133,14 @@ function applyTOC(units, subject, kind, cands) {
   });
   return out;
 }
+/* 単元群に対応する教材ページ（索引）。多すぎるときは教材ごとに均等に間引く */
+function materialsForUnits(d, subject, units, max = 16) {
+  const by = MKINDS.map((kind) => { const pages = new Set(units.flatMap((u) => unitPages(u, kind))); return matsOf(d, subject, kind).filter((m) => pages.has(m.page)); }).filter((xs) => xs.length);
+  const cap = Math.max(1, Math.floor(max / (by.length || 1)));
+  const thin = (xs) => (xs.length <= cap ? xs : Array.from({ length: cap }, (_, k) => xs[Math.floor((k * xs.length) / cap)]));
+  return by.flatMap(thin);
+}
+const matsLabel = (ms) => MKINDS.map((k) => { const xs = ms.filter((m) => m.kind === k); return xs.length ? `${k} p.${pagesToRanges(xs.map((m) => m.page))}` : ""; }).filter(Boolean).join("、");
 /* [10,11,12,15] → "10–12, 15" */
 function pagesToRanges(nums) {
   const xs = [...new Set(nums.filter((n) => Number.isInteger(n)))].sort((a, b) => a - b);
@@ -522,13 +530,20 @@ function MakePapers({ d, save }) {
     e.target.value = "";
   };
 
+  const unitsFor = (subject) => (customUnits[subject]?.length ? d.units.filter((u) => customUnits[subject].includes(u.id)) : (kind === "累積" ? d.units.filter((u) => u.subject === subject && taught(u)) : pickUnits(d, subject)));
+
   const genOne = async (subject) => {
-    const units = customUnits[subject]?.length ? d.units.filter((u) => customUnits[subject].includes(u.id)) : (kind === "累積" ? d.units.filter((u) => u.subject === subject && taught(u)) : pickUnits(d, subject));
+    const units = unitsFor(subject);
     if (!units.length) throw new Error(`${subject}：「習った」単元がありません。「登録」で進度を更新してください`);
     const stuck = d.items.filter((i) => i.subject === subject && i.status === "active" && units.some((u) => u.id === i.unitId));
     const stable = d.items.filter((i) => i.subject === subject && i.status === "stable").map((i) => i.label);
     const pics = imgs[subject] || [];
-    const prompt = `教科: ${subject}\n種別: ${kind}テスト\n出題範囲:\n${units.map((u) => `・${u.name}${u.pages ? "（" + u.pages + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}\n\n安定している項目（確認として少数混ぜてよい）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}\n\n${n}問作ってください。${pics.length ? `\n添付${pics.length}枚は実際の教科書・ワーク。用語・表現・扱われ方を合わせる。本文や設問はそのまま写さない。添付は「図1」〜「図${pics.length}」として問題用紙と一緒に印刷されるので、地形図・実験装置など自分で描けない図はこの番号で参照して出題する。` : ""}`;
+    // 単元に結びついた教材ページを共有先から読む。読めなくても作問は続ける
+    const mats = materialsForUnits(d, subject, units); const matImgs = []; let matNote = "";
+    for (let k = 0; k < mats.length; k++) { setBusy(`${subject}（教材ページ ${k + 1}/${mats.length}）`); try { matImgs.push({ m: mats[k], b64: await stGet(mats[k].path) }); } catch (e) { matNote = `教材ページを読めなかったので添付なし（${e.message}）`; matImgs.length = 0; break; } }
+    setBusy(subject);
+    const matDesc = matsLabel(matImgs.map((x) => x.m));
+    const prompt = `教科: ${subject}\n種別: ${kind}テスト\n出題範囲:\n${units.map((u) => `・${u.name}${unitPageLabel(u) ? "（" + unitPageLabel(u) + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}\n\n安定している項目（確認として少数混ぜてよい）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}\n\n${n}問作ってください。${matImgs.length ? `\n【教材ページ】と見出しを付けた添付${matImgs.length}枚（${matDesc}）は、出題範囲のワーク・教科書の実物。用語・記号・表現・扱われ方と難易度をこれに合わせ、ワークがあればワークの問題に近い形式で出す。本文や設問をそのまま写さない。教材ページは印刷されないので、図として参照しない。` : ""}${pics.length ? `\n【図】と見出しを付けた添付${pics.length}枚は問題用紙と一緒に印刷される資料。「図1」〜「図${pics.length}」として、地形図・実験装置など自分で描けない図はこの番号で参照して出題する。` : ""}`;
     const system = `日本の中学1年生向けの、白紙から解かせる${kind === "累積" ? "累積（過去範囲を混ぜた）" : ""}テストを作る。厳守:
 - 中1範囲を超えない。指定範囲から逸脱しない
 - 未出題の単元があれば必ず数問出す
@@ -537,7 +552,9 @@ function MakePapers({ d, save }) {
 - 図を使ってよい。描ける図（座標平面、数直線、平面図形、表、簡単な模式図）は svg にSVGコードを1行で入れる（viewBox必須、幅400以下、stroke="#111" fill="none" 基本、文字13px以上、色なし）。描けない図は添付の図番号を参照する。どちらも無理なら図なしの問題にする
 - 各問に単元名・形式・ねらい・項目名をつける。形式は次から: ${FORMATS.join("／")}。項目名は「後日その一点だけを聞き直せる粒度」で書く（例:「係数が分数の一次方程式」）
 JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":""}]}`;
-    const content = pics.length ? [...pics.map((p) => imgBlock(p.b64)), { type: "text", text: prompt }] : prompt;
+    const content = matImgs.length || pics.length
+      ? [...matImgs.flatMap((x) => [{ type: "text", text: `【教材ページ】${x.m.kind} p.${x.m.page}` }, imgBlock(x.b64)]), ...pics.flatMap((p, k) => [{ type: "text", text: `【図${k + 1}】` }, imgBlock(p.b64)]), { type: "text", text: prompt }]
+      : prompt;
     const t = await callAI(content, system, 6000);
     const parsed = parseJSON(t);
     const qs = (parsed.questions || []).map((x, i) => {
@@ -545,14 +562,14 @@ JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","un
       return { n: i + 1, q: x.q || "", a: x.a || "", unitId: u.id, fmt: FORMATS.includes(x.fmt) ? x.fmt : FORMATS[0], aim: x.aim || "", label: x.label || x.aim || "", svg: x.svg || "" };
     });
     if (!qs.length) throw new Error(`${subject}：問題を生成できませんでした`);
-    return { id: uid(), code: `${today().slice(5).replace("-", "")}${subject[0]}`, subject, date: today(), kind, unitIds: units.map((u) => u.id), questions: qs, imgs: pics.map((p) => p.b64), status: "printed", model: usedLabel(), updatedAt: now() };
+    return { paper: { id: uid(), code: `${today().slice(5).replace("-", "")}${subject[0]}`, subject, date: today(), kind, unitIds: units.map((u) => u.id), questions: qs, imgs: pics.map((p) => p.b64), status: "printed", model: usedLabel(), updatedAt: now() }, note: matNote || (matDesc ? `教材 ${matDesc} を参照` : "教材なし") };
   };
 
   const genAll = async () => {
     setLog([]); const made = [];
     for (const s of sel) {
       setBusy(s);
-      try { const p = await genOne(s); made.push(p); setLog((l) => [...l, `${s}：${p.questions.length}問`]); }
+      try { const { paper: p, note } = await genOne(s); made.push(p); setLog((l) => [...l, `${s}：${p.questions.length}問（${note}）`]); }
       catch (e) { setLog((l) => [...l, `${s}：失敗（${e.message}）`]); }
     }
     setBusy("");
@@ -563,7 +580,7 @@ JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","un
 
   return (<>
     <section className="sec">
-      <p className="lead">単元は「未定着がある単元」と「最近出していない単元」から自動で選びます。まとめて生成して印刷してください。</p>
+      <p className="lead">単元は「未定着がある単元」と「最近出していない単元」から自動で選びます。単元に結びついたワーク・教科書のページ（「登録→教材」）は自動で添付されます。まとめて生成して印刷してください。</p>
       <div className="seg sm">{["週次", "累積"].map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
       <div className="chips mb">{SUBJECTS.map((s) => (<button key={s} className={"chip" + (sel.includes(s) ? " on" : "")} style={sel.includes(s) ? { background: HUE[s] } : {}} onClick={() => toggle(s)}>{s}</button>))}</div>
       <Fld label="1教科あたりの問題数"><input type="number" value={n} onChange={(e) => setN(e.target.value)} /></Fld>
@@ -573,7 +590,8 @@ JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","un
             <button key={u.id} className={"chip" + (on ? " on" : "") + (taught(u) ? "" : " dim")} style={on ? { background: HUE[s] } : {}} onClick={() => setCustomUnits((c) => ({ ...c, [s]: on ? (c[s] || []).filter((x) => x !== u.id) : [...(c[s] || []), u.id] }))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>); })}</div>
           <div className="imgs">{(imgs[s] || []).map((im) => (<div className="thumb" key={im.id}><img src={`data:image/jpeg;base64,${im.b64}`} alt="" /><button onClick={() => setImgs((x) => ({ ...x, [s]: x[s].filter((y) => y.id !== im.id) }))}>×</button></div>))}
             {(imgs[s] || []).length < 4 && <label className="addimg">＋<input type="file" accept="image/*" multiple hidden onChange={(e) => addImg(s, e)} /></label>}</div></div>))}
-        <p className="ph-note">写真は英語の本文・社会や理科の用語で効きます。計算問題では効果がほぼありません。写真は作問時にだけ使い、保存はされません（印刷用紙には資料として入ります）。</p></details>
+        <p className="ph-note">写真は印刷用紙に「図」として入ります（地形図・実験装置など）。教材ページの添付は自動なので、ここで教科書を撮る必要はありません。写真は保存されません。</p></details>
+      {sel.length > 0 && (d.materials || []).length > 0 && <p className="ph-note">添付される教材：{sel.map((s) => `${s} ${matsLabel(materialsForUnits(d, s, unitsFor(s))) || "なし"}`).join(" ／ ")}</p>}
       <button className="btn-main" onClick={genAll} disabled={!!busy || !sel.length}>{busy ? `${busy} を作成中… ${sec}秒` : `${sel.length}教科まとめて作る`}</button>
       {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}
     </section>
