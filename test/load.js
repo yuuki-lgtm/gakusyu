@@ -13,7 +13,7 @@ const EXPORTS = [
   // 日付など
   "today", "addDays", "diffDays", "pct", "blank",
   // 中核ロジック
-  "migrate", "mergeData", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "parseJSON",
+  "migrate", "mergeData", "sbFetch", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "parseJSON",
   // 印刷
   "escHTML", "safeSvg", "paperHTML", "fileHTML", "paperText", "genToPaper", "isIOS",
   // 画面

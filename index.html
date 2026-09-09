@@ -68,7 +68,8 @@ async function sbFetch(path, opts = {}) {
   const base = LS(SB_URL).replace(/\/$/, "");
   const res = await fetch(`${base}/rest/v1/${path}`, { ...opts, headers: { apikey: LS(SB_KEY), Authorization: `Bearer ${LS(SB_KEY)}`, "Content-Type": "application/json", ...(opts.headers || {}) } });
   if (!res.ok) throw new Error(`同期エラー (${res.status})`);
-  return res.status === 204 ? null : res.json();
+  const text = await res.text(); // 書き込み成功時（201, return=minimal）は本文が空。空なら null
+  return text ? JSON.parse(text) : null;
 }
 async function pullRemote() { const rows = await sbFetch(`state?id=eq.${encodeURIComponent(LS(SB_ROOM))}&select=data,updated_at`); return rows && rows[0] ? rows[0] : null; }
 async function pushRemote(data) { await sbFetch("state", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ id: LS(SB_ROOM), data, updated_at: new Date().toISOString() }) }); }

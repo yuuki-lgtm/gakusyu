@@ -226,3 +226,32 @@ describe("pickUnits（テストに出す単元の選び方）", () => {
     assert.ok(ids.includes("u1") && ids.includes("u2"));
   });
 });
+
+describe("sbFetch（Supabase への読み書き）", () => {
+  const withFetch = async (status, body, fn) => {
+    const orig = globalThis.fetch;
+    const calls = [];
+    globalThis.fetch = async (url, opts) => { calls.push({ url, opts }); return { ok: status >= 200 && status < 300, status, text: async () => body, json: async () => JSON.parse(body) }; };
+    m.stubs.localStorage.setItem("sb_url", "https://example.supabase.co/");
+    m.stubs.localStorage.setItem("sb_key", "anon-key");
+    try { return await fn(calls); } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("sb_url"); m.stubs.localStorage.removeItem("sb_key"); }
+  };
+  test("書き込み成功（201、本文なし）は null を返して落ちない", async () => {
+    await withFetch(201, "", async () => assert.equal(await m.sbFetch("state", { method: "POST", body: "{}" }), null));
+  });
+  test("204 も null", async () => {
+    await withFetch(204, "", async () => assert.equal(await m.sbFetch("state"), null));
+  });
+  test("読み取りは JSON を返し、URL とヘッダが正しい", async () => {
+    await withFetch(200, '[{"id":"fam-1","data":{"v":3}}]', async (calls) => {
+      const r = await m.sbFetch("state?id=eq.fam-1&select=data");
+      assert.deepEqual(r, [{ id: "fam-1", data: { v: 3 } }]);
+      assert.equal(calls[0].url, "https://example.supabase.co/rest/v1/state?id=eq.fam-1&select=data");
+      assert.equal(calls[0].opts.headers.apikey, "anon-key");
+      assert.equal(calls[0].opts.headers.Authorization, "Bearer anon-key");
+    });
+  });
+  test("失敗はステータス付きの同期エラー", async () => {
+    await withFetch(401, '{"message":"x"}', async () => await assert.rejects(() => m.sbFetch("state"), /同期エラー \(401\)/));
+  });
+});
