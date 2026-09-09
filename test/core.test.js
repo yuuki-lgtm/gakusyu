@@ -337,3 +337,46 @@ describe("教材画像（Supabase Storage）", () => {
     assert.deepEqual(m.migrate({ v: 2 }).materials, []);
   });
 });
+
+describe("単元とページの紐づけ", () => {
+  test("parsePages は範囲と単発を展開し、p. や 〜 や 全角も読む", () => {
+    assert.deepEqual(m.parsePages("p.12-15, 30"), [12, 13, 14, 15, 30]);
+    assert.deepEqual(m.parsePages("P.4〜6／p.9"), [4, 5, 6, 9]);
+    assert.deepEqual(m.parsePages("20–21、p.3"), [3, 20, 21]);
+    assert.deepEqual(m.parsePages(""), []); assert.deepEqual(m.parsePages(undefined), []);
+  });
+  test("逆順や巨大な範囲は展開せず両端だけ", () => {
+    assert.deepEqual(m.parsePages("9-5"), [5, 9]);
+    assert.deepEqual(m.parsePages("1-10000"), [1, 10000]);
+  });
+  test("unitPages は教材ごとに別の欄を読み、unitForPage で逆引きできる", () => {
+    const u = { pages: "p.10-12", wbPages: "p.4-5" };
+    assert.deepEqual(m.unitPages(u, "教科書"), [10, 11, 12]);
+    assert.deepEqual(m.unitPages(u, "ワーク"), [4, 5]);
+    assert.deepEqual(m.unitPages({ pages: "p.1" }, "ワーク"), []);
+    const units = F.demo().units;
+    assert.equal(m.unitForPage(units, "ワーク", 13).id, "u2");
+    assert.equal(m.unitForPage(units, "教科書", 13).id, "u1");
+    assert.equal(m.unitForPage(units, "ワーク", 99), null);
+  });
+  test("applyTOC: 一致する単元にはページを足し、無ければ新規。名前が空は無視", () => {
+    const units = [{ id: "a", subject: "数学", name: "正負の数", pages: "p.10-30", wbPages: "", updatedAt: "" }, { id: "b", subject: "英語", name: "正負の数", pages: "", updatedAt: "" }];
+    const r = m.applyTOC(units, "数学", "ワーク", [{ name: "正の数・負の数", pages: "p.4-11", match: "正負の数" }, { name: "文字と式", pages: "p.12-19", match: "" }, { name: "", pages: "p.1" }]);
+    assert.equal(r.length, 3);
+    assert.equal(r[0].wbPages, "p.4-11"); assert.equal(r[0].pages, "p.10-30");
+    assert.equal(r[1].pages, "", "他教科の同名は触らない");
+    assert.deepEqual([r[2].subject, r[2].name, r[2].pages, r[2].wbPages, r[2].lastTestedOn], ["数学", "文字と式", "", "p.12-19", null]);
+    assert.ok(r[2].id && r[2].updatedAt);
+  });
+  test("applyTOC: 教科書の目次は pages に入り、既にあれば追記、同じなら重複しない", () => {
+    const units = [{ id: "a", subject: "数学", name: "正負の数", pages: "p.10-30", updatedAt: "" }];
+    assert.equal(m.applyTOC(units, "数学", "教科書", [{ name: "正負の数", pages: "p.31-33" }])[0].pages, "p.10-30, p.31-33");
+    assert.equal(m.applyTOC(units, "数学", "教科書", [{ name: "正負の数", pages: "p.10-30" }])[0].pages, "p.10-30");
+    assert.equal(m.applyTOC(units, "数学", "教科書", [{ name: "正負の数", pages: "" }])[0].pages, "p.10-30");
+  });
+  test("unitPageLabel", () => {
+    assert.equal(m.unitPageLabel({ pages: "p.1", wbPages: "p.2" }), "教科書 p.1 ／ ワーク p.2");
+    assert.equal(m.unitPageLabel({ pages: "", wbPages: "p.2" }), "ワーク p.2");
+    assert.equal(m.unitPageLabel({}), "");
+  });
+});

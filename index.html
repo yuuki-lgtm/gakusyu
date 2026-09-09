@@ -110,6 +110,29 @@ async function stRemove(paths) {
   if (!res.ok) throw new Error(`教材の削除エラー (${res.status})`);
   paths.forEach((p) => _matCache.delete(p));
 }
+/* "p.12-25, 30" → [12,…,25,30]。区切りは - – — ~ 〜、p. は無視 */
+function parsePages(s) {
+  const out = new Set(); const t = String(s || "").replace(/[pP]\.?|ページ|頁/g, " ");
+  for (const m of t.matchAll(/(\d+)\s*[-–—~〜]\s*(\d+)|(\d+)/g)) {
+    if (m[3]) out.add(+m[3]); else { const a = +m[1], b = +m[2]; if (b >= a && b - a < 500) for (let n = a; n <= b; n++) out.add(n); else { out.add(a); out.add(b); } }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+const unitPages = (u, kind) => parsePages(kind === "ワーク" ? u.wbPages : u.pages);
+const unitForPage = (units, kind, page) => units.find((u) => unitPages(u, kind).includes(page)) || null;
+/* 目次から読んだ候補を単元に反映する。既存の単元名に一致すればページ範囲だけ足し、なければ新規に作る */
+function applyTOC(units, subject, kind, cands) {
+  const field = kind === "ワーク" ? "wbPages" : "pages";
+  const out = units.slice();
+  cands.forEach((c) => {
+    const name = (c.name || "").trim(), match = (c.match || "").trim();
+    if (!name) return;
+    const idx = out.findIndex((u) => u.subject === subject && (u.name === match || u.name === name));
+    if (idx >= 0) { const u = out[idx]; const cur = u[field] || ""; const nv = !cur ? c.pages || "" : c.pages && !cur.includes(c.pages) ? `${cur}, ${c.pages}` : cur; out[idx] = { ...u, [field]: nv, updatedAt: now() }; }
+    else out.push({ id: uid(), subject, name, pages: field === "pages" ? c.pages || "" : "", wbPages: field === "wbPages" ? c.pages || "" : "", lastTestedOn: null, updatedAt: now() });
+  });
+  return out;
+}
 /* [10,11,12,15] → "10–12, 15" */
 function pagesToRanges(nums) {
   const xs = [...new Set(nums.filter((n) => Number.isInteger(n)))].sort((a, b) => a - b);
@@ -951,36 +974,47 @@ function RegTab({ d, save, initial }) {
   </div>);
 }
 
+const unitPageLabel = (u) => [u.pages ? `教科書 ${u.pages}` : "", u.wbPages ? `ワーク ${u.wbPages}` : ""].filter(Boolean).join(" ／ ");
+
 function UnitReg({ d, save }) {
   const [subject, setSubject] = useState("数学");
-  const [name, setName] = useState(""); const [pages, setPages] = useState("");
+  const [tocKind, setTocKind] = useState("教科書");
+  const [name, setName] = useState(""); const [pages, setPages] = useState(""); const [wb, setWb] = useState("");
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const [cands, setCands] = useState(null); const [ck, setCk] = useState({});
+  const [edit, setEdit] = useState(null); // {id, pages, wbPages}
   const sec = useElapsed(busy);
   const us = d.units.filter((u) => u.subject === subject);
-  const addOne = () => { if (!name.trim()) return; save({ ...d, units: [...d.units, { id: uid(), subject, name: name.trim(), pages: pages.trim(), lastTestedOn: null, updatedAt: now() }] }); setName(""); setPages(""); };
+  const field = tocKind === "ワーク" ? "wbPages" : "pages";
+  const matchOf = (x) => us.find((u) => u.name === (x.match || "").trim() || u.name === (x.name || "").trim()) || null;
+  const addOne = () => { if (!name.trim()) return; save({ ...d, units: [...d.units, { id: uid(), subject, name: name.trim(), pages: pages.trim(), wbPages: wb.trim(), lastTestedOn: null, updatedAt: now() }] }); setName(""); setPages(""); setWb(""); };
   const readTOC = async (f, model = null) => { setBusy(true); setErr(""); setCands(null);
     try { const b64 = await compressImage(f, 1600, 0.8);
-      const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年${subject}の教科書の目次です。単元（章・節）を上から順に、ページ範囲つきで書き出してください。` }], `JSONのみ: {"units":[{"name":"単元名","pages":"p.12-25"}]}。粒度は「章」ではなく「節」（テストの範囲指定に使える細かさ）。`, 2000, model);
-      const u = parseJSON(t).units || []; setCands(u); const c = {}; u.forEach((x, i) => { c[i] = !us.some((e) => e.name === x.name); }); setCk(c);
+      const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年${subject}の${tocKind}の目次です。単元（章・節）を上から順に、ページ範囲つきで書き出してください。${us.length ? `\n登録済みの単元: ${us.map((u) => u.name).join("／")}\n各項目が登録済みのどれに当たるかを match に入れてください（表記が違っても同じ内容なら対応づける。該当がなければ空文字）。` : ""}` }],
+        `JSONのみ: {"units":[{"name":"単元名","pages":"p.12-25","match":"登録済みの単元名か空文字"}]}。粒度は「章」ではなく「節」（テストの範囲指定に使える細かさ）。pagesは${tocKind}のページ番号。`, 2400, model);
+      const u = parseJSON(t).units || []; setCands(u); const c = {}; u.forEach((x, i) => { const ex = matchOf(x); c[i] = !(ex && ex[field]); }); setCk(c);
     } catch (e) { setErr(e.message || "読み取れませんでした"); } setBusy(false); };
-  const commit = () => { const add = (cands || []).filter((_, i) => ck[i]).map((x) => ({ id: uid(), subject, name: x.name, pages: x.pages || "", lastTestedOn: null, updatedAt: now() })); if (add.length) save({ ...d, units: [...d.units, ...add] }); setCands(null); };
+  const commit = () => { const sel = (cands || []).filter((_, i) => ck[i]); if (sel.length) save({ ...d, units: applyTOC(d.units, subject, tocKind, sel) }); setCands(null); };
+  const saveEdit = () => { if (!edit) return; save({ ...d, units: d.units.map((x) => (x.id === edit.id ? { ...x, pages: edit.pages.trim(), wbPages: edit.wbPages.trim(), updatedAt: now() } : x)) }); setEdit(null); };
   return (<>
-    <section className="sec"><SubjRow value={subject} onChange={setSubject} />
-      <p className="lead">学期の初めに教科書の目次を撮って一括登録すれば、以後の登録は不要です。日々の「授業でやった」は追いません。「テストしたか」だけを追います。</p>
-      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "教科書の目次を撮る"}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) readTOC(f); }} /></label>
+    <section className="sec"><SubjRow value={subject} onChange={(s) => { setSubject(s); setCands(null); setEdit(null); }} />
+      <p className="lead">学期の初めに教科書の目次を撮って一括登録すれば、以後の登録は不要です。ワークの目次も撮っておくと、単元ごとにワークのページが結びつき、作問と×の登録で教材のページを自動で使えます。</p>
+      <div className="seg sm">{MKINDS.slice().reverse().map((k) => (<button key={k} className={tocKind === k ? "on" : ""} onClick={() => { setTocKind(k); setCands(null); }}>{k}の目次</button>))}</div>
+      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : `${tocKind}の目次を撮る`}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) readTOC(f); }} /></label>
       {err && <div className="errbox"><p>{err}</p></div>}
-      {cands && (<><p className="ph-note">登録する単元にチェック。既にあるものは外してあります。</p>
-        {cands.map((x, i) => (<label className={"cand2" + (ck[i] ? " on" : "")} key={i}><input type="checkbox" checked={!!ck[i]} onChange={(e) => setCk((c) => ({ ...c, [i]: e.target.checked }))} /><span>{x.name} <em className="pg">{x.pages}</em></span></label>))}
-        <button className="btn-main" onClick={commit}>チェックした単元を登録</button></>)}
-      <details className="det"><summary>手で1つ追加</summary><div className="grid2"><Fld label="単元名"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：一次方程式の利用" /></Fld><Fld label="ページ"><input value={pages} onChange={(e) => setPages(e.target.value)} placeholder="p.48-52" /></Fld></div><button className="btn-sm" onClick={addOne}>追加</button></details>
+      {cands && (<><p className="ph-note">{tocKind === "ワーク" ? "登録済みの単元に当たるものは「→ 単元名」と出ます。チェックしたものにワークのページを結びつけ、該当がなければ新しい単元として登録します。" : "登録する単元にチェック。既にページが入っているものは外してあります。"}</p>
+        {cands.map((x, i) => { const ex = matchOf(x); return (<label className={"cand2" + (ck[i] ? " on" : "")} key={i}><input type="checkbox" checked={!!ck[i]} onChange={(e) => setCk((c) => ({ ...c, [i]: e.target.checked }))} /><span>{x.name} <em className="pg">{x.pages}</em>{ex ? <em className="pg"> → {ex.name}{ex[field] ? `（${tocKind} ${ex[field]} あり）` : ""}</em> : <em className="nv">新規</em>}</span></label>); })}
+        <button className="btn-main" onClick={commit}>チェックした {Object.values(ck).filter(Boolean).length} 件を反映</button></>)}
+      <details className="det"><summary>手で1つ追加</summary><Fld label="単元名"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：一次方程式の利用" /></Fld><div className="grid2"><Fld label="教科書のページ"><input value={pages} onChange={(e) => setPages(e.target.value)} placeholder="p.48-52" /></Fld><Fld label="ワークのページ"><input value={wb} onChange={(e) => setWb(e.target.value)} placeholder="p.20-23" /></Fld></div><button className="btn-sm" onClick={addOne}>追加</button></details>
     </section>
     <section className="sec"><h3 className="s-h">{subject}の単元 {us.length}件 <span className="cnt">習った {us.filter(taught).length}</span></h3>
-      <p className="lead">週末に「今週どこまで進んだ？」と聞いて、その単元の「ここまで」を押してください。それより前の単元もまとめて「習った」になります。作問は習った単元からしか出ません。</p>
+      <p className="lead">週末に「今週どこまで進んだ？」と聞いて、その単元の「ここまで」を押してください。それより前の単元もまとめて「習った」になります。作問は習った単元からしか出ません。ページ範囲は名前の下をタップすると直せます。</p>
       {us.length === 0 && <p className="empty">未登録。</p>}
-      {us.map((u, idx) => (<div className={"urow" + (taught(u) ? "" : " untaught")} key={u.id}><div><div className="u-name">{u.name} <em className="pg">{u.pages}</em></div><div className="u-meta">{taught(u) ? (u.lastTestedOn ? `最終出題 ${u.lastTestedOn.slice(5)}` : <span className="never">未出題</span>) : "まだ習っていない"}</div></div>
+      {us.map((u, idx) => (<div className={"urow" + (taught(u) ? "" : " untaught")} key={u.id}>
+        {edit && edit.id === u.id ? (<div className="u-edit"><div className="u-name">{u.name}</div><div className="grid2"><Fld label="教科書"><input value={edit.pages} onChange={(e) => setEdit({ ...edit, pages: e.target.value })} placeholder="p.48-52" /></Fld><Fld label="ワーク"><input value={edit.wbPages} onChange={(e) => setEdit({ ...edit, wbPages: e.target.value })} placeholder="p.20-23" /></Fld></div><div className="q-btns"><button className="btn-sm" onClick={saveEdit}>保存</button><button className="btn-sm" onClick={() => setEdit(null)}>やめる</button></div></div>)
+        : (<><div><div className="u-name">{u.name}</div><button className="u-pg" onClick={() => setEdit({ id: u.id, pages: u.pages || "", wbPages: u.wbPages || "" })}>{unitPageLabel(u) || "ページ未設定"}</button><div className="u-meta">{taught(u) ? (u.lastTestedOn ? `最終出題 ${u.lastTestedOn.slice(5)}` : <span className="never">未出題</span>) : "まだ習っていない"}</div></div>
         <div className="u-btns">{!taught(u) && <button className="btn-sm" onClick={() => save({ ...d, units: d.units.map((x) => (x.subject === subject && us.indexOf(x) <= idx && !x.learnedOn ? { ...x, learnedOn: today(), updatedAt: now() } : x)) })}>ここまで</button>}
-          <button className="btn-x" onClick={() => save({ ...d, units: d.units.filter((x) => x.id !== u.id), deleted: [...d.deleted, u.id] })}>×</button></div></div>))}</section>
+          <button className="btn-x" onClick={() => save({ ...d, units: d.units.filter((x) => x.id !== u.id), deleted: [...d.deleted, u.id] })}>×</button></div></>)}</div>))}</section>
   </>);
 }
 
@@ -1290,6 +1324,7 @@ const CSS = `
 .drill-n{font-size:11px;color:var(--ink2);margin:2px 0 8px;line-height:1.6}.drill-w{font-size:11px;color:#A8443B;margin:5px 0 0}
 .j-btns button:disabled{opacity:.3;cursor:default}
 .urow.untaught .u-name{color:var(--ink3)}.u-btns{display:flex;align-items:center;gap:4px}.chip.dim{opacity:.45}
+.u-pg{display:block;background:none;border:none;padding:1px 0;font-size:11px;color:var(--ink3);cursor:pointer;font-family:inherit;text-align:left;text-decoration:underline dotted}.u-edit{flex:1}.u-edit .grid2{margin-top:6px}.u-edit .fld{margin-bottom:6px}
 .taskbox{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:11px;margin:8px 0}.tk-p{font-size:14px;line-height:1.6;margin-bottom:6px;font-weight:700}
 .tr{font-size:12px;line-height:1.9;white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;margin:8px 0}
 .tabhint{font-size:12px;color:var(--ink2);background:#EEF1EE;border-radius:3px;padding:8px 10px;margin:0 0 12px;line-height:1.6}

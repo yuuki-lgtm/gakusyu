@@ -14,8 +14,8 @@ function fixtures(m) {
   const demo = () => ({
     v: 3, updatedAt: ts(0),
     units: [
-      { id: "u1", subject: "数学", name: "正負の数", pages: "p.10-30", learnedOn: day(-30), lastTestedOn: day(-10), updatedAt: ts(-10) },
-      { id: "u2", subject: "数学", name: "文字と式", pages: "p.31-50", learnedOn: day(-7), lastTestedOn: null, updatedAt: ts(-7) },
+      { id: "u1", subject: "数学", name: "正負の数", pages: "p.10-30", wbPages: "p.4-11", learnedOn: day(-30), lastTestedOn: day(-10), updatedAt: ts(-10) },
+      { id: "u2", subject: "数学", name: "文字と式", pages: "p.31-50", wbPages: "p.12-19", learnedOn: day(-7), lastTestedOn: null, updatedAt: ts(-7) },
       { id: "u3", subject: "数学", name: "方程式", pages: "", learnedOn: null, lastTestedOn: null, updatedAt: ts(-7) },
       { id: "u4", subject: "英語", name: "be動詞", pages: "p.8-20", learnedOn: day(-50), lastTestedOn: day(-40), updatedAt: ts(-40) },
       { id: "u5", subject: "社会", name: "世界の姿", pages: "p.6-25", learnedOn: day(-20), lastTestedOn: day(-3), updatedAt: ts(-3) },

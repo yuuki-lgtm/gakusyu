@@ -116,3 +116,9 @@ test("デモ: 登録/教材 に取り込み済みのページ範囲が出る。�
   const e = render(m.RegTab, { d: F.empty(), save: noop, initial: "mat" }).html;
   assert.ok(e.includes("なし") && !e.includes("を全部削除"));
 });
+test("デモ: 登録/単元 に教科書とワークのページ範囲が出る", () => {
+  const { html } = render(m.RegTab, { d: F.demo(), save: noop, initial: "unit" });
+  assert.ok(html.includes("教科書 p.10-30 ／ ワーク p.4-11"));
+  assert.ok(html.includes("ページ未設定"), "ページの無い単元");
+  assert.ok(html.includes("教科書の目次を撮る"));
+});
