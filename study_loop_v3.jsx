@@ -1,0 +1,1162 @@
+import React, { useState, useEffect, useMemo, useRef } from "react";
+
+const KEY = "gakushu_loop_v3";
+const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
+const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
+const FORMATS = ["知識・用語", "計算", "図・作図・グラフ", "資料・地図の読み取り", "長文読解", "記述・作文", "リスニング", "英作文"];
+const ETYPES = ["知らなかった", "分かっていたが間違えた", "読み間違えた", "時間切れ・空欄"];
+const INT = [1, 3, 7, 14, 30, 60];
+const STABLE_LEVEL = 4;
+
+const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (d, n) => { const t = new Date(d + "T00:00:00"); t.setDate(t.getDate() + n); return t.toISOString().slice(0, 10); };
+const diffDays = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
+const uid = () => Math.random().toString(36).slice(2, 10);
+const now = () => new Date().toISOString();
+const pct = (c, t) => (t ? Math.round((c / t) * 100) : null);
+
+const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], papers: [], log: {}, exams: [], writing: [], deleted: [] });
+
+/* v2 → v3 移行。既存データを引き継ぐ */
+function migrate(d) {
+  if (!d) return blank();
+  if (d.v === 3) return { ...blank(), ...d };
+  const items = (d.items || []).map((i) => {
+    const level = i.status === "mastered" ? STABLE_LEVEL : Math.min(i.streak || 0, 3);
+    return { ...i, level, status: level >= STABLE_LEVEL ? "stable" : "active", etype: i.etype || "", updatedAt: now(),
+      history: (i.history || []).map((h) => ({ d: h.d, r: h.r === "o" ? "o" : "x" })) };
+  });
+  const exams = d.exam && d.exam.date ? [{ id: uid(), name: d.exam.name || "", date: d.exam.date, unitIds: d.exam.unitIds || [], actual: {}, updatedAt: now() }] : [];
+  return { ...blank(), units: (d.units || []).map((u) => ({ ...u, updatedAt: now() })), items, tests: (d.tests || []).map((t) => ({ ...t, updatedAt: now() })), exams };
+}
+
+/* ---- AI ---- */
+const MODEL = "claude-opus-5";
+const FALLBACK = "claude-sonnet-4-6";
+let lastUsed = "";
+const usedLabel = () => (lastUsed === MODEL ? "Opus 5" : lastUsed === FALLBACK ? "Sonnet 4.6" : "");
+const API_HEADERS = () => ({ "Content-Type": "application/json" });
+
+async function once(model, content, system, maxTokens) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST", headers: API_HEADERS(),
+    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: "user", content }] }),
+  });
+  let data; try { data = await res.json(); } catch { throw new Error(`応答を読めませんでした (HTTP ${res.status})`); }
+  if (!res.ok || data.error) throw new Error(data?.error?.message || `エラー (HTTP ${res.status})`);
+  const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
+  if (!text) throw new Error("空の応答");
+  return text;
+}
+async function callAI(content, system, maxTokens = 2200, force = null) {
+  const order = force ? [force] : lastUsed ? [lastUsed, ...[MODEL, FALLBACK].filter((m) => m !== lastUsed)] : [MODEL, FALLBACK];
+  let err;
+  for (const m of order) { try { const t = await once(m, content, system, maxTokens); lastUsed = m; return t; } catch (e) { err = e; } }
+  throw err;
+}
+function parseJSON(text) {
+  const t = text.replace(/```json|```/g, "").trim();
+  const s = Math.min(...["{", "["].map((c) => t.indexOf(c)).filter((x) => x >= 0));
+  const e = Math.max(t.lastIndexOf("}"), t.lastIndexOf("]"));
+  return JSON.parse(t.slice(s, e + 1));
+}
+function compressImage(file, maxW = 1400, quality = 0.72) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => { const img = new Image(); img.onload = () => {
+      const sc = Math.min(1, maxW / img.width); const c = document.createElement("canvas");
+      c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      res(c.toDataURL("image/jpeg", quality).split(",")[1]); };
+      img.onerror = () => rej(new Error("画像を読めません")); img.src = r.result; };
+    r.onerror = () => rej(new Error("読み込み失敗")); r.readAsDataURL(file);
+  });
+}
+const imgBlock = (b64) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } });
+function useElapsed(busy) {
+  const [s, setS] = useState(0);
+  useEffect(() => { if (!busy) { setS(0); return; } const t = setInterval(() => setS((x) => x + 1), 1000); return () => clearInterval(t); }, [busy]);
+  return s;
+}
+
+/* ---- 間隔反復 ---- */
+function applyJudgment(item, r) {
+  const t = today();
+  let level = item.level || 0, failCount = item.failCount || 0;
+  if (r === "x") { level = 0; failCount += 1; }
+  else if (r === "oo" || item.fmt === "知識・用語") { level = Math.min(level + 1, INT.length - 1); }
+  else { level = Math.min(level + 1, 3); }
+  return { ...item, level, failCount, nextDue: addDays(t, INT[level]), status: level >= STABLE_LEVEL ? "stable" : "active", gen: r === "x" ? null : item.gen, updatedAt: now() };
+}
+
+/* ---- 学力の指標 ---- */
+function retention(items) {
+  let c = 0, t = 0;
+  items.forEach((i) => { const h = i.history || [];
+    for (let k = 1; k < h.length; k++) { const gap = diffDays(h[k - 1].d, h[k].d); if (gap >= 30) { t++; if (h[k].r !== "x") c++; } } });
+  return { c, t, rate: pct(c, t) };
+}
+function streakDays(log) {
+  let n = 0, d = today();
+  if (!log[d]) d = addDays(d, -1);
+  while (log[d]) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+const Fld = ({ label, children }) => (<label className="fld"><span>{label}</span>{children}</label>);
+const SubjRow = ({ value, onChange }) => (
+  <div className="subj-row">{SUBJECTS.map((s) => (
+    <button key={s} className={"subj" + (value === s ? " on" : "")} style={value === s ? { background: HUE[s], borderColor: HUE[s] } : {}} onClick={() => onChange(s)}>{s}</button>))}</div>
+);
+const Dot = ({ s }) => <span className="dot" style={{ background: HUE[s] }} />;
+
+/* ============ App ============ */
+
+export default function App() {
+  const [d, setD] = useState(null);
+  const [tab, setTab] = useState("home");
+  const [mode, setMode] = useState(null);
+  const go = (t, m = null) => { setMode(m); setTab(t); };
+
+  useEffect(() => { (async () => {
+    try { const r = await window.storage.get(KEY); setD(migrate(r ? JSON.parse(r.value) : null)); }
+    catch { try { const r2 = await window.storage.get("gakushu_loop_v2"); setD(migrate(r2 ? JSON.parse(r2.value) : null)); } catch { setD(blank()); } }
+  })(); }, []);
+
+  const save = async (next) => {
+    const n = { ...next, updatedAt: now() };
+    setD(n);
+    try { await window.storage.set(KEY, JSON.stringify(n)); } catch (e) { console.error(e); }
+  };
+
+  if (!d) return <div style={{ padding: 40, color: "#888" }}>読み込み中…</div>;
+
+  const active = d.items.filter((i) => i.status === "active");
+  const due = d.items.filter((i) => i.nextDue <= today());
+  const nextExam = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+  const left = nextExam ? diffDays(today(), nextExam.date) : null;
+  const tabs = [["home", "ホーム"], ["today", `今日${due.length ? ` (${due.length})` : ""}`], ["week", "テスト"], ["reg", "登録"], ["ana", "分析"], ["exam", left !== null ? `定期 D-${left}` : "定期"], ["export", "依頼文"]];
+
+  return (
+    <div className="root"><style>{CSS}</style>
+      <header className="hd"><div className="hd-t">学習ループ</div>
+        <div className="hd-s">未定着 {active.length} · 今日 {due.length} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日</div></header>
+      <nav className="tabs">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => go(k)}>{l}</button>))}</nav>
+      <main className="main">
+        {tab === "home" && <HomeTab d={d} go={go} />}
+        {tab === "today" && <TodayTab d={d} save={save} />}
+        {tab === "week" && <WeekTab d={d} save={save} initial={mode} />}
+        {tab === "reg" && <RegTab d={d} save={save} initial={mode} />}
+        {tab === "ana" && <AnaTab d={d} />}
+        {tab === "exam" && <ExamTab d={d} save={save} />}
+        {tab === "export" && <ExportTab d={d} />}
+      </main></div>
+  );
+}
+
+/* ============ ホーム ============ */
+
+function nextActions(d) {
+  const t = today();
+  const due = d.items.filter((i) => i.nextDue <= t);
+  const pending = d.papers.filter((p) => p.status === "printed");
+  const dow = new Date(t + "T00:00:00").getDay();
+  const weekend = dow === 0 || dow === 6;
+  const paperThisWeek = d.papers.some((p) => diffDays(p.date, t) <= 6);
+  const nx = d.exams.filter((e) => e.date >= t).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+  const left = nx ? diffDays(t, nx.date) : null;
+  const stuck = d.items.filter((i) => i.status === "active" && i.failCount >= 3);
+  const A = [];
+  if (d.units.length === 0) A.push({ k: "units", title: "教科書の目次を撮って、単元を登録する", why: "最初に1回だけ。これがないと何も始まりません。", tab: "reg", mode: "unit", t: "5教科で10分" });
+  else {
+    const noProg = SUBJECTS.filter((sub) => d.units.some((u) => u.subject === sub) && !d.units.some((u) => u.subject === sub && u.learnedOn));
+    if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
+    if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: "grade", t: "1枚2分" });
+    if (!weekend && d.units.length > 0) A.push({ k: "wb", title: "今日のワークの×を撮って登録", why: "その場で「解答→閉じて再現→説明」をやったあと、夜に登録。明日の「今日」に出ます。", tab: "reg", mode: "item", t: "2分" });
+    const pendN = d.items.filter((i) => i.pending?.d === t).length;
+    if (pendN) A.push({ k: "confirm", title: `子どもの判定 ${pendN} 件を確定する`, why: "机の紙と照らして、親の確定を押す。ここで初めて次回の日程が決まります。", tab: "today", t: "5分" });
+    if (due.length) A.push({ k: "today", title: `今日の ${due.length} 件を回収する`, why: "教科書を閉じて解かせ、説明させて、判定。", tab: "today", t: `${Math.max(3, due.length * 1.5) | 0}分` });
+    if (d.items.length === 0 && !pending.length) A.push({ k: "first", title: "最初の項目を入れる", why: "返却されたテストの答案を撮るのが最良の入口。なければ週末のテストから。", tab: "reg", mode: "item", t: "20分" });
+    if (weekend && !paperThisWeek && !pending.length && d.items.length > 0) A.push({ k: "prog2", title: "「今週どこまで進んだ？」を聞いて進度を更新", why: "作問の前に。子どもに聞いて、該当の単元で「ここまで」を押すだけ。", tab: "reg", mode: "unit", t: "1分" });
+    if (weekend && !paperThisWeek && !pending.length && d.items.length > 0) A.push({ k: "make", title: "今週のテストを作って印刷する", why: "5教科まとめて1タップ。単元は自動で選ばれます。", tab: "week", mode: "make", t: "生成3分＋印刷" });
+    if (left !== null && left <= 14 && left >= 0) A.push({ k: "exam", title: `定期テストまで ${left} 日。範囲の未定着だけやる`, why: "新しいことはやらない期間です。未出題の範囲があれば最優先。", tab: "exam", t: "" });
+    if (stuck.length) A.push({ k: "stuck", title: `3回以上落ちている ${stuck.length} 件を診断する`, why: "反復では解決しません。前提に戻る手順を出します。", tab: "today", t: "" });
+  }
+  return { A, due, left, nx };
+}
+
+function HomeTab({ d, go }) {
+  const { A, left, nx } = nextActions(d);
+  const [p, ...rest] = A;
+  const streak = streakDays(d.log);
+  const days = Array.from({ length: 14 }, (_, i) => addDays(today(), -13 + i));
+  return (<div className="pane">
+    {p ? (<div className="hero" onClick={() => go(p.tab, p.mode)}>
+      <div className="hero-k">いまやること</div><div className="hero-t">{p.title}</div><div className="hero-w">{p.why}</div>
+      <div className="hero-b"><span>{p.t}</span><span className="hero-go">開く →</span></div></div>)
+      : (<div className="hero quiet"><div className="hero-k">いまやること</div><div className="hero-t">今日はありません</div><div className="hero-w">次の再出題日を待っています。週末になったらテストを作ってください。</div></div>)}
+    {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span></button>))}</div>)}
+    <div className="blk"><div className="hm-row"><div><div className="hm-k">連続</div><div className="hm-v">{streak}<small>日</small></div></div>
+      <div><div className="hm-k">未定着</div><div className="hm-v">{d.items.filter((i) => i.status === "active").length}</div></div>
+      <div><div className="hm-k">安定</div><div className="hm-v">{d.items.filter((i) => i.status === "stable").length}</div></div>
+      {nx && <div><div className="hm-k">{nx.name || "定期"}</div><div className="hm-v" style={{ color: left <= 14 ? "#8E3830" : "inherit" }}>D-{left}</div></div>}</div>
+      <div className="heat sm">{days.map((dd) => (<span key={dd} className={d.log[dd] ? "on" : ""} />))}</div></div>
+    <div className="blk"><h3>1週間の流れ</h3><ol className="flow">
+      <li><b>平日・子ども</b> 「今日」の類題を紙に → ワーク → ×は封筒の解答を見て閉じて再現、理由を1行書く</li><li><b>平日・親（夜10分）</b> 紙を見て判定を確定 → ワークの×を撮る</li><li><b>土曜</b> 進度更新 → ワークの×を撮る → 5教科作る → 印刷 → 解く → 採点 → 撮る</li><li><b>日曜</b> 読解1本・記述1本 → 撮る</li><li><b>週1</b> 「依頼文」をコピーして相談</li><li><b>返却時</b> 「登録」で答案を撮って項目に。「定期」で実点を入れる</li></ol></div>
+  </div>);
+}
+
+/* ============ 今日 ============ */
+
+function TodayTab({ d, save }) {
+  const [showAll, setShowAll] = useState(false);
+  const unitOf = (id) => d.units.find((u) => u.id === id);
+  const due = d.items.filter((i) => i.nextDue <= today()).sort((a, b) => ((b.pending?.d === today()) - (a.pending?.d === today())) || b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
+  const pendN = d.items.filter((i) => i.pending?.d === today()).length;
+  const hint = <p className="tabhint">{pendN ? `子どもの判定が ${pendN} 件保存されています。紙を見て確定してください。` : "子どもは類題を紙に解き、○×と判定を押す。親は夜に紙を見て確定。昨日の×はここに出ています。"}</p>;
+  const shown = showAll ? [...d.items].sort((a, b) => (a.nextDue < b.nextDue ? -1 : 1)) : due;
+  const stuck = d.items.filter((i) => i.status === "active" && i.failCount >= 3);
+
+  const confirm = (item, selfR, selfE, parentR, parentE) => {
+    const t = today();
+    const next = applyJudgment(item, parentR);
+    next.history = [...(item.history || []), { d: t, r: parentR, self: selfR, etype: parentE || "", etypeSelf: selfE || "" }];
+    next.pending = null;
+    if (parentR === "x" && parentE) next.etype = parentE;
+    save({ ...d, items: d.items.map((x) => (x.id === item.id ? next : x)), log: { ...d.log, [t]: true } });
+  };
+  const store = (id, patch) => save({ ...d, items: d.items.map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now() } : x)) });
+
+  return (
+    <div className="pane">
+      {hint}
+      {stuck.length > 0 && (<div className="alert"><strong>3回以上落ちている項目が {stuck.length} 件</strong><p>反復では解決しません。カードの「診断」を押すか、「依頼文」から相談してください。</p></div>)}
+      {due.length === 0 && !showAll ? (
+        <div className="ok"><p>今日の回収はありません。</p>
+          <p className="sub">{d.items.length ? `${d.items.length} 件が再出題の日を待っています。` : "未定着リストは空です。「週末」か「登録」から入れてください。"}</p>
+          {d.items.length > 0 && <button className="btn-sm" onClick={() => setShowAll(true)}>予定日前の項目も表示</button>}</div>
+      ) : (<>
+        <p className="lead">教科書を閉じたまま解かせ、<strong>解けたら「なぜそうなるか」を説明させてください。</strong> まず子どもが自分で判定し、その後に親が確定します。</p>
+        {showAll && <button className="btn-sm mb" onClick={() => setShowAll(false)}>今日の分だけ</button>}
+        <TodayPrint items={shown.filter((i) => i.gen && i.gen.problems)} total={shown.length} unitOf={unitOf} />
+        {shown.map((i) => (<ItemCard key={i.id} item={i} unit={unitOf(i.unitId)} onConfirm={confirm} onStore={store}
+          ctx={{ siblings: d.items.filter((x) => x.unitId === i.unitId && x.status === "active" && x.id !== i.id).map((x) => x.label),
+                 stable: d.items.filter((x) => x.subject === i.subject && x.status === "stable").map((x) => x.label),
+                 units: d.units.filter((x) => x.subject === i.subject).map((x) => x.name) }} />))}
+        <p className="rule">計算・文章題などは、類題3問すべて正解して初めて「解けた」。揃わなければ「別の問題」で続け、それでも揃わなければ今日は「できなかった」。間隔は 1日→3日→7日→14日→30日→60日 と伸びます。「説明もできた」でないと7日から先へ進みません（用語は除く）。30日以上あけて正解した項目が「安定」です。落とすと1日に戻ります。</p>
+      </>)}
+    </div>
+  );
+}
+
+function TodayPrint({ items, total, unitOf }) {
+  const [busy, setBusy] = useState(0); const [err, setErr] = useState("");
+  if (!total) return null;
+  const go = async () => { setErr(""); setBusy(1); try { await exportPDF(genToPaper(items, unitOf), (n) => setBusy(n)); } catch (e) { setErr(e.message || "PDFを作れませんでした"); } setBusy(0); };
+  return (<div className="tp"><button className="btn-sm wide" onClick={go} disabled={!!busy || !items.length}>{busy ? `PDFを作成中… ${busy}` : `今日の類題をまとめてPDF（${items.length}/${total}件 生成済み）`}</button>
+    {items.length < total && <p className="ph-note">まだ類題を作っていない項目は含まれません。各カードの「類題を作る」を先に押してください。</p>}
+    {err && <div className="errbox"><p>{err}</p></div>}</div>);
+}
+
+const JUDGE = [["x", "できなかった", "ng"], ["o", "解けた", "mid"], ["oo", "説明もできた", "okb"]];
+
+function ItemCard({ item: i, unit: u, onConfirm, onStore, ctx }) {
+  const pend = i.pending && i.pending.d === today() ? i.pending : null;
+  const [selfR, setSelfR] = useState(pend ? pend.self : null);
+  const [selfE, setSelfE] = useState(pend ? pend.selfE || "" : "");
+  const [parentR, setParentR] = useState(pend ? pend.self : null);
+  const [parentE, setParentE] = useState(pend ? pend.selfE || "" : "");
+  const [q, setQ] = useState(i.gen || null);
+  const [diag, setDiag] = useState(i.diag || null);
+  const [showA, setShowA] = useState(false);
+  const [showD, setShowD] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [pm, setPm] = useState(pend ? pend.pm || {} : {});
+  const sec = useElapsed(busy);
+  const isTerm = i.fmt === "知識・用語";
+  const drill = !!q && !isTerm && i.fmt !== "長文読解";
+  const nProb = q?.problems?.length || 0;
+  const nOk = Object.values(pm).filter((v) => v === "o").length;
+  const allOk = drill && nProb > 0 && nOk === nProb;
+  const drillBlock = drill && !allOk;
+
+  const context = `教科: ${i.subject}\n単元: ${u ? u.name : "不明"}\n未定着項目: ${i.label}\n${i.note ? "間違え方: " + i.note : ""}\n出題形式: ${i.fmt || "不明"} / 誤答の種類: ${i.etype || "不明"}\n落とした回数: ${i.failCount}\n履歴: ${(i.history || []).map((h) => `${h.d}:${h.r}`).join(" ") || "なし"}\n同単元の他の未定着: ${ctx.siblings.join(" / ") || "なし"}\n安定している項目: ${ctx.stable.slice(0, 12).join(" / ") || "なし"}\n習った範囲: ${ctx.units.join(" / ")}`;
+
+  const run = async (kind, model = null) => {
+    setBusy(kind); setErr("");
+    try {
+      if (kind === "gen") {
+        setShowA(false); setPm({});
+        const prev = q?.problems?.map((p) => p.q).join(" / ") || "なし";
+        const isRead = i.fmt === "長文読解", isWrite = i.fmt === "記述・作文" || i.fmt === "英作文";
+        const t = isRead
+          ? await callAI(`${context}\n直前の問題（重複させない）: ${prev}\n\nこの読解技能だけを問う練習問題を。150〜250字のオリジナルの短い文章を1つ書き、その文章についてこの技能を問う設問を2問。`,
+              `日本の中学1年生向け。文章は完全オリジナルで既存作品の引用をしない。設問の解答には根拠の箇所を示す。whyは「どこを見て、どう判断したか」を子どもに言わせる問い。\nJSONのみ: {"passage":"","problems":[{"q":"","a":""}],"why":"","point":"","script":""}`, 2600, model)
+          : isWrite
+          ? await callAI(`${context}\n\nこの誤りの種類だけを練習する短い課題を3問。各問は1〜2文を書かせる程度の分量にし、この種類の誤りが起きやすい場面を意図的に含める。`,
+              `日本の中学1年生向け。aは模範解答と、この誤りが起きやすい箇所の指摘。whyは「書いたあと何を確認するか」を子どもに言わせる問い。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"","script":""}`, 2400, model)
+          : await callAI(`${context}\n直前に出した問題（重複させない）: ${prev}\n\nこの項目だけを狙った練習問題を3問。1問目は最も基本の形、2問目は本題、3問目は同じ考え方を別の見た目で。あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。`,
+          `日本の中学1年生を教える講師。厳守: 中1範囲を超えない／習った範囲から逸脱しない／直前の問題と同じ数値・設定にしない／ヒントや選択肢を付けず白紙から解かせる／数学は途中式を書かせる／安定している項目は既知として扱ってよい／未定着の項目を前提にしない。\nwhyは「なぜその手順になるのか」を子どもの言葉で言わせる問い。scriptは採点後の声かけ。できている点を先に述べ、直す点は1つだけ。専門用語なし。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"落とし続ける原因の推定","script":""}`, 2600, model);
+        const p = parseJSON(t); setQ(p); onStore(i.id, { gen: p });
+      } else {
+        const t = await callAI(`${context}\n\n同じ項目を${i.failCount}回落としています。反復では解決しないと判断しました。抜けている前提を特定し、そこまで戻って積み上げ直す手順を。`,
+          `日本の中学1年生を教える講師。causeは最も可能性が高い原因1つ。prereqは戻るべき前提の単元（小学校範囲でも可）。stepsは3〜4段階、各段階は「何をやらせるか」だけ短く。checkは通過の判定方法。\nJSONのみ: {"cause":"","prereq":"","steps":[{"do":"","check":""}]}`, 2000, model);
+        const p = parseJSON(t); setDiag(p); setShowD(true); onStore(i.id, { diag: p });
+      }
+    } catch (e) { setErr(e.message || "失敗"); }
+    setBusy("");
+  };
+
+  const pick = (who, r) => { if (who === "self") { setSelfR(r); setSelfE(""); setParentR(r); setParentE(""); onStore(i.id, { pending: { d: today(), self: r, selfE: "", pm } }); } else { setParentR(r); } };
+  const pickSelfE = (e) => { setSelfE(e); setParentE(e); onStore(i.id, { pending: { d: today(), self: selfR, selfE: e, pm } }); };
+  const setPmStore = (n, v) => { const np = { ...pm, [n]: v }; setPm(np); if (selfR) onStore(i.id, { pending: { d: today(), self: selfR, selfE, pm: np } }); };
+  const canConfirm = parentR && (parentR !== "x" || parentE || selfE);
+  const agree = selfR && parentR && selfR === parentR;
+
+  return (
+    <div className="card">
+      <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}
+        {i.fmt && <em className="tag">{i.fmt}</em>}
+        {i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}
+        {i.nextDue > today() && <em className="early">予定 {i.nextDue.slice(5)}</em>}
+        <em className="lv">間隔 {INT[i.level || 0]}日</em></div>
+      <div className="c-label">{i.label}</div>
+      {i.note && <div className="c-note">{i.note}</div>}
+
+      {!q && <button className="btn-ai" onClick={() => run("gen")} disabled={!!busy}>{busy === "gen" ? `作成中… ${sec}秒` : "類題を作る"}</button>}
+      {i.failCount >= 3 && !diag && <button className="btn-ai warn" onClick={() => run("diag")} disabled={!!busy}>{busy === "diag" ? `診断中… ${sec}秒` : "なぜ定着しないのかを診断"}</button>}
+      {err && <div className="errbox"><p>{err}</p><button className="btn-sm" onClick={() => run("gen", FALLBACK)}>Sonnet 4.6 で作り直す</button></div>}
+
+      {diag && (<div className="dbox"><button className="d-h" onClick={() => setShowD(!showD)}>診断結果 {showD ? "−" : "+"}</button>
+        {showD && (<><div className="d-row"><span>原因</span>{diag.cause}</div><div className="d-row"><span>戻る単元</span>{diag.prereq}</div>
+          {(diag.steps || []).map((s, n) => (<div className="d-step" key={n}><div className="ds-n">{n + 1}</div><div><div className="ds-do">{s.do}</div><div className="ds-ck">通過の目安：{s.check}</div></div></div>))}</>)}</div>)}
+
+      {q && (<div className="qbox">
+        {q.passage && <div className="tr">{q.passage}</div>}
+        {(q.problems || []).map((p, n) => (<div className="qitem" key={n}><div className="q-n">問{n + 1}{drill && <span className="pmk">{["o", "x"].map((v) => (<button key={v} className={"pm " + v + (pm[n] === v ? " on" : "")} onClick={() => setPmStore(n, v)}>{v === "o" ? "○" : "×"}</button>))}</span>}</div><div className="q-q">{p.q}</div>{showA && <div className="q-a">{p.a}</div>}</div>))}
+        {drill && <p className="drill-n">{nOk}/{nProb} 問正解{allOk ? " — 手順が固まりました。説明を聞いてから判定へ" : nOk < nProb && Object.keys(pm).length === nProb ? " — 揃うまで「別の問題」で続けてください。今日は「できなかった」" : ""}</p>}
+        {q.why && !isTerm && <div className="q-why">説明させる問い：{q.why}</div>}
+        {showA && q.point && <div className="q-p">推定：{q.point}</div>}
+        {showA && q.script && <div className="q-s">声かけ例：{q.script}</div>}
+        <div className="q-btns"><button className="btn-sm" onClick={() => setShowA(!showA)}>{showA ? "解答を隠す" : "解答を見る"}</button><button className="btn-sm" onClick={() => run("gen")} disabled={!!busy}>{busy === "gen" ? `${sec}秒` : "別の問題"}</button><button className="btn-sm" onClick={async () => { setBusy("pdf"); setErr(""); try { await exportPDF(genToPaper([i], () => u), () => {}); } catch (e) { setErr(e.message || "PDFを作れませんでした"); } setBusy(""); }} disabled={!!busy}>{busy === "pdf" ? "…" : "PDF"}</button></div>
+        <p className="q-warn">{usedLabel() && `${usedLabel()} が生成。`}内容を確認してから解かせてください。</p></div>)}
+
+      <div className="judge">
+        <div className="j-who">子ども</div>
+        <div className="j-btns">{JUDGE.map(([r, l, c]) => (<button key={r} className={c + (selfR === r ? " on" : "")} disabled={drillBlock && r !== "x"} onClick={() => pick("self", r)}>{l}</button>))}</div>
+        {drillBlock && <p className="drill-w">類題3問がすべて○になるまで「解けた」は押せません。</p>}
+        {selfR === "x" && (<div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selfE === e ? " on" : "")} onClick={() => pickSelfE(e)}>{e}</button>))}</div>)}
+        {selfR && pend && <p className="pend-n">子どもの判定は保存されています。夜に紙を見て、下で確定してください。</p>}
+        {selfR && (<>
+          <div className="j-who">親の確定 {agree && <em className="agree">一致</em>}</div>
+          <div className="j-btns">{JUDGE.map(([r, l, c]) => (<button key={r} className={c + (parentR === r ? " on" : "")} disabled={drillBlock && r !== "x"} onClick={() => pick("parent", r)}>{l}</button>))}</div>
+          {parentR === "x" && (<div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (parentE === e ? " on" : "")} onClick={() => setParentE(e)}>{e}</button>))}</div>)}
+          <button className="btn-main" disabled={!canConfirm} onClick={() => onConfirm(i, selfR, selfE, parentR, parentE || selfE)}>確定{parentR === "oo" || (parentR === "o" && isTerm) ? `（次回 ${INT[Math.min((i.level || 0) + 1, INT.length - 1)]}日後）` : parentR === "o" ? `（次回 ${INT[Math.min((i.level || 0) + 1, 3)]}日後）` : parentR === "x" ? "（明日また）" : ""}</button>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+/* ============ 週末 ============ */
+
+const taught = (u) => !!u.learnedOn;
+function pickUnits(d, subject, max = 3) {
+  const us = d.units.filter((u) => u.subject === subject && taught(u));
+  const withActive = new Set(d.items.filter((i) => i.subject === subject && i.status === "active").map((i) => i.unitId));
+  const score = (u) => (withActive.has(u.id) ? 1000 : 0) + (u.lastTestedOn ? diffDays(u.lastTestedOn, today()) : 500);
+  return us.sort((a, b) => score(b) - score(a)).slice(0, max);
+}
+
+function WeekTab({ d, save, initial }) {
+  const pending = d.papers.some((p) => p.status === "printed");
+  const [mode, setMode] = useState(initial || (pending ? "grade" : "make"));
+  useEffect(() => { if (initial) setMode(initial); }, [initial]);
+  return (
+    <div className="pane">
+      <p className="tabhint">週末の作業。進度を更新 → 作る → 印刷 → 解く → 赤ペンで採点 → 撮る、の順です。</p>
+      <div className="seg"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>テストを作る</button>
+        <button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点した答案を撮る</button>
+        <button className={mode === "read" ? "on" : ""} onClick={() => setMode("read")}>読解</button>
+        <button className={mode === "write" ? "on" : ""} onClick={() => setMode("write")}>記述</button>
+        <button className={mode === "manual" ? "on" : ""} onClick={() => setMode("manual")}>手入力</button></div>
+      {mode === "make" && <MakePapers d={d} save={save} />}
+      {mode === "grade" && <GradeFlow d={d} save={save} />}
+      {mode === "read" && <ReadingMaker d={d} save={save} />}
+      {mode === "write" && <WritingFlow d={d} save={save} />}
+      {mode === "manual" && <ManualTest d={d} save={save} />}
+    </div>
+  );
+}
+
+/* ---- 作問 ---- */
+
+function MakePapers({ d, save }) {
+  const [sel, setSel] = useState([...SUBJECTS]);
+  const [n, setN] = useState("10");
+  const [kind, setKind] = useState("週次");
+  const [imgs, setImgs] = useState({});
+  const [busy, setBusy] = useState("");
+  const [log, setLog] = useState([]);
+  const [customUnits, setCustomUnits] = useState({});
+  const sec = useElapsed(busy);
+  const toggle = (s) => setSel((x) => (x.includes(s) ? x.filter((y) => y !== s) : [...x, s]));
+
+  const addImg = async (s, e) => {
+    const files = Array.from(e.target.files || []).slice(0, 4);
+    const out = [];
+    for (const f of files) { try { out.push({ id: uid(), b64: await compressImage(f) }); } catch {} }
+    setImgs((x) => ({ ...x, [s]: [...(x[s] || []), ...out].slice(0, 4) }));
+    e.target.value = "";
+  };
+
+  const genOne = async (subject) => {
+    const units = customUnits[subject]?.length ? d.units.filter((u) => customUnits[subject].includes(u.id)) : (kind === "累積" ? d.units.filter((u) => u.subject === subject && taught(u)) : pickUnits(d, subject));
+    if (!units.length) throw new Error(`${subject}：「習った」単元がありません。「登録」で進度を更新してください`);
+    const stuck = d.items.filter((i) => i.subject === subject && i.status === "active" && units.some((u) => u.id === i.unitId));
+    const stable = d.items.filter((i) => i.subject === subject && i.status === "stable").map((i) => i.label);
+    const pics = imgs[subject] || [];
+    const prompt = `教科: ${subject}\n種別: ${kind}テスト\n出題範囲:\n${units.map((u) => `・${u.name}${u.pages ? "（" + u.pages + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}\n\n安定している項目（確認として少数混ぜてよい）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}\n\n${n}問作ってください。${pics.length ? `\n添付${pics.length}枚は実際の教科書・ワーク。用語・表現・扱われ方を合わせる。本文や設問はそのまま写さない。添付は「図1」〜「図${pics.length}」として問題用紙と一緒に印刷されるので、地形図・実験装置など自分で描けない図はこの番号で参照して出題する。` : ""}`;
+    const system = `日本の中学1年生向けの、白紙から解かせる${kind === "累積" ? "累積（過去範囲を混ぜた）" : ""}テストを作る。厳守:
+- 中1範囲を超えない。指定範囲から逸脱しない
+- 未出題の単元があれば必ず数問出す
+- 選択肢・穴埋めのヒントなし。数学は途中式を書かせる。英語は日本語→英文を含める
+- 難易度は学校のワーク相当
+- 図を使ってよい。描ける図（座標平面、数直線、平面図形、表、簡単な模式図）は svg にSVGコードを1行で入れる（viewBox必須、幅400以下、stroke="#111" fill="none" 基本、文字13px以上、色なし）。描けない図は添付の図番号を参照する。どちらも無理なら図なしの問題にする
+- 各問に単元名・形式・ねらい・項目名をつける。形式は次から: ${FORMATS.join("／")}。項目名は「後日その一点だけを聞き直せる粒度」で書く（例:「係数が分数の一次方程式」）
+JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":""}]}`;
+    const content = pics.length ? [...pics.map((p) => imgBlock(p.b64)), { type: "text", text: prompt }] : prompt;
+    const t = await callAI(content, system, 6000);
+    const parsed = parseJSON(t);
+    const qs = (parsed.questions || []).map((x, i) => {
+      const u = units.find((uu) => uu.name === x.unit) || units.find((uu) => (x.unit || "").includes(uu.name) || uu.name.includes(x.unit || "")) || units[0];
+      return { n: i + 1, q: x.q || "", a: x.a || "", unitId: u.id, fmt: FORMATS.includes(x.fmt) ? x.fmt : FORMATS[0], aim: x.aim || "", label: x.label || x.aim || "", svg: x.svg || "" };
+    });
+    if (!qs.length) throw new Error(`${subject}：問題を生成できませんでした`);
+    return { id: uid(), code: `${today().slice(5).replace("-", "")}${subject[0]}`, subject, date: today(), kind, unitIds: units.map((u) => u.id), questions: qs, imgs: pics.map((p) => p.b64), status: "printed", model: usedLabel(), updatedAt: now() };
+  };
+
+  const genAll = async () => {
+    setLog([]); const made = [];
+    for (const s of sel) {
+      setBusy(s);
+      try { const p = await genOne(s); made.push(p); setLog((l) => [...l, `${s}：${p.questions.length}問`]); }
+      catch (e) { setLog((l) => [...l, `${s}：失敗（${e.message}）`]); }
+    }
+    setBusy("");
+    if (made.length) save({ ...d, papers: [...d.papers, ...made], units: d.units.map((u) => (made.some((p) => p.unitIds.includes(u.id)) ? { ...u, lastTestedOn: today(), updatedAt: now() } : u)) });
+  };
+
+  const papers = [...d.papers].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 12);
+
+  return (<>
+    <section className="sec">
+      <p className="lead">単元は「未定着がある単元」と「最近出していない単元」から自動で選びます。まとめて生成して印刷してください。</p>
+      <div className="seg sm">{["週次", "累積"].map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
+      <div className="chips mb">{SUBJECTS.map((s) => (<button key={s} className={"chip" + (sel.includes(s) ? " on" : "")} style={sel.includes(s) ? { background: HUE[s] } : {}} onClick={() => toggle(s)}>{s}</button>))}</div>
+      <Fld label="1教科あたりの問題数"><input type="number" value={n} onChange={(e) => setN(e.target.value)} /></Fld>
+      <details className="det"><summary>単元を手で選ぶ・教科書の写真を添付する（任意）</summary>
+        {sel.map((s) => (<div className="det-s" key={s}><div className="det-h" style={{ color: HUE[s] }}>{s}</div>
+          <div className="chips">{d.units.filter((u) => u.subject === s).map((u) => { const on = (customUnits[s] || []).includes(u.id); return (
+            <button key={u.id} className={"chip" + (on ? " on" : "") + (taught(u) ? "" : " dim")} style={on ? { background: HUE[s] } : {}} onClick={() => setCustomUnits((c) => ({ ...c, [s]: on ? (c[s] || []).filter((x) => x !== u.id) : [...(c[s] || []), u.id] }))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>); })}</div>
+          <div className="imgs">{(imgs[s] || []).map((im) => (<div className="thumb" key={im.id}><img src={`data:image/jpeg;base64,${im.b64}`} alt="" /><button onClick={() => setImgs((x) => ({ ...x, [s]: x[s].filter((y) => y.id !== im.id) }))}>×</button></div>))}
+            {(imgs[s] || []).length < 4 && <label className="addimg">＋<input type="file" accept="image/*" multiple hidden onChange={(e) => addImg(s, e)} /></label>}</div></div>))}
+        <p className="ph-note">写真は英語の本文・社会や理科の用語で効きます。計算問題では効果がほぼありません。写真は作問時にだけ使い、保存はされません（印刷用紙には資料として入ります）。</p></details>
+      <button className="btn-main" onClick={genAll} disabled={!!busy || !sel.length}>{busy ? `${busy} を作成中… ${sec}秒` : `${sel.length}教科まとめて作る`}</button>
+      {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}
+    </section>
+    {papers.length > 0 && (<section className="sec"><h3 className="s-h">作ったテスト</h3>
+      {papers.map((p) => (<PaperRow key={p.id} p={p} d={d} save={save} />))}</section>)}
+  </>);
+}
+
+function PaperRow({ p, d, save }) {
+  const [open, setOpen] = useState(false);
+  return (<div className="prow"><div className="pr-main" onClick={() => setOpen(!open)}><Dot s={p.subject} />
+    <span className="pr-t">{p.date.slice(5)} {p.subject} {p.kind} {p.questions.length}問 <em className="code">{p.code}</em></span>
+    <span className={"st " + (p.status === "graded" ? "g" : "")}>{p.status === "graded" ? "採点済" : "未採点"}</span></div>
+    {open && (<div className="pr-body"><PrintSheet paper={p} />
+      <button className="btn-x wide-x" onClick={() => save({ ...d, papers: d.papers.filter((x) => x.id !== p.id), deleted: [...d.deleted, p.id] })}>このテストを削除</button></div>)}</div>);
+}
+
+/* ---- 採点写真 → 自動登録 ---- */
+
+function GradeFlow({ d, save }) {
+  const pending = d.papers.filter((p) => p.status === "printed").sort((a, b) => (a.date < b.date ? 1 : -1));
+  const [pid, setPid] = useState(pending[0]?.id || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [marks, setMarks] = useState(null);
+  const [etypes, setEtypes] = useState({});
+  const [checked, setChecked] = useState({});
+  const [lastFile, setLastFile] = useState(null);
+  const sec = useElapsed(busy);
+  const paper = d.papers.find((p) => p.id === pid);
+
+  const read = async (f, model = null) => {
+    if (!paper) return;
+    setBusy(true); setErr(""); setMarks(null);
+    try {
+      const b64 = await compressImage(f, 1600, 0.8);
+      const t = await callAI([imgBlock(b64), { type: "text", text: `採点済みの答案です。問1〜問${paper.questions.length}について、赤ペンなどでつけられた記号を読み取り、各問が「正解（○）」「不正解（×や／）」「空欄（何も書いていない）」のどれかを判定してください。判読できない問は unknown にしてください。答えの正誤は自分で判断せず、採点記号だけを読んでください。` }],
+        `JSONのみ: {"marks":[{"n":1,"mark":"o"|"x"|"blank"|"unknown"}]}`, 1200, model);
+      const ms = parseJSON(t).marks || [];
+      const map = {}; ms.forEach((m) => { map[m.n] = m.mark; });
+      setMarks(map);
+      const ck = {}, et = {};
+      paper.questions.forEach((qq) => { if (map[qq.n] === "x" || map[qq.n] === "blank") { ck[qq.n] = true; et[qq.n] = map[qq.n] === "blank" ? ETYPES[3] : ETYPES[0]; } });
+      setChecked(ck); setEtypes(et);
+    } catch (e) { setErr(e.message || "読み取れませんでした"); }
+    setBusy(false);
+  };
+
+  const commit = () => {
+    if (!paper || !marks) return;
+    const rows = {};
+    paper.questions.forEach((qq) => { const m = marks[qq.n]; if (m === "unknown" || !m) return; rows[qq.fmt] = rows[qq.fmt] || { fmt: qq.fmt, total: 0, correct: 0 }; rows[qq.fmt].total++; if (m === "o") rows[qq.fmt].correct++; });
+    const rlist = Object.values(rows);
+    const total = rlist.reduce((p, c) => p + c.total, 0), correct = rlist.reduce((p, c) => p + c.correct, 0);
+    const test = { id: uid(), subject: paper.subject, date: today(), kind: paper.kind, source: `自作 ${paper.code}`, rows: rlist, total, correct, unitIds: paper.unitIds, paperId: paper.id, updatedAt: now() };
+    const newItems = paper.questions.filter((qq) => checked[qq.n]).map((qq) => ({ id: uid(), subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "", createdOn: today(), history: [{ d: today(), r: "x", etype: etypes[qq.n] || "" }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }));
+    save({ ...d, tests: [...d.tests, test], items: [...d.items, ...newItems], papers: d.papers.map((p) => (p.id === paper.id ? { ...p, status: "graded", updatedAt: now() } : p)), log: { ...d.log, [today()]: true } });
+    setMarks(null); setPid(pending.filter((p) => p.id !== paper.id)[0]?.id || "");
+  };
+
+  return (<section className="sec">
+    {pending.length === 0 ? <p className="empty">未採点のテストがありません。先に「テストを作る」から作って印刷してください。</p> : (<>
+      <p className="lead">赤ペンで採点したあと、答案を撮ってください。○×の記号を読み取り、結果と未定着項目を自動で組み立てます。</p>
+      <Fld label="どのテストか"><select value={pid} onChange={(e) => { setPid(e.target.value); setMarks(null); }}>{pending.map((p) => (<option key={p.id} value={p.id}>{p.date.slice(5)} {p.subject} {p.kind} {p.code}</option>))}</select></Fld>
+      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "採点済みの答案を撮る"}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) { setLastFile(f); read(f); } }} /></label>
+      {err && <div className="errbox"><p>{err}</p>{lastFile && <button className="btn-sm" onClick={() => read(lastFile, FALLBACK)}>Sonnet 4.6 で読み取る</button>}</div>}
+      {marks && paper && (<>
+        <div className="markgrid">{paper.questions.map((qq) => { const m = marks[qq.n] || "unknown"; return (
+          <button key={qq.n} className={"mk " + m} onClick={() => setMarks((x) => ({ ...x, [qq.n]: m === "o" ? "x" : m === "x" ? "blank" : m === "blank" ? "unknown" : "o" }))}>{qq.n}<span>{m === "o" ? "○" : m === "x" ? "×" : m === "blank" ? "空" : "?"}</span></button>); })}</div>
+        <p className="ph-note">読み取りが違っていたら番号をタップして直せます（○→×→空欄→?の順）。「?」は集計から外れます。</p>
+        <div className="cand-h">未定着リストに入れる項目</div>
+        {paper.questions.filter((qq) => marks[qq.n] === "x" || marks[qq.n] === "blank").map((qq) => (
+          <div className={"cand2" + (checked[qq.n] ? " on" : "")} key={qq.n}>
+            <label className="cand2-l"><input type="checkbox" checked={!!checked[qq.n]} onChange={(e) => setChecked((c) => ({ ...c, [qq.n]: e.target.checked }))} /><span>問{qq.n}　{qq.label}</span></label>
+            <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (etypes[qq.n] === e ? " on" : "")} onClick={() => setEtypes((x) => ({ ...x, [qq.n]: e }))}>{e}</button>))}</div></div>))}
+        <button className="btn-main" onClick={commit}>この内容で登録する</button>
+      </>)}
+    </>)}
+  </section>);
+}
+
+/* ---- 読解 ---- */
+
+const READ_TYPES = ["指示語の内容", "接続語の選択", "理由の説明", "要旨・主張", "心情の読み取り", "語句の意味", "段落の役割"];
+
+function ReadingMaker({ d, save }) {
+  const [subject, setSubject] = useState("国語");
+  const [genre, setGenre] = useState("説明文");
+  const [len, setLen] = useState("600");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const sec = useElapsed(busy);
+  const genres = subject === "国語" ? ["説明文", "物語文", "随筆"] : ["対話文", "手紙・メール", "説明文"];
+  const weak = d.items.filter((i) => i.subject === subject && i.fmt === "長文読解" && i.status === "active").map((i) => i.label);
+  const units = d.units.filter((u) => u.subject === subject);
+  const gen = async () => { setBusy(true); setErr("");
+    try {
+      const sys = subject === "国語"
+        ? `日本の中学1年生向けの国語の読解問題を作る。厳守: 文章は完全なオリジナルで、既存の作品の引用・翻案をしない／中1が読める語彙と漢字（難しい漢字にはふりがなを括弧で）／${genre}として自然な構成／設問は5問、種類は ${READ_TYPES.join("／")} から偏らないように／記述で答える設問を最低2問入れ、字数条件を付ける／解答には根拠となる箇所を示す／各設問に type（上の種類名）と label（「指示語が指す内容を前の段落まで戻って探す」のように、後日その技能だけを聞き直せる粒度）を付ける。\nJSONのみ: {"title":"","passage":"本文（段落は改行で区切る）","questions":[{"n":1,"q":"","a":"","type":"","label":""}]}`
+        : `日本の中学1年生（英語学習1年目）向けの英語読解問題を作る。厳守: 本文は完全なオリジナル／語彙と文法は中1前半（be動詞・一般動詞・can・命令文・三単現まで）に限定し、それ以上は使わない／${genre}として自然／本文の後に日本語の設問を5問（内容一致・理由・指示語・語句の意味・英問英答を混ぜる）／解答は日本語、英問英答は英語／各設問に type と label（例:「代名詞 it が指すものを本文から探す」）を付ける。\nJSONのみ: {"title":"","passage":"","questions":[{"n":1,"q":"","a":"","type":"","label":""}]}`;
+      const t = await callAI(`ジャンル: ${genre}\n本文の長さ: 約${len}${subject === "国語" ? "字" : "語"}\n${weak.length ? "この生徒が落としている読解の技能（重点的に問う）: " + weak.join(" / ") : ""}\n${units.length ? "習っている単元: " + units.map((u) => u.name).join(" / ") : ""}`, sys, 5000);
+      const p = parseJSON(t);
+      const qs = (p.questions || []).map((x, i) => ({ n: i + 1, q: x.q || "", a: x.a || "", unitId: units[0]?.id || "", fmt: "長文読解", aim: x.type || "", label: x.label || x.type || "", svg: "" }));
+      if (!p.passage || !qs.length) throw new Error("生成できませんでした");
+      save({ ...d, papers: [...d.papers, { id: uid(), code: `${today().slice(5).replace("-", "")}読`, subject, date: today(), kind: "読解", title: p.title || "", passage: p.passage, unitIds: units[0] ? [units[0].id] : [], questions: qs, imgs: [], status: "printed", model: usedLabel(), updatedAt: now() }] });
+    } catch (e) { setErr(e.message || "失敗"); }
+    setBusy(false); };
+  const papers = d.papers.filter((p) => p.kind === "読解").sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
+  return (<>
+    <section className="sec"><p className="lead">教科書の文章は使えませんが、新しい文章を書いて設問をつけます。初見で、時間を計って。落とした設問は「読解の技能」として未定着に入り、次回は別の文章で同じ技能を問います。</p>
+      <div className="seg sm">{["国語", "英語"].map((k) => (<button key={k} className={subject === k ? "on" : ""} onClick={() => { setSubject(k); setGenre(k === "国語" ? "説明文" : "対話文"); setLen(k === "国語" ? "600" : "120"); }}>{k}</button>))}</div>
+      <div className="seg sm">{genres.map((g) => (<button key={g} className={genre === g ? "on" : ""} onClick={() => setGenre(g)}>{g}</button>))}</div>
+      <Fld label={subject === "国語" ? "本文の字数" : "本文の語数"}><input type="number" value={len} onChange={(e) => setLen(e.target.value)} /></Fld>
+      {weak.length > 0 && <p className="ph-note">重点：{weak.join("、")}</p>}
+      <button className="btn-main" onClick={gen} disabled={busy}>{busy ? `作成中… ${sec}秒` : "読解問題を作る"}</button>
+      {err && <div className="errbox"><p>{err}</p></div>}</section>
+    {papers.length > 0 && <section className="sec"><h3 className="s-h">作った読解問題</h3>{papers.map((p) => (<PaperRow key={p.id} p={p} d={d} save={save} />))}</section>}
+  </>);
+}
+
+/* ---- 記述・作文 ---- */
+
+const RUBRIC = [["len", "字数を満たした"], ["structure", "段落の型に沿った"], ["surface", "助詞・送り仮名・脱字がない"]];
+
+function WritingFlow({ d, save }) {
+  const [subject, setSubject] = useState("国語");
+  const [task, setTask] = useState(null);
+  const [busy, setBusy] = useState(""); const [err, setErr] = useState("");
+  const [rev, setRev] = useState(null);
+  const [sc, setSc] = useState({ len: 2, structure: 2, surface: 2 });
+  const [addItems, setAddItems] = useState({});
+  const sec = useElapsed(busy);
+  const recent = [...d.writing].filter((w) => w.subject === subject).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 5);
+  const weakSurface = recent.filter((w) => w.surface <= 1).length;
+
+  const genTask = async () => { setBusy("task"); setErr(""); setRev(null);
+    try {
+      const sys = subject === "英語"
+        ? `中学1年生（英語1年目）向けの英作文の課題を1つ作る。語彙・文法は中1前半に限定。JSONのみ: {"prompt":"課題（日本語）","conditions":["3文以上","can を使う"],"model":"模範解答（英語）","points":["採点の観点を2〜3個"]}`
+        : `中学1年生向けの記述・作文の課題を1つ作る。教科は${subject}。定期テストで出る形式（${subject === "国語" ? "意見文・体験文・要約" : "資料を見て理由を説明・用語を使って説明"}）に寄せる。JSONのみ: {"prompt":"課題","conditions":["100字以上120字以内","2段落構成","『たとえば』を使う"],"model":"模範解答","points":["採点の観点を2〜3個"]}`;
+      const t = await callAI(`直近の記述の弱点: ${weakSurface >= 2 ? "表面の誤り（助詞・脱字）が続いている" : "特になし"}。${recent.length ? "過去の課題と被らないように。" : ""}`, sys, 1500);
+      setTask(parseJSON(t)); } catch (e) { setErr(e.message || "失敗"); } setBusy(""); };
+
+  const review = async (f) => { if (!task) return; setBusy("rev"); setErr(""); setRev(null);
+    try { const b64 = await compressImage(f, 1600, 0.8);
+      const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年生が書いた${subject === "英語" ? "英作文" : "記述"}の答案です。\n課題: ${task.prompt}\n条件: ${(task.conditions || []).join("／")}\n\n手書きを読み取り、次を返してください。` }],
+        `判読できない箇所は推測せず「？」にする。\nlen: 字数（語数）条件を満たしているか 0〜2\nstructure: 指定された構成に沿っているか 0〜2\nsurface: 助詞の脱落・送り仮名・脱字・スペル・文法の誤りがないか 0〜2（誤り3つ以上=0、1〜2=1、なし=2）\nerrors: 表面の誤りを1つずつ {"where":"該当箇所","fix":"正しい形","kind":"助詞／脱字／送り仮名／スペル／語形／その他"}\ncontent: 内容についての一言（良い点を先に、直す点は1つだけ。子どもに読ませる前提で平易に）\nJSONのみ: {"transcript":"読み取った全文","len":0,"structure":0,"surface":0,"count":文字数or語数,"errors":[],"content":""}`, 2500);
+      const r = parseJSON(t); setRev(r); setSc({ len: r.len ?? 2, structure: r.structure ?? 2, surface: r.surface ?? 2 });
+      const ai = {}; (r.errors || []).forEach((e, i) => { ai[i] = ["助詞", "脱字", "送り仮名", "スペル", "語形"].includes(e.kind); }); setAddItems(ai);
+    } catch (e) { setErr(e.message || "読み取れませんでした"); } setBusy(""); };
+
+  const commit = () => {
+    const unit = d.units.find((u) => u.subject === subject);
+    const kinds = {}; (rev?.errors || []).forEach((e, i) => { if (addItems[i]) kinds[e.kind] = (kinds[e.kind] || 0) + 1; });
+    const newItems = Object.keys(kinds).map((k) => ({ id: uid(), subject, unitId: unit?.id || "", label: `${subject === "英語" ? "英作文" : "記述"}での${k}の誤り`, note: (rev.errors || []).filter((e) => e.kind === k).slice(0, 3).map((e) => `${e.where}→${e.fix}`).join("、"), fmt: subject === "英語" ? "英作文" : "記述・作文", etype: "分かっていたが間違えた", createdOn: today(), history: [{ d: today(), r: "x", etype: "分かっていたが間違えた" }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }));
+    const merged = newItems.filter((n) => !d.items.some((i) => i.label === n.label && i.status === "active"));
+    const bumped = d.items.map((i) => (newItems.some((n) => n.label === i.label) && i.status === "active" ? { ...i, failCount: i.failCount + 1, level: 0, nextDue: addDays(today(), 1), history: [...i.history, { d: today(), r: "x", etype: i.etype }], updatedAt: now() } : i));
+    save({ ...d, writing: [...d.writing, { id: uid(), date: today(), subject, ...sc, note: task?.prompt?.slice(0, 30) || "", updatedAt: now() }], items: [...bumped, ...merged], log: { ...d.log, [today()]: true } });
+    setTask(null); setRev(null);
+  };
+
+  return (<>
+    <section className="sec">
+      <p className="lead">課題を作る → 紙に書かせる → 書いたあと子ども自身に3項目でチェックさせる → 答案を撮る。表面の誤りは項目として未定着に入り、繰り返す種類が見えます。</p>
+      <div className="seg sm">{["国語", "社会", "理科", "英語"].map((k) => (<button key={k} className={subject === k ? "on" : ""} onClick={() => { setSubject(k); setTask(null); setRev(null); }}>{k}</button>))}</div>
+      {!task && <button className="btn-main" onClick={genTask} disabled={!!busy}>{busy === "task" ? `作成中… ${sec}秒` : "課題を作る"}</button>}
+      {err && <div className="errbox"><p>{err}</p></div>}
+      {task && (<div className="taskbox"><div className="tk-p">{task.prompt}</div><ul className="plain">{(task.conditions || []).map((c, i) => (<li key={i}>・{c}</li>))}</ul>
+        <p className="ph-note">書いたあと、子どもに「字数」「段落」「一文字ずつ読み返す」の3つを自分で確認させてから提出。</p>
+        <button className="btn-sm" onClick={genTask} disabled={!!busy}>別の課題</button></div>)}
+      {task && !rev && <label className="ph-btn">{busy === "rev" ? `読み取り中… ${sec}秒` : "書いた答案を撮る"}<input type="file" accept="image/*" hidden disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) review(f); }} /></label>}
+      {rev && (<>
+        <div className="tr">{rev.transcript}</div>
+        <p className="ph-note">読み取り {rev.count}{subject === "英語" ? "語" : "字"}。「？」は判読できなかった箇所。読み取り自体が違っていたら点を手で直してください。</p>
+        {RUBRIC.map(([k, l]) => (<div className="rub" key={k}><span>{l}</span><div className="rub-b">{[0, 1, 2].map((v) => (<button key={v} className={sc[k] === v ? "on" : ""} onClick={() => setSc((x) => ({ ...x, [k]: v }))}>{v}</button>))}</div></div>))}
+        {(rev.errors || []).length > 0 && (<><div className="cand-h">表面の誤り（チェックしたものは未定着に入る）</div>
+          {rev.errors.map((e, i) => (<label className={"cand2" + (addItems[i] ? " on" : "")} key={i}><input type="checkbox" checked={!!addItems[i]} onChange={(ev) => setAddItems((x) => ({ ...x, [i]: ev.target.checked }))} /><span><em className="pg">{e.kind}</em> {e.where} → {e.fix}</span></label>))}</>)}
+        {rev.content && <div className="q-s">声かけ：{rev.content}</div>}
+        {task.model && <details className="det"><summary>模範解答</summary><div className="tr">{task.model}</div></details>}
+        <button className="btn-main" onClick={commit}>記録する（{sc.len + sc.structure + sc.surface}/6）</button>
+      </>)}
+    </section>
+    {recent.length > 0 && <section className="sec"><h3 className="s-h">最近の記述</h3><div className="mini">{recent.map((w) => (<div key={w.id}>{w.date.slice(5)} {w.len + w.structure + w.surface}/6 {w.note}</div>))}</div></section>}
+  </>);
+}
+
+/* ---- 手入力（学校のワーク等） ---- */
+
+function ManualTest({ d, save }) {
+  const [subject, setSubject] = useState("数学");
+  const [date, setDate] = useState(today());
+  const [kind, setKind] = useState("週次");
+  const [source, setSource] = useState("");
+  const [rows, setRows] = useState([{ id: uid(), fmt: FORMATS[0], total: "", correct: "" }]);
+  const [sel, setSel] = useState([]);
+  const [msg, setMsg] = useState("");
+  const subjUnits = d.units.filter((u) => u.subject === subject);
+  const upd = (id, k, v) => setRows((r) => r.map((x) => (x.id === id ? { ...x, [k]: v } : x)));
+  const clean = rows.filter((r) => r.total !== "" && r.correct !== "").map((r) => ({ fmt: r.fmt, total: Number(r.total), correct: Number(r.correct) }));
+  const submit = () => {
+    if (!clean.length || clean.some((r) => r.correct > r.total)) { setMsg("出題数と正答数を確認してください"); return; }
+    if (!sel.length) { setMsg("出題した単元を選んでください"); return; }
+    const total = clean.reduce((p, c) => p + c.total, 0), correct = clean.reduce((p, c) => p + c.correct, 0);
+    save({ ...d, tests: [...d.tests, { id: uid(), subject, date, kind, source: source.trim(), rows: clean, total, correct, unitIds: sel, updatedAt: now() }], units: d.units.map((u) => (sel.includes(u.id) ? { ...u, lastTestedOn: date, updatedAt: now() } : u)), log: { ...d.log, [today()]: true } });
+    setRows([{ id: uid(), fmt: FORMATS[0], total: "", correct: "" }]); setSource(""); setSel([]); setMsg("記録しました。落とした項目は「登録」から追加してください。"); setTimeout(() => setMsg(""), 3000);
+  };
+  return (<section className="sec">
+    <p className="lead">学校のワークや問題集を使ったときはここに。形式ごとに分けて入れると、図や資料、記述の弱点が見えます。すべて初見が前提です。</p>
+    <SubjRow value={subject} onChange={(s) => { setSubject(s); setSel([]); }} />
+    <div className="seg sm">{["週次", "累積", "定期"].map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
+    <div className="grid2"><Fld label="実施日"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Fld><Fld label="使った教材"><input value={source} onChange={(e) => setSource(e.target.value)} placeholder="例：学校ワーク p.32-35" /></Fld></div>
+    <Fld label="形式ごとの成績">{rows.map((r) => (<div className="fmtrow" key={r.id}><select value={r.fmt} onChange={(e) => upd(r.id, "fmt", e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select><input type="number" className="cnt" placeholder="出題" value={r.total} onChange={(e) => upd(r.id, "total", e.target.value)} /><input type="number" className="cnt" placeholder="正答" value={r.correct} onChange={(e) => upd(r.id, "correct", e.target.value)} />{rows.length > 1 && <button className="btn-x" onClick={() => setRows((x) => x.filter((y) => y.id !== r.id))}>×</button>}</div>))}
+      <button className="btn-sm" onClick={() => setRows((r) => [...r, { id: uid(), fmt: FORMATS[0], total: "", correct: "" }])}>形式を追加</button></Fld>
+    <Fld label="出題した単元"><div className="chips">{subjUnits.length === 0 && <span className="empty">単元が未登録です。</span>}{subjUnits.map((u) => (<button key={u.id} className={"chip" + (sel.includes(u.id) ? " on" : "")} style={sel.includes(u.id) ? { background: HUE[subject] } : {}} onClick={() => setSel((s) => (s.includes(u.id) ? s.filter((x) => x !== u.id) : [...s, u.id]))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>))}</div></Fld>
+    <button className="btn-main" onClick={submit}>記録する</button>{msg && <p className="msg">{msg}</p>}
+  </section>);
+}
+
+/* ============ 印刷 ============ */
+
+const escHTML = (x) => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function safeSvg(src) {
+  let v = String(src || "").trim();
+  if (!/^<svg[\s>]/i.test(v)) return "";
+  v = v.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "").replace(/(href|xlink:href)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, "");
+  return v;
+}
+const LINES = { 数学: 4, 英語: 2, 国語: 3, 社会: 1, 理科: 2, 回収: 3 };
+const SHEET_CSS = `
+.sw{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;color:#111;font-feature-settings:"palt";text-align:left}
+.sw .sheet{background:#fff}
+.sw .ttl{font-size:15pt;font-weight:600;letter-spacing:.1em;margin:0 0 3mm;display:flex;justify-content:space-between;align-items:baseline}
+.sw .ttl small{font-size:8.5pt;font-weight:400;color:#666;letter-spacing:.05em}
+.sw .hdr{display:flex;border:0.6pt solid #111;font-size:9.5pt;margin-bottom:7mm}
+.sw .hdr span{flex:1;padding:2.6mm 3mm;border-right:0.6pt solid #111}
+.sw .hdr span:last-child{border-right:none;flex:0 0 26%}
+.sw .p{display:flex;gap:4mm;margin-bottom:5mm;page-break-inside:avoid;break-inside:avoid}
+.sw .pn{flex:0 0 9mm;font-size:10.5pt;font-weight:600;padding-top:.6mm}
+.sw .pt{flex:1;min-width:0}
+.sw .pq{font-size:11pt;line-height:1.75;margin:0 0 2.5mm;white-space:pre-wrap}
+.sw .fig{margin:2.5mm 0 3mm;text-align:center}
+.sw .fig svg{max-width:100%;height:auto}
+.sw .rule{height:8.5mm;border-bottom:0.4pt solid #B0B0B0}
+.sw .arow{display:flex;gap:3mm;font-size:10pt;line-height:1.7;margin-bottom:2.2mm;page-break-inside:avoid;break-inside:avoid}
+.sw .an{flex:0 0 8mm;font-weight:600}
+.sw .at{flex:1;min-width:0;white-space:pre-wrap}
+.sw .cols{column-count:2;column-gap:9mm}
+.sw .aim{margin-top:7mm;padding-top:3.5mm;border-top:0.5pt dashed #888;font-size:9pt;line-height:1.7;color:#444}
+.sw .ref{margin-bottom:8mm;page-break-inside:avoid}
+.sw .ref .cap{font-size:10pt;font-weight:600;margin-bottom:2mm}
+.sw .ref img{max-width:100%;border:0.4pt solid #999;display:block}
+.sw .note{font-size:9pt;color:#555;margin:0 0 5mm;line-height:1.6}
+.sw .psg{font-size:10.5pt;line-height:2;margin:0 0 7mm;padding:4mm 5mm;border:0.5pt solid #333;white-space:normal}`;
+
+function paperHTML(p) {
+  const nl = LINES[p.subject] || 2;
+  const ref = p.imgs && p.imgs.length ? `<div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　資料</span><small>${escHTML(p.code)}</small></div><p class="note">問題文の「図1」〜「図${p.imgs.length}」はこのページを指します。</p>${p.imgs.map((b, i) => `<div class="ref"><div class="cap">図${i + 1}</div><img src="data:image/jpeg;base64,${b}" alt=""></div>`).join("")}</div>` : "";
+  const passage = p.passage ? `<div class="psg">${escHTML(p.title || "")}${p.title ? "<br><br>" : ""}${escHTML(p.passage).replace(/\n/g, "<br>")}</div>` : "";
+  const qs = p.questions.map((q) => { const svg = safeSvg(q.svg); return `<div class="p"><div class="pn">${q.n}.</div><div class="pt"><p class="pq">${escHTML(q.q)}</p>${svg ? `<div class="fig">${svg}</div>` : ""}${Array.from({ length: svg ? Math.max(2, nl - 1) : nl }, () => `<div class="rule"></div>`).join("")}</div></div>`; }).join("");
+  const anyFig = false;
+  const ans = `<div class="${anyFig ? "" : "cols"}">${p.questions.map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.a)}</div></div>`).join("")}</div>`;
+  const aim = `<div class="aim"><div style="font-weight:600;margin-bottom:2mm">出題のねらい</div>${p.questions.map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.label || q.aim)}${q.aim && q.aim !== q.label ? " — " + escHTML(q.aim) : ""}</div></div>`).join("")}</div>`;
+  return `${ref}<div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(p.kind)}テスト</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span><span>点　　　／${p.questions.length}</span></div>${passage}${qs}</div><div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
+}
+function fileHTML(p) {
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHTML(p.subject)} ${escHTML(p.code)}</title><style>@page{size:A4;margin:17mm 16mm}html,body{margin:0;padding:0}${SHEET_CSS}.sw .sheet{page-break-after:always}.sw .sheet:last-child{page-break-after:auto}#pb{position:fixed;right:16px;bottom:16px;padding:15px 26px;background:#1E2321;color:#fff;border:none;border-radius:5px;font-size:15px;font-family:-apple-system,sans-serif;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35)}@media screen{body{background:#8A928C;padding:14px 0}.sw .sheet{width:210mm;min-height:297mm;margin:0 auto 16px;padding:17mm 16mm;box-sizing:border-box;box-shadow:0 2px 10px rgba(0,0,0,.35)}}@media print{#pb{display:none}}</style></head><body><div class="sw">${paperHTML(p)}</div><button id="pb" onclick="window.print()">印刷する</button></body></html>`;
+}
+function paperText(p) {
+  const nl = LINES[p.subject] || 2, gap = "\n" + "　\n".repeat(nl);
+  return `${p.subject}　${p.kind}テスト（${p.code}）${p.passage ? "\n\n" + (p.title || "") + "\n" + p.passage : ""}\n\n日付　　／　　　名前　　　　　　　　　点　　／${p.questions.length}\n\n${p.questions.map((q) => `${q.n}. ${q.q}${q.svg ? "（図あり・印刷版参照）" : ""}${gap}`).join("\n")}\n\n————　解答　————\n\n${p.questions.map((q) => `${q.n}. ${q.a}`).join("\n")}`;
+}
+
+/* ---- PDF生成（用紙をブロックごとに画像化してA4に詰める） ---- */
+let _libs = null;
+const loadScript = (src) => new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const el = document.createElement("script"); el.src = src; el.onload = res; el.onerror = () => rej(new Error("ライブラリを読み込めません（通信を確認）")); document.head.appendChild(el); });
+const loadLibs = () => (_libs = _libs || Promise.all([loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"), loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")]));
+
+async function buildPDF(p, onStep) {
+  await loadLibs();
+  const { jsPDF } = window.jspdf;
+  const W = 794, H = 1123, PX = 60, PT = 64, PB = 60;
+  const fr = document.createElement("iframe");
+  fr.setAttribute("aria-hidden", "true");
+  fr.style.cssText = `position:fixed;left:-10000px;top:0;width:${W}px;height:1200px;border:0;opacity:0;pointer-events:none`;
+  document.body.appendChild(fr);
+  const doc = fr.contentDocument;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:#fff;color:#111}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw{width:${W}px;background:#fff;font-size:14.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .pq{font-size:15px}.sw .arow,.sw .at{font-size:13.5px}.sw .aim{font-size:12px}.sw .psg{font-size:14px}.sw .rule{border-bottom-color:#B0B0B0}.sw .note,.sw .aim{color:#444}</style></head><body><div class="sw">${paperHTML(p)}</div></body></html>`);
+  doc.close();
+  await new Promise((r) => setTimeout(r, 150));
+  const host = doc.body;
+  try {
+    const pdf = new jsPDF({ unit: "px", format: [W, H], hotfixes: ["px_scaling"] });
+    const sheets = [...host.querySelectorAll(".sheet")];
+    let firstPage = true, n = 0;
+    for (const sh of sheets) {
+      if (!firstPage) pdf.addPage(); firstPage = false;
+      let y = PT;
+      const blocks = [...sh.children].flatMap((el) => (el.classList.contains("cols") || el.classList.contains("aim") ? [...el.children] : [el]));
+      for (const el of blocks) {
+        n++; onStep && onStep(n);
+        const mb = parseFloat(getComputedStyle(el).marginBottom) || 0;
+        const cv = await window.html2canvas(el, { scale: 2, backgroundColor: "#fff", logging: false, windowWidth: W });
+        const w = W - PX * 2, h = (cv.height / cv.width) * w;
+        const usable = H - PT - PB;
+        if (h > usable) {
+          let off = 0; const pageCanvasH = Math.floor(usable * (cv.width / w));
+          while (off < cv.height) {
+            if (y + Math.min(usable, ((cv.height - off) / cv.width) * w) > H - PB && y > PT) { pdf.addPage(); y = PT; }
+            const part = document.createElement("canvas"); const ph = Math.min(pageCanvasH, cv.height - off);
+            part.width = cv.width; part.height = ph; part.getContext("2d").drawImage(cv, 0, off, cv.width, ph, 0, 0, cv.width, ph);
+            const dh = (ph / cv.width) * w; pdf.addImage(part.toDataURL("image/jpeg", 0.9), "JPEG", PX, y, w, dh); y += dh; off += ph;
+            if (off < cv.height) { pdf.addPage(); y = PT; }
+          }
+          y += mb; continue;
+        }
+        if (y + h > H - PB && y > PT) { pdf.addPage(); y = PT; }
+        pdf.addImage(cv.toDataURL("image/jpeg", 0.9), "JPEG", PX, y, w, h);
+        y += h + mb;
+      }
+    }
+    return pdf;
+  } finally { fr.remove(); }
+}
+
+/* 共有シートは iOS/iPadOS だけ。Mac/Windows の Chrome も navigator.share を持つが、OSの共有ダイアログが開いて処理が止まるので直接保存する */
+const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+async function shareFile(blob, name, type) {
+  if (!isIOS()) return false;
+  try { const file = new File([blob], name, { type }); if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return true; } } catch (e) { if (e && e.name === "AbortError") return true; }
+  return false;
+}
+async function exportPDF(p, onStep) {
+  const pdf = await buildPDF(p, onStep); const name = `${p.subject}_${p.code}.pdf`;
+  if (await shareFile(pdf.output("blob"), name, "application/pdf")) return;
+  pdf.save(name);
+}
+/* 類題を印刷用の用紙に変換 */
+function genToPaper(items, unitOf) {
+  const qs = []; let n = 0;
+  items.forEach((i) => { const g = i.gen; if (!g || !g.problems) return; const u = unitOf(i.unitId);
+    g.problems.forEach((p, k) => { n++; qs.push({ n, q: `${k === 0 ? `【${i.subject}・${u ? u.name : ""}】${g.passage ? "\n" + g.passage + "\n" : ""}` : ""}${p.q}`, a: p.a, label: i.label, aim: k === g.problems.length - 1 && g.why ? `説明させる問い：${g.why}` : "", fmt: i.fmt, svg: "" }); }); });
+  const subj = items.length === 1 ? items[0].subject : "回収";
+  return { subject: subj, code: today().slice(5).replace("-", "") + "回", kind: "類題", questions: qs, imgs: [] };
+}
+
+function PrintSheet({ paper: p }) {
+  const [pdfBusy, setPdfBusy] = useState(0);
+  const [pdfErr, setPdfErr] = useState("");
+  const makePdf = async () => { setPdfErr(""); setPdfBusy(1); try { await exportPDF(p, (n) => setPdfBusy(n)); } catch (e) { setPdfErr(e.message || "PDFを作れませんでした"); } setPdfBusy(0); };
+  const [state, setState] = useState("");
+  const body = useMemo(() => paperHTML(p), [p]);
+  const share = async () => { setState(""); const blob = new Blob([fileHTML(p)], { type: "text/html" }); const name = `${p.subject}_${p.code}.html`;
+    if (await shareFile(blob, name, "text/html")) return;
+    try { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); } catch {} };
+  const copyText = async () => { const t = paperText(p); try { await navigator.clipboard.writeText(t); setState("copied"); return; } catch {}
+    const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); setState("copied"); } catch { setState("failed"); } ta.remove(); };
+  return (<>
+    <button className="btn-main" onClick={makePdf} disabled={!!pdfBusy}>{pdfBusy ? `PDFを作成中… ${pdfBusy}` : "PDFにする"}</button>
+    {pdfErr && <div className="errbox"><p>{pdfErr}</p></div>}
+    <button className="btn-sm wide" onClick={share}>HTMLで保存（PDFが作れないとき）</button>
+    <button className="btn-sm wide" onClick={copyText}>テキストをコピー（メモアプリ経由）</button>
+    {state === "copied" && <p className="msg">コピーしました。メモアプリに貼り付け、共有から「プリント」。</p>}
+    {state === "failed" && <p className="warn-t">コピーできませんでした。</p>}
+    <p className="q-warn">{p.model && `${p.model} が生成。`}資料 → 問題用紙 → 解答の順でA4に組みます。iPhoneは共有シートが開くので「ファイルに保存」か「プリント」。印刷前に内容を必ず確認してください。</p>
+    <div className="prev"><style>{SHEET_CSS.replace(/\.sw /g, ".prev .sw ").replace(/^\.sw\{/m, ".prev .sw{")}</style><div className="sw" dangerouslySetInnerHTML={{ __html: body }} /></div>
+  </>);
+}
+
+/* ============ 登録 ============ */
+
+function RegTab({ d, save, initial }) {
+  const [mode, setMode] = useState(initial || (d.units.length ? "item" : "unit"));
+  useEffect(() => { if (initial) setMode(initial); }, [initial]);
+  return (<div className="pane">
+    <p className="tabhint">単元は学期に1回＋週1の進度更新。項目は、平日のワークの×・学校ワーク・返却テストで落としたものを入れる場所です。自作テストの×は「テスト→撮る」で自動です。</p>
+    <div className="seg"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着一覧</button></div>
+    {mode === "unit" && <UnitReg d={d} save={save} />}
+    {mode === "item" && <ItemReg d={d} save={save} />}
+    {mode === "list" && <ItemList d={d} save={save} />}
+  </div>);
+}
+
+function UnitReg({ d, save }) {
+  const [subject, setSubject] = useState("数学");
+  const [name, setName] = useState(""); const [pages, setPages] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [cands, setCands] = useState(null); const [ck, setCk] = useState({});
+  const sec = useElapsed(busy);
+  const us = d.units.filter((u) => u.subject === subject);
+  const addOne = () => { if (!name.trim()) return; save({ ...d, units: [...d.units, { id: uid(), subject, name: name.trim(), pages: pages.trim(), lastTestedOn: null, updatedAt: now() }] }); setName(""); setPages(""); };
+  const readTOC = async (f, model = null) => { setBusy(true); setErr(""); setCands(null);
+    try { const b64 = await compressImage(f, 1600, 0.8);
+      const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年${subject}の教科書の目次です。単元（章・節）を上から順に、ページ範囲つきで書き出してください。` }], `JSONのみ: {"units":[{"name":"単元名","pages":"p.12-25"}]}。粒度は「章」ではなく「節」（テストの範囲指定に使える細かさ）。`, 2000, model);
+      const u = parseJSON(t).units || []; setCands(u); const c = {}; u.forEach((x, i) => { c[i] = !us.some((e) => e.name === x.name); }); setCk(c);
+    } catch (e) { setErr(e.message || "読み取れませんでした"); } setBusy(false); };
+  const commit = () => { const add = (cands || []).filter((_, i) => ck[i]).map((x) => ({ id: uid(), subject, name: x.name, pages: x.pages || "", lastTestedOn: null, updatedAt: now() })); if (add.length) save({ ...d, units: [...d.units, ...add] }); setCands(null); };
+  return (<>
+    <section className="sec"><SubjRow value={subject} onChange={setSubject} />
+      <p className="lead">学期の初めに教科書の目次を撮って一括登録すれば、以後の登録は不要です。日々の「授業でやった」は追いません。「テストしたか」だけを追います。</p>
+      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "教科書の目次を撮る"}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) readTOC(f); }} /></label>
+      {err && <div className="errbox"><p>{err}</p></div>}
+      {cands && (<><p className="ph-note">登録する単元にチェック。既にあるものは外してあります。</p>
+        {cands.map((x, i) => (<label className={"cand2" + (ck[i] ? " on" : "")} key={i}><input type="checkbox" checked={!!ck[i]} onChange={(e) => setCk((c) => ({ ...c, [i]: e.target.checked }))} /><span>{x.name} <em className="pg">{x.pages}</em></span></label>))}
+        <button className="btn-main" onClick={commit}>チェックした単元を登録</button></>)}
+      <details className="det"><summary>手で1つ追加</summary><div className="grid2"><Fld label="単元名"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：一次方程式の利用" /></Fld><Fld label="ページ"><input value={pages} onChange={(e) => setPages(e.target.value)} placeholder="p.48-52" /></Fld></div><button className="btn-sm" onClick={addOne}>追加</button></details>
+    </section>
+    <section className="sec"><h3 className="s-h">{subject}の単元 {us.length}件 <span className="cnt">習った {us.filter(taught).length}</span></h3>
+      <p className="lead">週末に「今週どこまで進んだ？」と聞いて、その単元の「ここまで」を押してください。それより前の単元もまとめて「習った」になります。作問は習った単元からしか出ません。</p>
+      {us.length === 0 && <p className="empty">未登録。</p>}
+      {us.map((u, idx) => (<div className={"urow" + (taught(u) ? "" : " untaught")} key={u.id}><div><div className="u-name">{u.name} <em className="pg">{u.pages}</em></div><div className="u-meta">{taught(u) ? (u.lastTestedOn ? `最終出題 ${u.lastTestedOn.slice(5)}` : <span className="never">未出題</span>) : "まだ習っていない"}</div></div>
+        <div className="u-btns">{!taught(u) && <button className="btn-sm" onClick={() => save({ ...d, units: d.units.map((x) => (x.subject === subject && us.indexOf(x) <= idx && !x.learnedOn ? { ...x, learnedOn: today(), updatedAt: now() } : x)) })}>ここまで</button>}
+          <button className="btn-x" onClick={() => save({ ...d, units: d.units.filter((x) => x.id !== u.id), deleted: [...d.deleted, u.id] })}>×</button></div></div>))}</section>
+  </>);
+}
+
+function ItemReg({ d, save }) {
+  const [subject, setSubject] = useState("数学");
+  const [unitId, setUnitId] = useState(""); const [label, setLabel] = useState(""); const [note, setNote] = useState("");
+  const [fmt, setFmt] = useState(FORMATS[0]); const [etype, setEtype] = useState(ETYPES[0]);
+  const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false); const [cands, setCands] = useState(null); const [err, setErr] = useState("");
+  const [ck, setCk] = useState({}); const [cet, setCet] = useState({});
+  const sec = useElapsed(busy);
+  const us = d.units.filter((u) => u.subject === subject);
+  const commitAll = () => { if (!unitId) { setMsg("単元を選んでください"); return; }
+    const add = (cands || []).filter((_, i) => ck[i]).map((c, i) => ({ id: uid(), subject, unitId, label: c.label, note: c.note || "", fmt: FORMATS.includes(c.fmt) ? c.fmt : FORMATS[0], etype: cet[i] || (ETYPES.includes(c.etype) ? c.etype : ETYPES[0]), createdOn: today(), history: [{ d: today(), r: "x", etype: cet[i] || c.etype || ETYPES[0] }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }));
+    if (!add.length) return; save({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }); setCands(null); setMsg(`${add.length}件を追加しました。明日の「今日」に出ます`); setTimeout(() => setMsg(""), 3000); };
+  useEffect(() => { setUnitId(us.length ? us[us.length - 1].id : ""); }, [subject, d.units.length]);
+  const add = () => { if (!label.trim() || !unitId) { setMsg("単元と項目を入れてください"); return; }
+    save({ ...d, items: [...d.items, { id: uid(), subject, unitId, label: label.trim(), note: note.trim(), fmt, etype, createdOn: today(), history: [{ d: today(), r: "x", etype }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }] });
+    setLabel(""); setNote(""); setMsg("追加しました"); setTimeout(() => setMsg(""), 2000); };
+  const extract = async (f) => { setBusy(true); setErr(""); setCands(null);
+    try { const b64 = await compressImage(f, 1400); const un = us.find((u) => u.id === unitId)?.name;
+      const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年生の${subject}の答案です。${un ? "単元は「" + un + "」。" : ""}間違っている設問と空欄の設問について「何が身についていないか」を項目として書き出してください。` }],
+        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。noteは答案から読める誤り方。fmtは ${FORMATS.join("／")} から。etypeは ${ETYPES.join("／")} から（空欄なら時間切れ・空欄）。判読できない設問は除外。最大10件。JSONのみ: {"items":[{"label":"","note":"","fmt":"","etype":""}]}`, 2400);
+      const cs = parseJSON(t).items || []; setCands(cs); const c = {}, e = {}; cs.forEach((x, i) => { c[i] = true; e[i] = ETYPES.includes(x.etype) ? x.etype : ETYPES[0]; }); setCk(c); setCet(e); } catch (e) { setErr(e.message || "読み取れませんでした"); } setBusy(false); };
+  return (<section className="sec">
+    <p className="lead">その日のワークの×を、その夜に撮って登録します。翌日の「今日」に出すためです。自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
+    <SubjRow value={subject} onChange={setSubject} />
+    <Fld label="単元"><select value={unitId} onChange={(e) => setUnitId(e.target.value)}><option value="">—</option>{us.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</select></Fld>
+    <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "答案の写真から候補を出す"}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) extract(f); }} /></label>
+    {err && <div className="errbox"><p>{err}</p></div>}
+    {cands && (<>
+      <p className="ph-note">読み取った候補。内容を確認し、誤答の種類を選んで、まとめて登録。手順1で解けたなら「分かっていたが間違えた」、解答を見て再現できた・できなかったなら「知らなかった」。</p>
+      {cands.length === 0 && <p className="empty">候補なし。</p>}
+      {cands.map((c, i) => (<div className={"cand2" + (ck[i] ? " on" : "")} key={i}>
+        <label className="cand2-l"><input type="checkbox" checked={!!ck[i]} onChange={(e) => setCk((x) => ({ ...x, [i]: e.target.checked }))} /><span>{c.label}{c.note && <em className="cd-n">{c.note}</em>}<em className="pg"> {c.fmt}</em></span></label>
+        <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (cet[i] === e ? " on" : "")} onClick={() => setCet((x) => ({ ...x, [i]: e }))}>{e}</button>))}</div></div>))}
+      {cands.length > 0 && <button className="btn-main" onClick={commitAll}>チェックした {Object.values(ck).filter(Boolean).length} 件を登録</button>}
+      <details className="det"><summary>候補を1つ選んで手で直す</summary>{cands.map((c, i) => (<button className="cand" key={i} onClick={() => { setLabel(c.label); setNote(c.note || ""); if (FORMATS.includes(c.fmt)) setFmt(c.fmt); if (ETYPES.includes(c.etype)) setEtype(c.etype); }}><span className="cd-l">{c.label}</span></button>))}</details>
+    </>)}
+    <Fld label="項目"><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="例：係数が分数の一次方程式" /></Fld>
+    <Fld label="どう間違えたか（任意）"><input value={note} onChange={(e) => setNote(e.target.value)} /></Fld>
+    <div className="grid2"><Fld label="形式"><select value={fmt} onChange={(e) => setFmt(e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select></Fld><Fld label="誤答の種類"><select value={etype} onChange={(e) => setEtype(e.target.value)}>{ETYPES.map((f) => (<option key={f}>{f}</option>))}</select></Fld></div>
+    <button className="btn-main" onClick={add}>未定着リストに追加</button>{msg && <p className="msg">{msg}</p>}
+  </section>);
+}
+
+function ItemList({ d, save }) {
+  const unitOf = (id) => d.units.find((u) => u.id === id);
+  return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
+    {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
+      <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
+        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{i.etype ? ` · ${i.etype}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div></div><button className="btn-x" onClick={() => save({ ...d, items: d.items.filter((x) => x.id !== i.id), deleted: [...d.deleted, i.id] })}>×</button></div>); })}</div>); })}</>);
+}
+
+/* ============ 分析 ============ */
+
+function AnaTab({ d }) {
+  const ret = retention(d.items);
+  const hint = <p className="tabhint">見るだけの画面。操作はありません。上から順に重要です。</p>;
+  const retBy = SUBJECTS.map((s) => [s, retention(d.items.filter((i) => i.subject === s))]);
+  const cum = SUBJECTS.map((s) => [s, d.tests.filter((t) => t.subject === s && t.kind === "累積").sort((a, b) => (a.date < b.date ? -1 : 1)).map((t) => ({ ...t, rate: pct(t.correct, t.total) }))]);
+  const agree = useMemo(() => { let a = 0, t = 0; d.items.forEach((i) => (i.history || []).forEach((h) => { if (h.self) { t++; if (h.self === h.r) a++; } })); return { a, t, rate: pct(a, t) }; }, [d.items]);
+  const etAgg = useMemo(() => { const m = {}; d.items.forEach((i) => (i.history || []).forEach((h) => { if (h.r === "x" && h.etype) m[h.etype] = (m[h.etype] || 0) + 1; })); return Object.entries(m).sort((a, b) => b[1] - a[1]); }, [d.items]);
+  const etMax = etAgg.length ? etAgg[0][1] : 1;
+  const cost = SUBJECTS.map((s) => { const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!st.length) return null; const avg = (st.reduce((p, c) => p + c.failCount, 0) / st.length).toFixed(1); return [s, st.length, avg]; }).filter(Boolean);
+  const days = Array.from({ length: 28 }, (_, i) => addDays(today(), -27 + i));
+  const wr = [...d.writing].sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  return (<div className="pane">
+    {hint}
+    <div className="blk"><h3>保持率 <span className="cnt">30日以上あけた再出題での正答率</span></h3>
+      <p className="blk-s">これが学力の実態に最も近い数字です。短い間隔の正解は含みません。</p>
+      {ret.t === 0 ? <p className="empty">まだ30日以上あけた再出題がありません。運用開始から1か月以降に出ます。</p> : (<>
+        <div className="big">{ret.rate}%<small> {ret.c}/{ret.t}</small></div>
+        {retBy.filter(([, r]) => r.t > 0).map(([s, r]) => (<div className="mrow" key={s}><div className="mr-name" style={{ color: HUE[s] }}>{s}</div><div className="mr-bar"><span style={{ width: `${r.rate}%`, background: r.rate >= 85 ? "#2F6F5E" : r.rate >= 70 ? "#C08A3E" : "#A8443B" }} /></div><div className="mr-meta"><span>{r.rate}%</span><span>{r.c}/{r.t}</span></div></div>))}</>)}</div>
+
+    <div className="blk"><h3>累積テストの正答率 <span className="cnt">初見・過去範囲混合</span></h3>
+      {cum.every(([, r]) => !r.length) && <p className="empty">記録なし。月1回の累積テストで溜まります。</p>}
+      {cum.filter(([, r]) => r.length).map(([s, rows]) => (<div className="tc" key={s}><div className="tc-head"><span style={{ color: HUE[s], fontWeight: 700 }}>{s}</span><span className="tc-d">{rows[0].rate} → {rows[rows.length - 1].rate}%</span></div><Spark rows={rows} color={HUE[s]} /></div>))}</div>
+
+    <FormatBlock d={d} />
+
+    <div className="blk"><h3>誤答の種類 <span className="cnt">対処が違う</span></h3>
+      {etAgg.length === 0 ? <p className="empty">記録なし。</p> : etAgg.map(([t, c]) => (<div className="erow" key={t}><span className="er-name">{t}</span><span className="er-bar"><span style={{ width: `${(c / etMax) * 100}%` }} /></span><span className="er-n">{c}</span></div>))}
+      <p className="blk-s" style={{ marginTop: 8 }}>知らなかった→暗記／分かっていたが間違えた→見直し習慣／読み間違えた→問題文の読み方／時間切れ→制限時間つき練習</p></div>
+
+    <div className="blk"><h3>安定までにかかった回数 <span className="cnt">難易度に左右されにくい指標</span></h3>
+      {cost.length === 0 ? <p className="empty">安定した項目がまだありません。</p> : cost.map(([s, n, avg]) => (<div className="mr2" key={s}><span className="m-n" style={{ color: HUE[s] }}>{s}</span><span className="m-v">平均 {avg} 回</span><span className="m-t">{n}件</span></div>))}</div>
+
+    <div className="blk"><h3>子どもの自己判定と親の判定の一致率 <span className="cnt">採点を渡す目安</span></h3>
+      {agree.t === 0 ? <p className="empty">記録なし。</p> : (<><div className="big">{agree.rate}%<small> {agree.a}/{agree.t}</small></div><p className="blk-s">3週連続で90%を超えたら、採点を子どもに渡す条件を満たしています。</p></>)}</div>
+
+    {wr.length > 0 && (<div className="blk"><h3>記述の基準点 <span className="cnt">6点満点</span></h3><Spark rows={wr.map((w) => ({ id: w.id, rate: Math.round(((w.len + w.structure + w.surface) / 6) * 100) }))} color="#7A3D6B" /><div className="legend">{wr.map((w) => (<span key={w.id}>{w.date.slice(5)} {w.len + w.structure + w.surface}/6</span>))}</div></div>)}
+
+    <div className="blk"><h3>実施ログ <span className="cnt">連続 {streakDays(d.log)} 日</span></h3>
+      <div className="heat">{days.map((dd) => (<span key={dd} className={d.log[dd] ? "on" : ""} title={dd} />))}</div>
+      <p className="blk-s">点数より先に、ここが途切れます。空白が3日続いたら仕組みを見直してください。</p></div>
+  </div>);
+}
+
+function FormatBlock({ d }) {
+  const [scope, setScope] = useState("全教科");
+  const rowsOf = (t) => (t.rows && t.rows.length ? t.rows : [{ fmt: "（形式未記録）", total: t.total, correct: t.correct }]);
+  const stats = useMemo(() => { const m = {}; const inS = (t) => scope === "全教科" || t.subject === scope; const dates = [...new Set(d.tests.filter(inS).map((t) => t.date))].sort(); const mid = dates[Math.floor(dates.length / 2)] || "";
+    d.tests.filter(inS).forEach((t) => rowsOf(t).forEach((r) => { const k = r.fmt; m[k] = m[k] || { fmt: k, total: 0, correct: 0, early: [0, 0], late: [0, 0] }; m[k].total += r.total; m[k].correct += r.correct; const h = t.date < mid ? "early" : "late"; m[k][h][0] += r.correct; m[k][h][1] += r.total; }));
+    return Object.values(m).filter((x) => x.total > 0).sort((a, b) => a.correct / a.total - b.correct / b.total); }, [d.tests, scope]);
+  const miss = useMemo(() => { const m = {}; d.items.filter((i) => i.status === "active" && (scope === "全教科" || i.subject === scope)).forEach((i) => { const k = i.fmt || "（形式未記録）"; m[k] = (m[k] || 0) + 1; }); return m; }, [d.items, scope]);
+  return (<div className="blk"><h3>出題形式ごとの正答率 <span className="cnt">低い順</span></h3>
+    <p className="blk-s">図・資料・長文・記述など、アプリが作れない形式も、学校のワークの結果を入れれば見えます。</p>
+    <div className="seg sm">{["全教科", ...SUBJECTS].map((k) => (<button key={k} className={scope === k ? "on" : ""} onClick={() => setScope(k)}>{k}</button>))}</div>
+    {stats.length === 0 && <p className="empty">記録なし。</p>}
+    {stats.map((x) => { const r = pct(x.correct, x.total); const e = x.early[1] ? pct(x.early[0], x.early[1]) : null; const l = x.late[1] ? pct(x.late[0], x.late[1]) : null; return (
+      <div className="mrow" key={x.fmt}><div className="mr-name">{x.fmt}{miss[x.fmt] ? <em className="fmn">未定着{miss[x.fmt]}</em> : null}</div><div className="mr-bar"><span style={{ width: `${Math.max(r, 3)}%`, background: r >= 85 ? "#2F6F5E" : r >= 70 ? "#C08A3E" : "#A8443B" }} /></div>
+        <div className="mr-meta"><span>{r}%</span><span>{x.correct}/{x.total}</span>{e !== null && l !== null && x.early[1] > 0 && x.late[1] > 0 && <span style={{ color: l >= e ? "#2F6F5E" : "#A8443B" }}>前半{e}→後半{l}</span>}</div></div>); })}</div>);
+}
+
+function Spark({ rows, color }) {
+  const W = 320, H = 80, P = 8, n = rows.length;
+  const x = (i) => (n === 1 ? W / 2 : P + (i * (W - 2 * P)) / (n - 1)); const y = (v) => H - P - (v / 100) * (H - 2 * P);
+  return (<svg viewBox={`0 0 ${W} ${H}`} className="spark" preserveAspectRatio="none">
+    <line x1="0" y1={y(90)} x2={W} y2={y(90)} stroke="#C9CEC9" strokeDasharray="3 3" /><text x="2" y={y(90) - 3} fontSize="9" fill="#8A928C">90%</text>
+    <path d={rows.map((r, i) => `${i ? "L" : "M"}${x(i)},${y(r.rate)}`).join(" ")} fill="none" stroke={color} strokeWidth="2" />
+    {rows.map((r, i) => (<circle key={r.id} cx={x(i)} cy={y(r.rate)} r="3.5" fill={color} />))}</svg>);
+}
+
+/* ============ テスト（定期テストと校正） ============ */
+
+function ExamTab({ d, save }) {
+  const [name, setName] = useState(""); const [date, setDate] = useState("");
+  const exams = [...d.exams].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const add = () => { if (!date) return; save({ ...d, exams: [...d.exams, { id: uid(), name: name.trim(), date, unitIds: [], actual: {}, updatedAt: now() }] }); setName(""); setDate(""); };
+  return (<div className="pane">
+    <p className="tabhint">学校の定期テストを登録し、範囲を選ぶ。返却されたら実点を入れる。</p>
+    <section className="sec"><div className="grid2"><Fld label="テスト名"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：2学期中間" /></Fld><Fld label="実施日"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Fld></div><button className="btn-sm" onClick={add}>追加</button></section>
+    {exams.length === 0 && <p className="empty">定期テストを追加してください。範囲を選ぶと、やることが確定します。</p>}
+    {exams.map((ex) => (<ExamCard key={ex.id} ex={ex} d={d} save={save} />))}
+  </div>);
+}
+
+function ExamCard({ ex, d, save }) {
+  const upd = (patch) => save({ ...d, exams: d.exams.map((e) => (e.id === ex.id ? { ...e, ...patch, updatedAt: now() } : e)) });
+  const left = diffDays(today(), ex.date);
+  const past = left < 0;
+  const inRange = d.units.filter((u) => ex.unitIds.includes(u.id));
+  const rangeItems = d.items.filter((i) => ex.unitIds.includes(i.unitId) && i.status === "active");
+  const never = inRange.filter((u) => !u.lastTestedOn);
+  const stuck = rangeItems.filter((i) => i.failCount >= 3);
+  const predicted = (s) => { const c = d.tests.filter((t) => t.subject === s && t.kind === "累積" && t.date <= ex.date).sort((a, b) => (a.date < b.date ? 1 : -1))[0]; return c ? pct(c.correct, c.total) : null; };
+  return (<div className="blk">
+    <div className="ex-h"><strong>{ex.name || "テスト"}</strong> {ex.date} {!past && <em className={"cnt-b" + (left <= 14 ? " near" : "")}>D-{left}</em>}<button className="btn-x" onClick={() => save({ ...d, exams: d.exams.filter((e) => e.id !== ex.id), deleted: [...d.deleted, ex.id] })}>×</button></div>
+    <Fld label="出題範囲"><div className="chips">{d.units.map((u) => (<button key={u.id} className={"chip" + (ex.unitIds.includes(u.id) ? " on" : "")} style={ex.unitIds.includes(u.id) ? { background: HUE[u.subject] } : {}} onClick={() => upd({ unitIds: ex.unitIds.includes(u.id) ? ex.unitIds.filter((x) => x !== u.id) : [...ex.unitIds, u.id] })}>{u.subject}・{u.name}</button>))}</div></Fld>
+    {!past && ex.unitIds.length > 0 && (<>
+      <div className={"count" + (left <= 14 ? " near" : "")}><div className="cn-n">あと {left} 日</div><div className="cn-s">範囲内の未定着 <strong>{rangeItems.length}</strong> 件{left <= 14 && " · 新しいことはやらず、これだけを潰す"}</div></div>
+      {never.length > 0 && <div className="alert"><strong>一度も出題していない範囲 {never.length} 件</strong><p>落とした記録がないのは試していないから。最優先でテストしてください。</p><ul className="plain">{never.map((u) => (<li key={u.id}><Dot s={u.subject} />{u.subject}・{u.name}</li>))}</ul></div>}
+      {stuck.length > 0 && <div className="sub-b"><strong>3回以上落ちている {stuck.length} 件</strong> — 反復では解決しません。診断か相談を。</div>}
+      {SUBJECTS.map((s) => { const its = rangeItems.filter((i) => i.subject === s); if (!its.length) return null; return (<div className="plan" key={s}><div className="pl-h" style={{ color: HUE[s] }}>{s}（{its.length}）</div><ul className="plain">{its.map((i) => (<li key={i.id}>{i.label}<em> {i.fmt}</em></li>))}</ul></div>); })}
+      {rangeItems.length === 0 && <p className="done">範囲内の未定着はゼロ。直前に詰め込む必要はありません。</p>}</>)}
+    <div className="calib"><div className="cand-h">実際の点数（返却後に入力）と、ツール上の予測</div>
+      {SUBJECTS.map((s) => { const p = predicted(s); const a = ex.actual?.[s]; const gap = a !== undefined && a !== "" && p !== null ? Number(a) - p : null; return (
+        <div className="cal-row" key={s}><span className="m-n" style={{ color: HUE[s] }}>{s}</span><input type="number" className="cnt" placeholder="実点" value={a ?? ""} onChange={(e) => upd({ actual: { ...(ex.actual || {}), [s]: e.target.value } })} /><span className="cal-p">予測 {p === null ? "—" : p + "%"}</span>{gap !== null && <span className="cal-g" style={{ color: Math.abs(gap) <= 7 ? "#2F6F5E" : "#A8443B" }}>{gap > 0 ? "+" : ""}{gap}</span>}</div>); })}
+      <p className="blk-s">予測＝直近の累積テストの正答率。ずれが±7を超える教科は、自作の物差しが本番と合っていません。その教科の作問の難易度か範囲を見直す材料です。</p></div>
+  </div>);
+}
+
+/* ============ 依頼文 ============ */
+
+function ExportTab({ d }) {
+  const [ask, setAsk] = useState("上記をふまえて、次にやるべきことを提案してください。");
+  const unitOf = (id) => d.units.find((u) => u.id === id);
+  const text = useMemo(() => {
+    const L = [`【学習状況 ${today()}】`];
+    const nx = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+    if (nx) L.push(`次のテスト: ${nx.name} ${nx.date}（あと${diffDays(today(), nx.date)}日）`);
+    const r = retention(d.items); if (r.t) L.push(`保持率（30日以上）: ${r.rate}% (${r.c}/${r.t})`);
+    L.push(`連続実施: ${streakDays(d.log)}日`);
+    SUBJECTS.forEach((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active"); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); const us = d.units.filter((u) => u.subject === s); const ts = d.tests.filter((t) => t.subject === s).sort((a, b) => (a.date < b.date ? -1 : 1));
+      if (!us.length && !act.length && !ts.length) return; L.push("", `■ ${s}`);
+      if (ts.length) L.push("  正答率: " + ts.slice(-6).map((t) => `${t.date.slice(5)}(${t.kind}) ${pct(t.correct, t.total)}%`).join(" → "));
+      const fm = {}; ts.forEach((t) => (t.rows || []).forEach((x) => { fm[x.fmt] = fm[x.fmt] || [0, 0]; fm[x.fmt][0] += x.correct; fm[x.fmt][1] += x.total; }));
+      const fk = Object.entries(fm).sort((a, b) => a[1][0] / a[1][1] - b[1][0] / b[1][1]); if (fk.length) L.push("  形式別: " + fk.map(([f, v]) => `${f} ${pct(v[0], v[1])}%`).join("、"));
+      const never = us.filter((u) => !u.lastTestedOn); if (never.length) L.push("  未出題: " + never.map((u) => u.name).join("、"));
+      if (act.length) { L.push("  未定着:"); act.sort((a, b) => b.failCount - a.failCount).forEach((i) => { const u = unitOf(i.unitId); L.push(`    ・${i.label}（${u ? u.name : "—"} / ${i.fmt || ""} / ${i.etype || ""} / ${i.failCount}回${i.note ? " / " + i.note : ""}）`); }); }
+      if (st.length) L.push(`  安定: ${st.length}件`);
+      const stuck = act.filter((i) => i.failCount >= 3); if (stuck.length) L.push("  ※理解の欠落が疑われる: " + stuck.map((i) => i.label).join("、")); });
+    const rd = d.items.filter((i) => i.fmt === "長文読解" && i.status === "active"); if (rd.length) L.push("", "■ 読解で落としている技能: " + rd.map((i) => i.label).join("、"));
+    if (d.writing.length) { const w = d.writing.slice(-5); L.push("", "■ 記述の基準点（字数/構成/表面）: " + w.map((x) => `${x.date.slice(5)} ${x.len}/${x.structure}/${x.surface}`).join("、")); }
+    L.push("", "■ 依頼", ask); return L.join("\n"); }, [d, ask]);
+  const copy = () => { const ta = document.getElementById("expta"); ta.select(); document.execCommand("copy"); };
+  return (<div className="pane"><p className="lead">週1回程度、これを貼って相談してください。読解教材の作成、記述の添削、3回以上落ちた項目の対応は、こちらで扱います。</p>
+    <Fld label="依頼内容"><textarea rows={2} value={ask} onChange={(e) => setAsk(e.target.value)} /></Fld><textarea id="expta" className="exp" readOnly rows={18} value={text} /><button className="btn-main" onClick={copy}>コピーする</button></div>);
+}
+
+/* ============ CSS ============ */
+
+const CSS = `
+.tp{margin-bottom:12px}.tp .btn-sm.wide{margin-top:0}
+.pend-n{font-size:11px;color:#C08A3E;margin:6px 0 0}
+.pmk{margin-left:8px;display:inline-flex;gap:3px}.pm{width:24px;height:22px;border:1px solid var(--line);background:var(--card);border-radius:3px;font-size:12px;cursor:pointer;color:var(--ink3);padding:0}.pm.o.on{background:#2F6F5E;color:#fff;border-color:#2F6F5E}.pm.x.on{background:#A8443B;color:#fff;border-color:#A8443B}
+.drill-n{font-size:11px;color:var(--ink2);margin:2px 0 8px;line-height:1.6}.drill-w{font-size:11px;color:#A8443B;margin:5px 0 0}
+.j-btns button:disabled{opacity:.3;cursor:default}
+.urow.untaught .u-name{color:var(--ink3)}.u-btns{display:flex;align-items:center;gap:4px}.chip.dim{opacity:.45}
+.taskbox{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:11px;margin:8px 0}.tk-p{font-size:14px;line-height:1.6;margin-bottom:6px;font-weight:700}
+.tr{font-size:12px;line-height:1.9;white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;margin:8px 0}
+.tabhint{font-size:12px;color:var(--ink2);background:#EEF1EE;border-radius:3px;padding:8px 10px;margin:0 0 12px;line-height:1.6}
+.hero{background:var(--ink);color:#fff;border-radius:5px;padding:18px 16px;margin-bottom:12px;cursor:pointer}
+.hero.quiet{background:#2F6F5E;cursor:default}
+.hero-k{font-size:11px;opacity:.7;letter-spacing:.08em;margin-bottom:6px}.hero-t{font-size:19px;font-weight:700;line-height:1.4;margin-bottom:6px}.hero-w{font-size:12px;opacity:.85;line-height:1.6}
+.hero-b{display:flex;justify-content:space-between;margin-top:12px;font-size:12px;opacity:.85}.hero-go{font-weight:700;opacity:1}
+.nxt{display:block;width:100%;text-align:left;padding:10px;margin-bottom:6px;border:1px solid var(--line);background:var(--paper);border-radius:3px;cursor:pointer;font-family:inherit}
+.nxt-t{display:block;font-size:13px;font-weight:700;color:var(--ink)}.nxt-w{display:block;font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
+.hm-row{display:flex;gap:14px;margin-bottom:10px}.hm-k{font-size:10px;color:var(--ink3)}.hm-v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
+.heat.sm{grid-template-columns:repeat(14,1fr);margin:0}
+.flow{margin:0;padding-left:18px;font-size:12px;line-height:1.9;color:var(--ink2)}.flow b{color:var(--ink)}
+.root{--ink:#1E2321;--ink2:#5A615C;--ink3:#8A928C;--paper:#F6F7F5;--card:#FFF;--line:#DDE2DD;
+ font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
+.root *{box-sizing:border-box}
+.hd{padding:18px 16px 10px}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em}.hd-s{font-size:12px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{flex:0 0 auto;background:none;border:none;padding:9px 11px;font-size:13px;color:var(--ink3);cursor:pointer;border-bottom:2px solid transparent;font-family:inherit;white-space:nowrap}
+.tab.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:700}
+.main{padding:16px 12px 60px}.pane{max-width:620px;margin:0 auto}
+.lead{font-size:12px;color:var(--ink2);line-height:1.75;margin:0 0 12px}.empty{font-size:12px;color:var(--ink3);margin:5px 0}
+.msg{font-size:12px;color:#2F6F5E;text-align:center;margin-top:10px}.warn-t{font-size:11px;color:#A8443B;margin:6px 0}.mb{margin-bottom:12px}
+.subj-row{display:flex;gap:5px;margin-bottom:12px}.subj{flex:1;padding:9px 2px;border:1px solid var(--line);background:var(--card);border-radius:3px;font-size:13px;color:var(--ink2);cursor:pointer;font-family:inherit}.subj.on{color:#fff;font-weight:700}
+.seg{display:flex;margin-bottom:14px;border:1px solid var(--line);border-radius:3px;overflow:hidden}.seg button{flex:1;padding:8px 4px;border:none;background:var(--card);font-size:12px;color:var(--ink3);cursor:pointer;font-family:inherit;border-right:1px solid var(--line)}.seg button:last-child{border-right:none}.seg button.on{background:var(--ink);color:#fff;font-weight:700}.seg.sm button{font-size:12px;padding:7px 4px}
+.sec,.blk{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:13px;margin-bottom:12px}
+.blk h3{margin:0 0 8px;font-size:13px}.blk-s{font-size:11px;color:var(--ink3);margin:-2px 0 8px;line-height:1.6}.cnt{font-weight:400;font-size:11px;color:var(--ink3);margin-left:6px}.s-h{font-size:13px;margin:0 0 7px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fld{display:block;margin-bottom:11px}.fld>span{display:block;font-size:11px;color:var(--ink3);margin-bottom:3px}
+.root input,.root select,.root textarea{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:3px;background:var(--card);font-size:14px;font-family:inherit;color:var(--ink)}
+.root input:focus,.root select:focus,.root textarea:focus{outline:2px solid #3D6B8E;outline-offset:-1px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:13px;margin-bottom:10px}
+.c-meta{font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}.dot{width:7px;height:7px;border-radius:50%;flex:0 0 7px;display:inline-block;margin-right:4px}
+.flag{font-style:normal;background:#A8443B;color:#fff;padding:1px 5px;border-radius:2px;font-size:10px}.early,.lv,.tag{font-style:normal;color:var(--ink3);border:1px solid var(--line);padding:1px 5px;border-radius:2px;font-size:10px}
+.c-label{font-size:15px;line-height:1.5;margin-bottom:4px}.c-note{font-size:11px;color:var(--ink3);margin-bottom:6px}
+.btn-ai{width:100%;padding:9px;margin-top:6px;border:1px dashed var(--line);background:var(--paper);border-radius:3px;font-size:12px;color:var(--ink2);cursor:pointer;font-family:inherit}.btn-ai:disabled{opacity:.5}.btn-ai.warn{border-color:#D8B0AC;color:#8E3830;background:#FBF3F2}
+.errbox{margin-top:8px;padding:9px;background:#FBF3F2;border:1px solid #E4C4C0;border-radius:3px}.errbox p{font-size:11px;color:#8E3830;margin:0 0 7px;line-height:1.6}
+.qbox{margin-top:10px;padding:11px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.qitem{margin-bottom:11px}.q-n{font-size:10px;color:var(--ink3);margin-bottom:2px}.q-q{font-size:14px;line-height:1.6;white-space:pre-wrap}
+.q-a{font-size:12px;color:#2F6F5E;margin-top:5px;line-height:1.6;white-space:pre-wrap;border-left:2px solid #2F6F5E;padding-left:8px}
+.q-why{font-size:12px;line-height:1.6;margin:8px 0;padding:8px;background:#EEF3F6;border-left:2px solid #3D6B8E}
+.q-p{font-size:11px;color:var(--ink2);line-height:1.6;margin-bottom:6px}.q-s{font-size:11px;color:var(--ink2);line-height:1.7;margin-bottom:9px;padding:7px;background:var(--card);border-radius:3px}
+.q-btns{display:flex;gap:7px}.q-btns .btn-sm{flex:1}.q-warn{font-size:10px;color:var(--ink3);line-height:1.6;margin:8px 0 0}
+.dbox{margin-top:9px;border:1px solid #E4C4C0;border-radius:3px;background:#FBF3F2;padding:10px}.d-h{width:100%;text-align:left;background:none;border:none;font-size:12px;font-weight:700;color:#8E3830;cursor:pointer;font-family:inherit;padding:0}
+.d-row{font-size:12px;line-height:1.6;margin-top:8px}.d-row span{display:block;font-size:10px;color:#8E3830;font-weight:700}.d-step{display:flex;gap:8px;margin-top:9px}.ds-n{flex:0 0 19px;height:19px;border-radius:50%;background:#8E3830;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}.ds-do{font-size:12px;line-height:1.5}.ds-ck{font-size:10px;color:var(--ink3);margin-top:2px}
+.judge{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.j-who{font-size:10px;color:var(--ink3);margin:6px 0 4px;font-weight:700}.agree{font-style:normal;color:#2F6F5E;margin-left:6px}
+.j-btns{display:flex;gap:6px}.j-btns button{flex:1;padding:10px 4px;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink3)}
+.j-btns .ng.on{background:#A8443B;border-color:#A8443B;color:#fff}.j-btns .mid.on{background:#C08A3E;border-color:#C08A3E;color:#fff}.j-btns .okb.on{background:#2F6F5E;border-color:#2F6F5E;color:#fff}
+.j-et{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.et{padding:5px 9px;border:1px solid var(--line);background:var(--paper);border-radius:12px;font-size:11px;color:var(--ink2);cursor:pointer;font-family:inherit}.et.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.btn-main{width:100%;padding:13px;background:var(--ink);color:#fff;border:none;border-radius:3px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px}.btn-main:disabled{opacity:.35}
+.btn-sm{padding:7px 12px;border:1px solid var(--line);background:var(--paper);border-radius:3px;font-size:12px;cursor:pointer;white-space:nowrap;font-family:inherit;color:var(--ink2)}.btn-sm:disabled{opacity:.5}.btn-sm.wide{width:100%;margin-top:7px;padding:11px}
+.btn-x{width:26px;height:26px;flex:0 0 26px;border:none;background:none;color:var(--ink3);font-size:15px;cursor:pointer}.wide-x{width:100%;font-size:11px;margin-top:8px;height:auto}
+.ok{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:22px 16px;text-align:center}.ok p{margin:0 0 6px;font-size:14px}.ok .sub{font-size:12px;color:var(--ink3);line-height:1.7;margin-bottom:12px}
+.alert{background:#FBF3F2;border:1px solid #E4C4C0;border-radius:4px;padding:13px;margin-bottom:12px}.alert strong{font-size:13px;color:#8E3830}.alert p{font-size:11px;color:#7A4640;line-height:1.75;margin:5px 0 0}.alert .plain{margin-top:8px}
+.rule{font-size:11px;color:var(--ink3);line-height:1.7;margin-top:14px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}.chip{padding:6px 10px;border:1px solid var(--line);background:var(--paper);border-radius:14px;font-size:12px;color:var(--ink2);cursor:pointer;font-family:inherit}.chip.on{color:#fff;border-color:transparent;font-weight:700}
+.nv{font-style:normal;background:#A8443B;color:#fff;font-size:9px;padding:0 3px;border-radius:2px;margin-left:4px}
+.det{margin:10px 0}.det summary{font-size:12px;color:var(--ink2);cursor:pointer}.det-s{margin-top:10px}.det-h{font-size:12px;font-weight:700;margin-bottom:5px}
+.imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.thumb{position:relative;width:56px;height:56px;border:1px solid var(--line);border-radius:3px;overflow:hidden}.thumb img{width:100%;height:100%;object-fit:cover;display:block}.thumb button{position:absolute;top:1px;right:1px;width:18px;height:18px;border:none;border-radius:50%;background:rgba(30,35,33,.82);color:#fff;font-size:11px;cursor:pointer;padding:0}
+.addimg{width:56px;height:56px;border:1px dashed var(--line);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--ink3);cursor:pointer;background:var(--paper)}
+.ph-btn{display:block;text-align:center;padding:11px;border:1px dashed var(--line);border-radius:3px;background:var(--paper);font-size:12px;color:var(--ink2);cursor:pointer;margin-bottom:8px}.ph-note{font-size:11px;color:var(--ink3);line-height:1.6;margin:9px 0 6px}
+.loglist{margin-top:8px;font-size:12px;color:var(--ink2);line-height:1.7}
+.prow{border-top:1px solid var(--line);padding:8px 0}.pr-main{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px}.pr-t{flex:1}.code{font-style:normal;font-family:ui-monospace,Menlo,monospace;color:var(--ink3);font-size:10px}.st{font-size:10px;padding:1px 6px;border-radius:2px;background:#C08A3E;color:#fff}.st.g{background:#2F6F5E}.pr-body{margin-top:8px}
+.markgrid{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}.mk{width:44px;height:44px;border:1px solid var(--line);border-radius:3px;background:var(--card);font-size:11px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ink3)}.mk span{font-size:15px;font-weight:700}
+.mk.o span{color:#2F6F5E}.mk.x span{color:#A8443B}.mk.blank span{color:#C08A3E}.mk.unknown{opacity:.5}
+.cand-h{font-size:11px;font-weight:700;color:var(--ink2);margin:10px 0 6px}
+.cand2{display:block;padding:9px;margin-bottom:6px;border:1px solid var(--line);border-radius:3px;background:var(--card);font-size:13px;line-height:1.45}.cand2.on{border-color:var(--ink)}.cand2-l{display:flex;gap:8px;align-items:flex-start;cursor:pointer}.cand2 input[type=checkbox]{width:auto;margin-top:3px}.pg{font-style:normal;font-size:10px;color:var(--ink3)}
+.cand{display:block;width:100%;text-align:left;padding:9px;margin-bottom:5px;border:1px solid var(--line);background:var(--card);border-radius:3px;cursor:pointer;font-family:inherit}.cd-l{display:block;font-size:13px;line-height:1.45}.cd-n{display:block;font-size:11px;color:var(--ink3);margin-top:2px}
+.fmtrow{display:flex;gap:5px;margin-bottom:6px;align-items:center}.fmtrow select{flex:1;min-width:0;font-size:12px;padding:6px}.cnt{width:58px;text-align:center;font-size:12px;padding:6px}.root input.cnt{width:64px}
+.rub{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}.rub-b{display:flex;gap:4px}.rub-b button{width:34px;height:30px;border:1px solid var(--line);background:var(--card);border-radius:3px;cursor:pointer;font-family:inherit}.rub-b button.on{background:var(--ink);color:#fff}
+.mini{margin-top:10px;font-size:11px;color:var(--ink2);line-height:1.8}
+.urow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.urow:last-child{border:none}.u-name{font-size:13px}.u-meta{font-size:11px;color:var(--ink3);margin-top:2px}.never{color:#A8443B;font-weight:700}
+.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-meta{font-size:11px;color:var(--ink3);margin-top:2px}
+.big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;margin:4px 0 8px}.big small{font-size:12px;color:var(--ink3);font-weight:400}
+.mrow{margin-bottom:9px}.mr-name{font-size:12px;margin-bottom:3px}.mr-bar{height:6px;background:#E7EAE7;border-radius:3px;overflow:hidden}.mr-bar span{display:block;height:100%}.mr-meta{display:flex;gap:10px;font-size:10px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums}.fmn{font-style:normal;font-size:10px;color:#A8443B;margin-left:6px}
+.tc{margin-bottom:12px}.tc-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:13px}.tc-d{font-size:12px;color:var(--ink2)}.spark{width:100%;height:80px;display:block}.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:11px;color:var(--ink3)}
+.erow{display:flex;align-items:center;gap:8px;margin-bottom:5px}.er-name{font-size:11px;flex:0 0 130px}.er-bar{flex:1;height:5px;background:#E7EAE7;border-radius:3px;overflow:hidden}.er-bar span{display:block;height:100%;background:#3D6B8E}.er-n{font-size:11px;color:var(--ink3);flex:0 0 20px;text-align:right}
+.mr2{display:flex;align-items:baseline;gap:9px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}.mr2:last-child{border:none}.m-n{font-weight:700;flex:0 0 34px}.m-v{flex:0 0 84px}.m-t{color:var(--ink3)}
+.heat{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:6px 0 8px}.heat span{aspect-ratio:1;background:#E7EAE7;border-radius:2px}.heat span.on{background:#2F6F5E}
+.count{background:var(--ink);color:#fff;border-radius:4px;padding:15px;margin:10px 0 12px}.count.near{background:#8E3830}.cn-n{font-size:22px;font-weight:700}.cn-s{font-size:12px;opacity:.9;margin-top:4px;line-height:1.6}
+.ex-h{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:8px}.ex-h .btn-x{margin-left:auto}.cnt-b{font-style:normal;font-size:11px;padding:2px 7px;border-radius:2px;background:var(--ink);color:#fff}.cnt-b.near{background:#8E3830}
+.sub-b{font-size:12px;padding:9px;background:#FBF3F2;border-radius:3px;margin-bottom:10px;line-height:1.6}
+.plain{list-style:none;margin:0;padding:0}.plain li{display:flex;align-items:center;gap:7px;font-size:12px;padding:4px 0;line-height:1.5}.plain em{font-style:normal;color:var(--ink3)}.plan{margin-bottom:12px}.pl-h{font-size:12px;font-weight:700;margin-bottom:4px}.done{font-size:12px;color:#2F6F5E;line-height:1.7;margin:0}
+.calib{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}.cal-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px}.cal-p{color:var(--ink3);flex:1}.cal-g{font-weight:700;font-variant-numeric:tabular-nums}
+.exp{font-size:11px;line-height:1.7;font-family:ui-monospace,Menlo,monospace;margin-bottom:10px}
+.prev{background:#8A928C;padding:10px;border-radius:3px;margin-top:8px}.prev .sw .sheet{background:#fff;padding:14px 13px;margin-bottom:10px;border-radius:1px;box-shadow:0 1px 4px rgba(0,0,0,.25)}.prev .sw .rule{height:22px}.prev .sw .pn{flex:0 0 20px}.prev .sw .an{flex:0 0 18px}.prev .sw .hdr span{padding:6px 8px}.prev .sw .cols{column-count:1}
+@media(max-width:400px){.grid2{grid-template-columns:1fr}.er-name{flex:0 0 100px}}
+`;

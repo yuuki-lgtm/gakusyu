@@ -1,0 +1,15 @@
+{
+  "name": "gakushu-loop",
+  "version": "3.0.0",
+  "private": true,
+  "description": "学習ループ（index.html 1ファイル）のテスト",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-react": "^7.26.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
