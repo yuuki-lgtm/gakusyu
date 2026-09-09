@@ -65,8 +65,8 @@
 `npm test` で全部走る（`npm install` を一度だけ。node の組み込みテストランナー、追加の枠組みなし）。**修正したら必ず通す。**
 - `test/load.js` — index.html の `<script type="text/babel">` を取り出し、Babel で JSX を変換して node で評価する。localStorage / document / window / navigator は最小のスタブ。関数やコンポーネントを足したら `EXPORTS` に名前を追加する。
 - `test/fixtures.js` — デモ／空／pending あり の3状態のデータ。日付は今日基準の相対。スキーマを変えたらここも直す。
-- `test/render.test.js` — `react-dom/server` の `renderToString` で全タブ・全サブモード（テスト5種、登録3種）と用紙プレビューを3状態で描画。React の警告（console.error）、画面に出る `undefined` / `NaN` も失敗にする。
-- `test/core.test.js` — applyJudgment, retention, migrate, mergeData, paperHTML, pickUnits の単体テスト。
+- `test/render.test.js` — `react-dom/server` の `renderToString` で全タブ・全サブモード（テスト5種、登録4種）と用紙プレビューを3状態で描画。React の警告（console.error）、画面に出る `undefined` / `NaN` も失敗にする。
+- `test/core.test.js` — applyJudgment, retention, migrate, mergeData, paperHTML, pickUnits, Storage の読み書き, parsePages / applyTOC / materialsForUnits / genContent の単体テスト。
 - 実機（iPhone Safari と Mac Chrome）で PDF 生成・写真読み取り・ホーム画面追加を確認する。
 
 ## やらないこと
@@ -74,7 +74,12 @@
 - 機能を足す前に「続くか」を問う。迷ったら足さない。
 
 ## 次の作業
-1. iPhone Safari で PDF 生成（共有シート）を確認。Windows Chrome での生成・保存は 2026-09-09 に確認済み。
-2. iPhone Safari で写真読み取り（採点済み答案、目次、ワークの×）を確認。
-3. Supabase 同期を2端末で確認。
-4. コードを整理（1ファイルのままでよいが、関数の順序と重複を直す）。
+1. 教材画像（2026-09-10 実装、5段階すべてコミット済み。テストのみ、実ブラウザ未確認）を実機で確認する。
+   - Supabase の SQL Editor で「設定」タブの SQL のうちバケットとポリシーの分を実行する（既存プロジェクトは state の分は不要）。
+   - 「登録→教材」で PDF と複数画像の取り込み（iPhone Safari で pdf.js が動くか、ページ番号が合うか）。
+   - 「登録→単元」でワークの目次を撮り、既存単元への対応づけとページ範囲の手直し。
+   - 「テスト→作る」で「添付される教材」が出て作問が通るか。「登録→項目」で教材から×を登録し、翌日の類題に元の問題が効くか。
+2. iPhone Safari で PDF 生成（共有シート）を確認。Windows Chrome での生成・保存は 2026-09-09 に確認済み。
+3. iPhone Safari で写真読み取り（採点済み答案、目次、ワークの×）を確認。
+4. Supabase 同期を2端末で確認。
+5. コードを整理（1ファイルのままでよいが、関数の順序と重複を直す）。
