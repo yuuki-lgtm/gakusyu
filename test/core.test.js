@@ -1573,3 +1573,19 @@ describe("名前付けの応答の読み取り", () => {
     assert.throws(() => m.parseItemsLoose("読めません"), /JSON を読めません/);
   });
 });
+
+describe("API のエラー文", () => {
+  test("apiErrorText: 残高切れ・回数制限・キー無効・混雑を日本語にし、元の文を添える。他はそのまま", () => {
+    assert.ok(m.apiErrorText(400, "Your credit balance is too low to access the Anthropic API.").startsWith("API の残高がありません"));
+    assert.ok(m.apiErrorText(429, "rate_limit_error").startsWith("API の回数制限"));
+    assert.ok(m.apiErrorText(401, "invalid x-api-key").startsWith("API キーが無効") && m.apiErrorText(401, "invalid x-api-key").includes("invalid x-api-key"));
+    assert.ok(m.apiErrorText(529, "Overloaded").startsWith("API が混雑"));
+    assert.equal(m.apiErrorText(500, "boom"), "boom"); assert.equal(m.apiErrorText(502, ""), "エラー (HTTP 502)");
+  });
+  test("once: API のエラーは日本語の文で投げる", async () => {
+    const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { type: "invalid_request_error", message: "Your credit balance is too low" } }) });
+    try { await assert.rejects(() => m.callAI("x", "y", 10), /API の残高がありません/); }
+    finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+});

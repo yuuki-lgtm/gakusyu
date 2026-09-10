@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 23:45"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 07:14"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -585,6 +585,15 @@ const pickModel = (m) => (allOpus() ? OPUS : m || SONNET);
 let lastUsed = "";
 const usedLabel = () => (lastUsed === OPUS ? "Opus 5" : lastUsed === SONNET ? "Sonnet 5" : lastUsed ? lastUsed : "");
 const API_HEADERS = () => ({ "Content-Type": "application/json", "x-api-key": LS(AKEY), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" });
+/* API のエラーを日本語に。残高切れ・回数制限・キー無効・混雑は原因が分かる文にし、元の文を添える */
+function apiErrorText(status, msg) {
+  const m = String(msg || "");
+  if (/credit balance|billing|purchase credits/i.test(m)) return `API の残高がありません。console.anthropic.com で補充してください（${m}）`;
+  if (status === 429 || /rate.?limit/i.test(m)) return `API の回数制限に達しました。少し待ってもう一度（${m}）`;
+  if (status === 401 || status === 403 || /api.?key|authentication/i.test(m)) return `API キーが無効です。「その他→設定」で確かめてください（${m}）`;
+  if (status === 529 || /overloaded/i.test(m)) return `API が混雑しています。少し待ってもう一度（${m}）`;
+  return m || `エラー (HTTP ${status})`;
+}
 async function once(model, content, system, maxTokens) {
   if (!hasKey()) throw new Error("APIキーが未設定です。「設定」タブで登録してください。");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -592,7 +601,7 @@ async function once(model, content, system, maxTokens) {
     body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: "user", content }] }),
   });
   let data; try { data = await res.json(); } catch { throw new Error(`応答を読めませんでした (HTTP ${res.status})`); }
-  if (!res.ok || data.error) throw new Error(data?.error?.message || `エラー (HTTP ${res.status})`);
+  if (!res.ok || data.error) throw new Error(apiErrorText(res.status, data?.error?.message));
   const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
   if (!text) throw new Error(`空の応答（${data.stop_reason || (data.content || []).map((c) => c.type).join(",") || "内容なし"}）`);
   return text;
@@ -2061,7 +2070,7 @@ function Settings({ d, save, setSync }) {
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
   const say = (t) => notify(t); const dmaxT = useRef(null);
   const saveKey = () => { localStorage.setItem(AKEY, key.trim()); say(key.trim() ? "APIキーを保存しました" : "削除しました"); };
-  const testKey = async () => { setBusy("key"); localStorage.setItem(AKEY, key.trim()); try { await callAI("1+1は？数字だけ。", "簡潔に。", 30); say(`接続できました（${usedLabel()}）`); } catch (e) { say("失敗: " + e.message); } setBusy(""); };
+  const testKey = async () => { setBusy("key"); localStorage.setItem(AKEY, key.trim()); try { await callAI("1+1は？数字だけ。", "簡潔に。", 30); say(`接続できました（${usedLabel()}）`); } catch (e) { notify("接続できません: " + e.message, "err"); } setBusy(""); };
   const saveSync = () => { localStorage.setItem(SB_URL, url.trim()); localStorage.setItem(SB_KEY, anon.trim()); localStorage.setItem(SB_ROOM, room.trim()); say("同期設定を保存しました"); };
   const genRoom = () => setRoom("fam-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10));
   const testSync = async () => { setBusy("sync"); saveSync(); try { const remote = await pullRemote(); const merged = remote ? mergeData(d, migrate(remote.data)) : d; await pushRemote(merged); save(merged); setSync("ok"); say("同期できました。サーバーの内容と統合しました。"); } catch (e) { setSync("err"); say("失敗: " + e.message); } setBusy(""); };
