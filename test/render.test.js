@@ -147,3 +147,10 @@ test("デモ: 今日のカードに元の問題（教材のページと番号）
   const { html } = render(m.TodayTab, { d: F.demo(), save: noop });
   assert.ok(html.includes("元 ワーク p.11 「3」"));
 });
+test("デモ: 用紙のプレビューは教材ページの枠を出し、画像は持たない", () => {
+  const p = F.demo().papers.find((x) => x.id === "p1");
+  const { html } = render(m.PrintSheet, { paper: p });
+  assert.ok(html.includes("図2（ワーク p.11）") && html.includes("PDF生成時に教材のページを読み込みます"));
+  assert.ok(!html.includes("data:image/jpeg"));
+  assert.ok(html.includes("はPDF生成時に読み込みます"));
+});

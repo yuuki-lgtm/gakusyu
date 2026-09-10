@@ -28,7 +28,8 @@
           level(0-5), failCount, nextDue, status:'active'|'stable',
           pending:{d, self, selfE, pm}|null, gen, diag, updatedAt}],
   tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解', source, rows:[{fmt,total,correct}], total, correct, unitIds, paperId, updatedAt}],
-  papers:[{id, code, subject, date, kind, title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg}], imgs:[b64], status:'printed'|'graded', model, updatedAt}],
+  papers:[{id, code, subject, date, kind, title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg,fig}],
+          refs:[{n, kind, page, path}](資料にする教材ページの参照), imgs:[b64](旧データの写真), status:'printed'|'graded', model, updatedAt}],
   log:{'YYYY-MM-DD':true}, exams:[{id,name,date,unitIds,actual:{教科:点},updatedAt}],
   writing:[{id,date,subject,len,structure,surface,note,updatedAt}],
   materials:[{id, subject, kind, page, path, updatedAt}], deleted:[id] }
@@ -43,7 +44,8 @@
 - 単位は「教科 × 教材種別（ワーク／教科書）× ページ」。パスは `共有ID/math/wb/12.jpg`（`SUBJ_CODE`・`KIND_CODE`）。共有IDがアクセスの鍵。
 - 索引 `materials:[{id, subject, kind:'ワーク'|'教科書', page, path, updatedAt}]`。同じページの再取り込みは同じ id を上書き。画像の base64 は localStorage に入れない（5MB制限）。
 - 単元は教科書のページ範囲 `pages` とワークのページ範囲 `wbPages` を別々に持つ。`parsePages()` で数値の配列にする。
-- 作問は選んだ単元の教科書・ワークのページを自動で添付する（参考資料。用紙には印刷しない）。どちらか片方だけでも、なくても動く。
+- 作問は選んだ単元の教科書・ワークのページを「図1〜図N」として自動で添付する。どちらか片方だけでも、なくても動く。手で写真を撮る欄はない。
+- 問題文が参照した図（「図3」または `fig`）のページだけを用紙の `refs` に参照として持ち、資料ページに印刷する。画像は用紙に持たず、`resolveRefs()` が PDF 生成時・HTML 保存時に Storage から読む。プレビューは枠だけ。
 - ×の登録は「教科→教材→ページ→問題番号」の選択式。AIが該当問題を読んで項目名を作る。項目は `src:{path, kind, page, q}` を持ち、類題生成でその画像を渡す。
 
 ## 画面
@@ -57,7 +59,7 @@
 - 教科書・既存作品の文章は複製しない。文章は新規に書く。
 
 ## 印刷
-- `paperHTML()` で用紙HTMLを組み、`buildPDF()` で html2canvas + jsPDF によりA4に詰める（ブロックごとに画像化、境目で切らない）。
+- `paperHTML(p, res)` で用紙HTMLを組み（`res` は `resolveRefs()` が読んだ教材ページの base64）、`buildPDF()` で html2canvas + jsPDF によりA4に詰める（ブロックごとに画像化、境目で切らない）。
 - 既知の問題: html2canvas は oklab/oklch を読めない。対策として独立 iframe 内で描画している。Claude.ai のアーティファクト内ではまだ再現する可能性あり。**実ブラウザで確認すること。**
 - iOS Safari では `navigator.share` でPDFを共有シートへ。
 
@@ -78,7 +80,7 @@
    - Supabase の SQL Editor で「設定」タブの SQL のうちバケットとポリシーの分を実行する（既存プロジェクトは state の分は不要）。
    - 「登録→教材」で PDF と複数画像の取り込み（iPhone Safari で pdf.js が動くか、ページ番号が合うか）。
    - 「登録→単元」でワークの目次を撮り、既存単元への対応づけとページ範囲の手直し。
-   - 「テスト→作る」で「添付される教材」が出て作問が通るか。「登録→項目」で教材から×を登録し、翌日の類題に元の問題が効くか。
+   - 「テスト→作る」で「添付される教材」が出て作問が通るか。図を参照した問題があれば PDF の資料ページに教材のページが入るか。「登録→項目」で教材から×を登録し、翌日の類題に元の問題が効くか。
 2. iPhone Safari で PDF 生成（共有シート）を確認。Windows Chrome での生成・保存は 2026-09-09 に確認済み。
 3. iPhone Safari で写真読み取り（採点済み答案、目次、ワークの×）を確認。
 4. Supabase 同期を2端末で確認。

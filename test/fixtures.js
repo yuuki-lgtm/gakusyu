@@ -51,10 +51,10 @@ function fixtures(m) {
       { id: "t5", subject: "国語", date: day(-7), kind: "読解", source: "", rows: [{ fmt: "長文読解", total: 6, correct: 4 }], total: 6, correct: 4, unitIds: ["u7"], updatedAt: ts(-7) },
     ],
     papers: [
-      { id: "p1", code: "0909数", subject: "数学", date: T, kind: "週次", title: "", passage: "", unitIds: ["u1", "u2"], status: "printed", model: "Opus 5", updatedAt: ts(0), imgs: [],
+      { id: "p1", code: "0909数", subject: "数学", date: T, kind: "週次", title: "", passage: "", unitIds: ["u1", "u2"], status: "printed", model: "Opus 5", updatedAt: ts(0), imgs: [], refs: [{ n: 2, kind: "ワーク", page: 11, path: "fam-demo/math/wb/11.jpg" }],
         questions: [
           { n: 1, q: "次の計算をしなさい。途中式も書くこと。\n(−3) × (+4) − (−8) ÷ (−2)", a: "−12 − 4 = −16", unitId: "u1", fmt: "計算", aim: "乗除の符号", label: "負の数のかけ算", svg: "" },
-          { n: 2, q: "数直線上で −2.5 の位置に点を打ちなさい。", a: "0 から左へ 2.5", unitId: "u1", fmt: "図・作図・グラフ", aim: "数直線", label: "数直線上の小数",
+          { n: 2, q: "図2の数直線を見て、−2.5 の位置に点を打ちなさい。", a: "0 から左へ 2.5", unitId: "u1", fmt: "図・作図・グラフ", aim: "数直線", label: "数直線上の小数", fig: 2,
             svg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' width='400'><line x1='20' y1='30' x2='380' y2='30' stroke='#111'/><text x='300' y='54' font-size='14'>0</text></svg>" },
           { n: 3, q: "「x を 3 倍して 5 を引いた数」を文字式で表しなさい。", a: "3x − 5", unitId: "u2", fmt: "知識・用語", aim: "文字式", label: "ことばを文字式にする", svg: "" },
         ] },

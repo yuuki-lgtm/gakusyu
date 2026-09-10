@@ -425,3 +425,53 @@ describe("類題生成に元の問題を渡す", () => {
     assert.equal(m.srcLabel(null), ""); assert.equal(m.srcLabel({}), "");
   });
 });
+
+describe("用紙の資料ページ（教材ページへの参照）", () => {
+  const paper = (o = {}) => ({ id: "p", code: "0909数", subject: "数学", date: T, kind: "週次", title: "", passage: "", unitIds: [], imgs: [], status: "printed",
+    questions: [{ n: 1, q: "図1の地図を見て答えなさい。", a: "a", label: "l", aim: "", fmt: "資料・地図の読み取り", svg: "", fig: 1 }], ...o });
+  const refs = [{ n: 1, kind: "教科書", page: 12, path: "fam/math/tb/12.jpg" }, { n: 3, kind: "ワーク", page: 5, path: "fam/math/wb/5.jpg" }];
+  const count = (s, re) => (s.match(re) || []).length;
+  test("usedFigs は問題文の「図N」と fig 欄を集める", () => {
+    const s = m.usedFigs([{ q: "図1と図 3 を見て", fig: 0 }, { q: "なし", fig: 2 }, { q: "図12" }, {}]);
+    assert.deepEqual([...s].sort((a, b) => a - b), [1, 2, 3, 12]);
+    assert.equal(m.usedFigs([]).size, 0);
+  });
+  test("refs があれば資料ページが先頭に付き、読み込み前は枠だけ", () => {
+    const h = m.paperHTML(paper({ refs }));
+    assert.equal(count(h, /class="sheet"/g), 3);
+    assert.ok(h.indexOf("数学　資料") < h.indexOf("数学　週次テスト"));
+    assert.ok(h.includes("図1（教科書 p.12）") && h.includes("図3（ワーク p.5）"));
+    assert.equal(count(h, /class="ref-wait"/g), 2);
+    assert.ok(!h.includes("data:image/jpeg"), "画像は用紙に持たない");
+  });
+  test("読み込んだ画像を渡すと描画。読めなかったページは枠のまま", () => {
+    const h = m.paperHTML(paper({ refs }), { "fam/math/tb/12.jpg": TINY_JPEG });
+    assert.equal(count(h, /data:image\/jpeg;base64,/g), 1);
+    assert.equal(count(h, /class="ref-wait"/g), 1);
+    assert.ok(h.indexOf("図1（教科書 p.12）") < h.indexOf("data:image"));
+  });
+  test("旧データの写真（imgs）は refs の後に番号が続く。両方なければ資料ページなし", () => {
+    const figs = m.paperFigs({ refs: [refs[0]], imgs: [TINY_JPEG] });
+    assert.deepEqual(figs.map((f) => [f.cap, !!f.b64, f.pending]), [["図1（教科書 p.12）", false, true], ["図2", true, false]]);
+    assert.equal(count(m.paperHTML(paper()), /class="sheet"/g), 2);
+    assert.deepEqual(m.paperFigs({}), []);
+  });
+  test("fileHTML も読み込んだ画像を入れる。paperText は資料の一覧を出す", () => {
+    assert.ok(m.fileHTML(paper({ refs }), { "fam/math/wb/5.jpg": TINY_JPEG }).includes("data:image/jpeg;base64,"));
+    assert.ok(m.paperText(paper({ refs })).includes("資料: 図1: 教科書 p.12、図3: ワーク p.5"));
+    assert.ok(!m.paperText(paper()).includes("資料:"));
+  });
+  test("resolveRefs は共有先から読み、失敗したページは飛ばす", async () => {
+    const orig = globalThis.fetch;
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k");
+    globalThis.fetch = async (url) => (url.includes("/tb/12.jpg") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1, 2]).buffer } : { ok: false, status: 404 });
+    try {
+      const steps = [];
+      const res = await m.resolveRefs(paper({ refs }), (s) => steps.push(s));
+      assert.deepEqual(Object.keys(res), ["fam/math/tb/12.jpg"]);
+      assert.equal(res["fam/math/tb/12.jpg"], Buffer.from([1, 2]).toString("base64"));
+      assert.deepEqual(steps, ["資料 1/2", "資料 2/2"]);
+      assert.deepEqual(await m.resolveRefs(paper()), {});
+    } finally { globalThis.fetch = orig; ["sb_url", "sb_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+});

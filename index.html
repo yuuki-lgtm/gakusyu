@@ -524,20 +524,11 @@ function MakePapers({ d, save }) {
   const [sel, setSel] = useState([...SUBJECTS]);
   const [n, setN] = useState("10");
   const [kind, setKind] = useState("週次");
-  const [imgs, setImgs] = useState({});
   const [busy, setBusy] = useState("");
   const [log, setLog] = useState([]);
   const [customUnits, setCustomUnits] = useState({});
   const sec = useElapsed(busy);
   const toggle = (s) => setSel((x) => (x.includes(s) ? x.filter((y) => y !== s) : [...x, s]));
-
-  const addImg = async (s, e) => {
-    const files = Array.from(e.target.files || []).slice(0, 4);
-    const out = [];
-    for (const f of files) { try { out.push({ id: uid(), b64: await compressImage(f) }); } catch {} }
-    setImgs((x) => ({ ...x, [s]: [...(x[s] || []), ...out].slice(0, 4) }));
-    e.target.value = "";
-  };
 
   const unitsFor = (subject) => (customUnits[subject]?.length ? d.units.filter((u) => customUnits[subject].includes(u.id)) : (kind === "累積" ? d.units.filter((u) => u.subject === subject && taught(u)) : pickUnits(d, subject)));
 
@@ -546,32 +537,34 @@ function MakePapers({ d, save }) {
     if (!units.length) throw new Error(`${subject}：「習った」単元がありません。「登録」で進度を更新してください`);
     const stuck = d.items.filter((i) => i.subject === subject && i.status === "active" && units.some((u) => u.id === i.unitId));
     const stable = d.items.filter((i) => i.subject === subject && i.status === "stable").map((i) => i.label);
-    const pics = imgs[subject] || [];
     // 単元に結びついた教材ページを共有先から読む。読めなくても作問は続ける
     const mats = materialsForUnits(d, subject, units); const matImgs = []; let matNote = "";
     for (let k = 0; k < mats.length; k++) { setBusy(`${subject}（教材ページ ${k + 1}/${mats.length}）`); try { matImgs.push({ m: mats[k], b64: await stGet(mats[k].path) }); } catch (e) { matNote = `教材ページを読めなかったので添付なし（${e.message}）`; matImgs.length = 0; break; } }
     setBusy(subject);
     const matDesc = matsLabel(matImgs.map((x) => x.m));
-    const prompt = `教科: ${subject}\n種別: ${kind}テスト\n出題範囲:\n${units.map((u) => `・${u.name}${unitPageLabel(u) ? "（" + unitPageLabel(u) + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}\n\n安定している項目（確認として少数混ぜてよい）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}\n\n${n}問作ってください。${matImgs.length ? `\n【教材ページ】と見出しを付けた添付${matImgs.length}枚（${matDesc}）は、出題範囲のワーク・教科書の実物。用語・記号・表現・扱われ方と難易度をこれに合わせ、ワークがあればワークの問題に近い形式で出す。本文や設問をそのまま写さない。教材ページは印刷されないので、図として参照しない。` : ""}${pics.length ? `\n【図】と見出しを付けた添付${pics.length}枚は問題用紙と一緒に印刷される資料。「図1」〜「図${pics.length}」として、地形図・実験装置など自分で描けない図はこの番号で参照して出題する。` : ""}`;
+    const prompt = `教科: ${subject}\n種別: ${kind}テスト\n出題範囲:\n${units.map((u) => `・${u.name}${unitPageLabel(u) ? "（" + unitPageLabel(u) + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}\n\n安定している項目（確認として少数混ぜてよい）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}\n\n${n}問作ってください。${matImgs.length ? `\n添付の図1〜図${matImgs.length}（${matDesc}）は、出題範囲のワーク・教科書の実物。用語・記号・表現・扱われ方と難易度をこれに合わせ、ワークがあればワークの問題に近い形式で出す。本文や設問をそのまま写さない。地形図・実験装置・グラフ・英語の本文など自分で描けないものを使う問題は、「図3の地図を見て」のように図番号で参照して出題してよい（参照した図は資料として問題用紙と一緒に印刷される。参照は必要な問題だけにし、fig にその番号を入れる）。` : ""}`;
     const system = `日本の中学1年生向けの、白紙から解かせる${kind === "累積" ? "累積（過去範囲を混ぜた）" : ""}テストを作る。厳守:
 - 中1範囲を超えない。指定範囲から逸脱しない
 - 未出題の単元があれば必ず数問出す
 - 選択肢・穴埋めのヒントなし。数学は途中式を書かせる。英語は日本語→英文を含める
 - 難易度は学校のワーク相当
-- 図を使ってよい。描ける図（座標平面、数直線、平面図形、表、簡単な模式図）は svg にSVGコードを1行で入れる（viewBox必須、幅400以下、stroke="#111" fill="none" 基本、文字13px以上、色なし）。描けない図は添付の図番号を参照する。どちらも無理なら図なしの問題にする
+- 図を使ってよい。描ける図（座標平面、数直線、平面図形、表、簡単な模式図）は svg にSVGコードを1行で入れる（viewBox必須、幅400以下、stroke="#111" fill="none" 基本、文字13px以上、色なし）。描けない図は添付の図番号を参照し fig に入れる（参照しなければ 0）。どちらも無理なら図なしの問題にする
 - 各問に単元名・形式・ねらい・項目名をつける。形式は次から: ${FORMATS.join("／")}。項目名は「後日その一点だけを聞き直せる粒度」で書く（例:「係数が分数の一次方程式」）
-JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":""}]}`;
-    const content = matImgs.length || pics.length
-      ? [...matImgs.flatMap((x) => [{ type: "text", text: `【教材ページ】${x.m.kind} p.${x.m.page}` }, imgBlock(x.b64)]), ...pics.flatMap((p, k) => [{ type: "text", text: `【図${k + 1}】` }, imgBlock(p.b64)]), { type: "text", text: prompt }]
+JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":"","fig":0}]}`;
+    const content = matImgs.length
+      ? [...matImgs.flatMap((x, k) => [{ type: "text", text: `【図${k + 1}】${x.m.kind} p.${x.m.page}` }, imgBlock(x.b64)]), { type: "text", text: prompt }]
       : prompt;
     const t = await callAI(content, system, 6000);
     const parsed = parseJSON(t);
     const qs = (parsed.questions || []).map((x, i) => {
       const u = units.find((uu) => uu.name === x.unit) || units.find((uu) => (x.unit || "").includes(uu.name) || uu.name.includes(x.unit || "")) || units[0];
-      return { n: i + 1, q: x.q || "", a: x.a || "", unitId: u.id, fmt: FORMATS.includes(x.fmt) ? x.fmt : FORMATS[0], aim: x.aim || "", label: x.label || x.aim || "", svg: x.svg || "" };
+      return { n: i + 1, q: x.q || "", a: x.a || "", unitId: u.id, fmt: FORMATS.includes(x.fmt) ? x.fmt : FORMATS[0], aim: x.aim || "", label: x.label || x.aim || "", svg: x.svg || "", fig: Number(x.fig) || 0 };
     });
     if (!qs.length) throw new Error(`${subject}：問題を生成できませんでした`);
-    return { paper: { id: uid(), code: `${today().slice(5).replace("-", "")}${subject[0]}`, subject, date: today(), kind, unitIds: units.map((u) => u.id), questions: qs, imgs: pics.map((p) => p.b64), status: "printed", model: usedLabel(), updatedAt: now() }, note: matNote || (matDesc ? `教材 ${matDesc} を参照` : "教材なし") };
+    // 問題文が参照した教材ページだけを資料として持つ（参照だけ。画像は PDF 生成時に読む）
+    const used = usedFigs(qs);
+    const refs = matImgs.map((x, k) => ({ n: k + 1, kind: x.m.kind, page: x.m.page, path: x.m.path })).filter((r) => used.has(r.n));
+    return { paper: { id: uid(), code: `${today().slice(5).replace("-", "")}${subject[0]}`, subject, date: today(), kind, unitIds: units.map((u) => u.id), questions: qs, imgs: [], refs, status: "printed", model: usedLabel(), updatedAt: now() }, note: matNote || (matDesc ? `教材 ${matDesc} を参照${refs.length ? `、資料 ${refs.length}ページ` : ""}` : "教材なし") };
   };
 
   const genAll = async () => {
@@ -593,14 +586,11 @@ JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","un
       <div className="seg sm">{["週次", "累積"].map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
       <div className="chips mb">{SUBJECTS.map((s) => (<button key={s} className={"chip" + (sel.includes(s) ? " on" : "")} style={sel.includes(s) ? { background: HUE[s] } : {}} onClick={() => toggle(s)}>{s}</button>))}</div>
       <Fld label="1教科あたりの問題数"><input type="number" value={n} onChange={(e) => setN(e.target.value)} /></Fld>
-      <details className="det"><summary>単元を手で選ぶ・教科書の写真を添付する（任意）</summary>
+      <details className="det"><summary>単元を手で選ぶ（任意）</summary>
         {sel.map((s) => (<div className="det-s" key={s}><div className="det-h" style={{ color: HUE[s] }}>{s}</div>
           <div className="chips">{d.units.filter((u) => u.subject === s).map((u) => { const on = (customUnits[s] || []).includes(u.id); return (
-            <button key={u.id} className={"chip" + (on ? " on" : "") + (taught(u) ? "" : " dim")} style={on ? { background: HUE[s] } : {}} onClick={() => setCustomUnits((c) => ({ ...c, [s]: on ? (c[s] || []).filter((x) => x !== u.id) : [...(c[s] || []), u.id] }))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>); })}</div>
-          <div className="imgs">{(imgs[s] || []).map((im) => (<div className="thumb" key={im.id}><img src={`data:image/jpeg;base64,${im.b64}`} alt="" /><button onClick={() => setImgs((x) => ({ ...x, [s]: x[s].filter((y) => y.id !== im.id) }))}>×</button></div>))}
-            {(imgs[s] || []).length < 4 && <label className="addimg">＋<input type="file" accept="image/*" multiple hidden onChange={(e) => addImg(s, e)} /></label>}</div></div>))}
-        <p className="ph-note">写真は印刷用紙に「図」として入ります（地形図・実験装置など）。教材ページの添付は自動なので、ここで教科書を撮る必要はありません。写真は保存されません。</p></details>
-      {sel.length > 0 && (d.materials || []).length > 0 && <p className="ph-note">添付される教材：{sel.map((s) => `${s} ${matsLabel(materialsForUnits(d, s, unitsFor(s))) || "なし"}`).join(" ／ ")}</p>}
+            <button key={u.id} className={"chip" + (on ? " on" : "") + (taught(u) ? "" : " dim")} style={on ? { background: HUE[s] } : {}} onClick={() => setCustomUnits((c) => ({ ...c, [s]: on ? (c[s] || []).filter((x) => x !== u.id) : [...(c[s] || []), u.id] }))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>); })}</div></div>))}</details>
+      {sel.length > 0 && (d.materials || []).length > 0 && <p className="ph-note">添付される教材：{sel.map((s) => `${s} ${matsLabel(materialsForUnits(d, s, unitsFor(s))) || "なし"}`).join(" ／ ")}。問題が参照したページだけ「資料」として用紙に印刷されます。</p>}
       <button className="btn-main" onClick={genAll} disabled={!!busy || !sel.length}>{busy ? `${busy} を作成中… ${sec}秒` : `${sel.length}教科まとめて作る`}</button>
       {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}
     </section>
@@ -851,12 +841,33 @@ const SHEET_CSS = `
 .sw .ref{margin-bottom:8mm;page-break-inside:avoid}
 .sw .ref .cap{font-size:10pt;font-weight:600;margin-bottom:2mm}
 .sw .ref img{max-width:100%;border:0.4pt solid #999;display:block}
+.sw .ref-wait{padding:12mm 5mm;border:0.4pt dashed #999;text-align:center;font-size:9.5pt;color:#666}
 .sw .note{font-size:9pt;color:#555;margin:0 0 5mm;line-height:1.6}
 .sw .psg{font-size:10.5pt;line-height:2;margin:0 0 7mm;padding:4mm 5mm;border:0.5pt solid #333;white-space:normal}`;
 
-function paperHTML(p) {
+/* 用紙の資料ページに載せる図。refs は教材ページへの参照（res に読み込み済みの base64 があれば描画、無ければ枠だけ）。imgs は旧データの写真 */
+function paperFigs(p, res = {}) {
+  const refs = (p.refs || []).map((r) => ({ cap: `図${r.n}（${r.kind} p.${r.page}）`, b64: res[r.path] || null, pending: !res[r.path] }));
+  const imgs = (p.imgs || []).map((b, i) => ({ cap: `図${refs.length + i + 1}`, b64: b, pending: false }));
+  return [...refs, ...imgs];
+}
+/* 問題文が参照している図番号（「図3」「図 3」）と fig 欄 */
+function usedFigs(questions) {
+  const s = new Set();
+  (questions || []).forEach((q) => { for (const m of String(q.q || "").matchAll(/図\s*(\d+)/g)) s.add(+m[1]); if (q.fig > 0) s.add(+q.fig); });
+  return s;
+}
+/* 用紙の refs を共有先から読む。読めないページは枠だけになる */
+async function resolveRefs(p, onStep) {
+  const res = {}; const refs = p.refs || [];
+  for (let k = 0; k < refs.length; k++) { onStep && onStep(`資料 ${k + 1}/${refs.length}`); try { res[refs[k].path] = await stGet(refs[k].path); } catch {} }
+  return res;
+}
+
+function paperHTML(p, res = {}) {
   const nl = LINES[p.subject] || 2;
-  const ref = p.imgs && p.imgs.length ? `<div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　資料</span><small>${escHTML(p.code)}</small></div><p class="note">問題文の「図1」〜「図${p.imgs.length}」はこのページを指します。</p>${p.imgs.map((b, i) => `<div class="ref"><div class="cap">図${i + 1}</div><img src="data:image/jpeg;base64,${b}" alt=""></div>`).join("")}</div>` : "";
+  const figs = paperFigs(p, res);
+  const ref = figs.length ? `<div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　資料</span><small>${escHTML(p.code)}</small></div><p class="note">問題文の図番号はこのページを指します。</p>${figs.map((f) => `<div class="ref"><div class="cap">${escHTML(f.cap)}</div>${f.b64 ? `<img src="data:image/jpeg;base64,${f.b64}" alt="">` : `<div class="ref-wait">${f.pending ? "PDF生成時に教材のページを読み込みます" : "画像なし"}</div>`}</div>`).join("")}</div>` : "";
   const passage = p.passage ? `<div class="psg">${escHTML(p.title || "")}${p.title ? "<br><br>" : ""}${escHTML(p.passage).replace(/\n/g, "<br>")}</div>` : "";
   const qs = p.questions.map((q) => { const svg = safeSvg(q.svg); return `<div class="p"><div class="pn">${q.n}.</div><div class="pt"><p class="pq">${escHTML(q.q)}</p>${svg ? `<div class="fig">${svg}</div>` : ""}${Array.from({ length: svg ? Math.max(2, nl - 1) : nl }, () => `<div class="rule"></div>`).join("")}</div></div>`; }).join("");
   const anyFig = false;
@@ -864,12 +875,13 @@ function paperHTML(p) {
   const aim = `<div class="aim"><div style="font-weight:600;margin-bottom:2mm">出題のねらい</div>${p.questions.map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.label || q.aim)}${q.aim && q.aim !== q.label ? " — " + escHTML(q.aim) : ""}</div></div>`).join("")}</div>`;
   return `${ref}<div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(p.kind)}テスト</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span><span>点　　　／${p.questions.length}</span></div>${passage}${qs}</div><div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
 }
-function fileHTML(p) {
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHTML(p.subject)} ${escHTML(p.code)}</title><style>@page{size:A4;margin:17mm 16mm}html,body{margin:0;padding:0}${SHEET_CSS}.sw .sheet{page-break-after:always}.sw .sheet:last-child{page-break-after:auto}#pb{position:fixed;right:16px;bottom:16px;padding:15px 26px;background:#1E2321;color:#fff;border:none;border-radius:5px;font-size:15px;font-family:-apple-system,sans-serif;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35)}@media screen{body{background:#8A928C;padding:14px 0}.sw .sheet{width:210mm;min-height:297mm;margin:0 auto 16px;padding:17mm 16mm;box-sizing:border-box;box-shadow:0 2px 10px rgba(0,0,0,.35)}}@media print{#pb{display:none}}</style></head><body><div class="sw">${paperHTML(p)}</div><button id="pb" onclick="window.print()">印刷する</button></body></html>`;
+function fileHTML(p, res = {}) {
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHTML(p.subject)} ${escHTML(p.code)}</title><style>@page{size:A4;margin:17mm 16mm}html,body{margin:0;padding:0}${SHEET_CSS}.sw .sheet{page-break-after:always}.sw .sheet:last-child{page-break-after:auto}#pb{position:fixed;right:16px;bottom:16px;padding:15px 26px;background:#1E2321;color:#fff;border:none;border-radius:5px;font-size:15px;font-family:-apple-system,sans-serif;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35)}@media screen{body{background:#8A928C;padding:14px 0}.sw .sheet{width:210mm;min-height:297mm;margin:0 auto 16px;padding:17mm 16mm;box-sizing:border-box;box-shadow:0 2px 10px rgba(0,0,0,.35)}}@media print{#pb{display:none}}</style></head><body><div class="sw">${paperHTML(p, res)}</div><button id="pb" onclick="window.print()">印刷する</button></body></html>`;
 }
 function paperText(p) {
   const nl = LINES[p.subject] || 2, gap = "\n" + "　\n".repeat(nl);
-  return `${p.subject}　${p.kind}テスト（${p.code}）${p.passage ? "\n\n" + (p.title || "") + "\n" + p.passage : ""}\n\n日付　　／　　　名前　　　　　　　　　点　　／${p.questions.length}\n\n${p.questions.map((q) => `${q.n}. ${q.q}${q.svg ? "（図あり・印刷版参照）" : ""}${gap}`).join("\n")}\n\n————　解答　————\n\n${p.questions.map((q) => `${q.n}. ${q.a}`).join("\n")}`;
+  const figs = (p.refs || []).map((r) => `図${r.n}: ${r.kind} p.${r.page}`).join("、");
+  return `${p.subject}　${p.kind}テスト（${p.code}）${figs ? "\n資料: " + figs + "（本を開いて見る）" : ""}${p.passage ? "\n\n" + (p.title || "") + "\n" + p.passage : ""}\n\n日付　　／　　　名前　　　　　　　　　点　　／${p.questions.length}\n\n${p.questions.map((q) => `${q.n}. ${q.q}${q.svg ? "（図あり・印刷版参照）" : ""}${gap}`).join("\n")}\n\n————　解答　————\n\n${p.questions.map((q) => `${q.n}. ${q.a}`).join("\n")}`;
 }
 
 /* ---- PDF生成（用紙をブロックごとに画像化してA4に詰める） ---- */
@@ -895,6 +907,7 @@ async function pdfToJpegs(file, onPage, maxW = 1500) {
 }
 
 async function buildPDF(p, onStep) {
+  const res = await resolveRefs(p, onStep); // 教材ページは用紙に持たず、ここで読む
   await loadLibs();
   const { jsPDF } = window.jspdf;
   const W = 794, H = 1123, PX = 60, PT = 64, PB = 60;
@@ -904,7 +917,7 @@ async function buildPDF(p, onStep) {
   document.body.appendChild(fr);
   const doc = fr.contentDocument;
   doc.open();
-  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:#fff;color:#111}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw{width:${W}px;background:#fff;font-size:14.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .pq{font-size:15px}.sw .arow,.sw .at{font-size:13.5px}.sw .aim{font-size:12px}.sw .psg{font-size:14px}.sw .rule{border-bottom-color:#B0B0B0}.sw .note,.sw .aim{color:#444}</style></head><body><div class="sw">${paperHTML(p)}</div></body></html>`);
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:#fff;color:#111}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw{width:${W}px;background:#fff;font-size:14.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .pq{font-size:15px}.sw .arow,.sw .at{font-size:13.5px}.sw .aim{font-size:12px}.sw .psg{font-size:14px}.sw .rule{border-bottom-color:#B0B0B0}.sw .note,.sw .aim{color:#444}</style></head><body><div class="sw">${paperHTML(p, res)}</div></body></html>`);
   doc.close();
   await new Promise((r) => setTimeout(r, 150));
   const host = doc.body;
@@ -969,7 +982,7 @@ function PrintSheet({ paper: p }) {
   const makePdf = async () => { setPdfErr(""); setPdfBusy(1); try { await exportPDF(p, (n) => setPdfBusy(n)); } catch (e) { setPdfErr(e.message || "PDFを作れませんでした"); } setPdfBusy(0); };
   const [state, setState] = useState("");
   const body = useMemo(() => paperHTML(p), [p]);
-  const share = async () => { setState(""); const blob = new Blob([fileHTML(p)], { type: "text/html" }); const name = `${p.subject}_${p.code}.html`;
+  const share = async () => { setState(""); let res = {}; try { res = await resolveRefs(p); } catch {} const blob = new Blob([fileHTML(p, res)], { type: "text/html" }); const name = `${p.subject}_${p.code}.html`;
     if (await shareFile(blob, name, "text/html")) return;
     try { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); } catch {} };
   const copyText = async () => { const t = paperText(p); try { await navigator.clipboard.writeText(t); setState("copied"); return; } catch {}
@@ -981,7 +994,7 @@ function PrintSheet({ paper: p }) {
     <button className="btn-sm wide" onClick={copyText}>テキストをコピー（メモアプリ経由）</button>
     {state === "copied" && <p className="msg">コピーしました。メモアプリに貼り付け、共有から「プリント」。</p>}
     {state === "failed" && <p className="warn-t">コピーできませんでした。</p>}
-    <p className="q-warn">{p.model && `${p.model} が生成。`}資料 → 問題用紙 → 解答の順でA4に組みます。iPhoneは共有シートが開くので「ファイルに保存」か「プリント」。印刷前に内容を必ず確認してください。</p>
+    <p className="q-warn">{p.model && `${p.model} が生成。`}資料 → 問題用紙 → 解答の順でA4に組みます。{(p.refs || []).length > 0 && `資料の教材ページ（${p.refs.map((r) => `${r.kind} p.${r.page}`).join("、")}）はPDF生成時に読み込みます。`}iPhoneは共有シートが開くので「ファイルに保存」か「プリント」。印刷前に内容を必ず確認してください。</p>
     <div className="prev"><style>{SHEET_CSS.replace(/\.sw /g, ".prev .sw ").replace(/^\.sw\{/m, ".prev .sw{")}</style><div className="sw" dangerouslySetInnerHTML={{ __html: body }} /></div>
   </>);
 }
@@ -1463,8 +1476,6 @@ const CSS = `
 .chips{display:flex;flex-wrap:wrap;gap:5px}.chip{padding:6px 10px;border:1px solid var(--line);background:var(--paper);border-radius:14px;font-size:12px;color:var(--ink2);cursor:pointer;font-family:inherit}.chip.on{color:#fff;border-color:transparent;font-weight:700}
 .nv{font-style:normal;background:#A8443B;color:#fff;font-size:9px;padding:0 3px;border-radius:2px;margin-left:4px}
 .det{margin:10px 0}.det summary{font-size:12px;color:var(--ink2);cursor:pointer}.det-s{margin-top:10px}.det-h{font-size:12px;font-weight:700;margin-bottom:5px}
-.imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.thumb{position:relative;width:56px;height:56px;border:1px solid var(--line);border-radius:3px;overflow:hidden}.thumb img{width:100%;height:100%;object-fit:cover;display:block}.thumb button{position:absolute;top:1px;right:1px;width:18px;height:18px;border:none;border-radius:50%;background:rgba(30,35,33,.82);color:#fff;font-size:11px;cursor:pointer;padding:0}
-.addimg{width:56px;height:56px;border:1px dashed var(--line);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--ink3);cursor:pointer;background:var(--paper)}
 .ph-btn{display:block;text-align:center;padding:11px;border:1px dashed var(--line);border-radius:3px;background:var(--paper);font-size:12px;color:var(--ink2);cursor:pointer;margin-bottom:8px}.ph-note{font-size:11px;color:var(--ink3);line-height:1.6;margin:9px 0 6px}
 .loglist{margin-top:8px;font-size:12px;color:var(--ink2);line-height:1.7}
 .prow{border-top:1px solid var(--line);padding:8px 0}.pr-main{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px}.pr-t{flex:1}.code{font-style:normal;font-family:ui-monospace,Menlo,monospace;color:var(--ink3);font-size:10px}.st{font-size:10px;padding:1px 6px;border-radius:2px;background:#C08A3E;color:#fff}.st.g{background:#2F6F5E}.pr-body{margin-top:8px}
