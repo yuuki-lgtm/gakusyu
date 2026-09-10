@@ -1521,3 +1521,10 @@ describe("○×の欄の読み取り", () => {
     finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
   });
 });
+
+describe("印のポップオーバー", () => {
+  test("popCls: 印のそばに出し、右半分なら左へ、下半分なら上へ開く", () => {
+    assert.equal(m.popCls(0.2, 0.2), "mpop pop"); assert.equal(m.popCls(0.8, 0.2), "mpop pop l");
+    assert.equal(m.popCls(0.2, 0.9), "mpop pop up"); assert.equal(m.popCls(0.8, 0.9), "mpop pop l up");
+  });
+});
