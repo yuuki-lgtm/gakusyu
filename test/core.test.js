@@ -1476,3 +1476,16 @@ describe("印ごとの誤答の種類", () => {
     assert.deepEqual(its.map((i) => i.history[0].etype), ["読み間違えた", "知らなかった", "知らなかった"]);
   });
 });
+
+describe("画面の状態を引き継ぐ", () => {
+  test("openScreen: バー（サブ画面なし）で戻れば同じ画面のまま、サブ画面付きなら作り直す（n が進む）", () => {
+    const o0 = { home: { m: null, n: 0 } };
+    const o1 = m.openScreen(o0, "week"); assert.deepEqual(o1.week, { m: null, n: 0 });
+    assert.equal(m.openScreen(o1, "week"), o1, "開いたままの画面は触らない");
+    assert.equal(m.openScreen(o1, "home"), o1);
+    const o2 = m.openScreen(o1, "week", "cum"); assert.deepEqual(o2.week, { m: "cum", n: 1 });
+    assert.deepEqual(m.openScreen(o2, "week", "cum").week, { m: "cum", n: 2 }, "同じサブ画面でも指定があれば作り直す");
+    assert.deepEqual(m.openScreen(o2, "today", "grade").today, { m: "grade", n: 0 });
+    assert.deepEqual(m.openScreen(o2, "week").week, { m: "cum", n: 1 }, "その後バーで戻っても作り直さない");
+  });
+});

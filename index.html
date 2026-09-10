@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 18:44"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 18:53"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -953,11 +953,22 @@ async function exportPDF(papers, onStep) {
 /* ==================== 5. 画面 ==================== */
 
 /* ---- App ---- */
+/* 一度開いた画面は裏に残す（hidden）。バーで戻ると、選んでいた切り替え・入力途中・スクロール位置がそのまま。
+   m（サブ画面）付きの遷移（ホームの「次にやること」など）は n を進めて画面を作り直し、m から始める */
+const GROUP_OF = { home: "home", today: "home", night: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more" };
+const openScreen = (o, t, m = null) => (m || !o[t] ? { ...o, [t]: { m, n: o[t] ? o[t].n + 1 : 0 } } : o);
 function App() {
   const [d, setD] = useState(null);
   const [tab, setTab] = useState("home");
-  const [mode, setMode] = useState(null);
-  const go = (t, m = null) => { setMode(m); setTab(t); };
+  const [opened, setOpened] = useState({ home: { m: null, n: 0 } });
+  const scrollPos = useRef({});
+  const lastIn = useRef({}); // グループ → 最後に開いていた画面（フックは早期 return より前に置く）
+  const go = (t, m = null) => {
+    try { scrollPos.current[tab] = window.scrollY || 0; } catch {}
+    if (m) scrollPos.current[t] = 0;
+    setOpened((o) => openScreen(o, t, m)); setTab(t);
+  };
+  useEffect(() => { try { window.scrollTo(0, scrollPos.current[tab] || 0); } catch {} }, [tab]);
 
   const [sync, setSync] = useState("");
   const [toast, setToast] = useState("");
@@ -987,24 +998,28 @@ function App() {
   const left = nextExam ? diffDays(today(), nextExam.date) : null;
   // 下のバーは頻度で3つ。毎日＝ホーム（夜の作業・朝の印刷・今日）、週1＝週末（テスト・模試・定期）、たまに＝その他（登録・分析・依頼文・設定）
   const tabs = [["home", "ホーム"], ["week", left !== null && left <= 14 ? `週末 D-${left}` : "週末"], ["more", "その他"]];
-  const group = { home: "home", today: "home", night: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more" }[tab] || "home";
+  const group = GROUP_OF[tab] || "home";
+  // バーは、そのグループで最後に開いていた画面に戻す（その他→登録→ホーム→その他 なら登録）。いま居るグループをもう一度押すと先頭へ
+  lastIn.current[group] = tab;
+  const goGroup = (g) => go(g === group ? g : lastIn.current[g] || g);
 
   return (
     <div className="root"><style>{CSS}</style>
       <header className="hd"><div className="hd-t">学習ループ<span className="ver">v{VERSION}</span></div>
         <div className="hd-s">未定着 {active.length} · 今日 {due.length}件{daily.rest.length ? `（繰り越し ${daily.rest.length}件）` : ""} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}</div></header>
-      <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => go(k)}>{l}</button>))}</nav>
+      <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{l}</button>))}</nav>
       <main className="main">
-        {tab === "home" && <HomeTab d={d} go={go} />}
-        {tab === "today" && <TodayTab d={d} save={save} initial={mode} />}
-        {tab === "night" && <NightFlow d={d} save={save} go={go} />}
-        {tab === "week" && <WeekTab d={d} save={save} initial={mode} />}
-        {tab === "reg" && <RegTab d={d} save={save} initial={mode} />}
-        {tab === "ana" && <AnaTab d={d} />}
-        {tab === "exam" && <WeekTab d={d} save={save} initial="exam" />}
-        {tab === "more" && <MoreTab d={d} go={go} />}
-        {tab === "export" && <ExportTab d={d} />}
-        {tab === "set" && <Settings d={d} save={save} setSync={setSync} />}
+        {Object.keys(opened).map((k) => { const m = opened[k].m; return (<div key={`${k}:${opened[k].n}`} hidden={tab !== k}>
+          {k === "home" && <HomeTab d={d} go={go} />}
+          {k === "today" && <TodayTab d={d} save={save} initial={m} />}
+          {k === "night" && <NightFlow d={d} save={save} go={go} />}
+          {k === "week" && <WeekTab d={d} save={save} initial={m} />}
+          {k === "reg" && <RegTab d={d} save={save} initial={m} />}
+          {k === "ana" && <AnaTab d={d} />}
+          {k === "exam" && <WeekTab d={d} save={save} initial="exam" />}
+          {k === "more" && <MoreTab d={d} go={go} />}
+          {k === "export" && <ExportTab d={d} />}
+          {k === "set" && <Settings d={d} save={save} setSync={setSync} />}</div>); })}
         {toast && <p className="msg fixed">{toast}</p>}
       </main></div>
   );
