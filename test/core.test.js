@@ -1428,7 +1428,10 @@ describe("問題が変", () => {
 
 describe("考え方の説明（2回以上落ちた項目）", () => {
   const it = (o) => item({ history: [], ...o });
-  test("needsGuide は落とした回数2以上", () => { assert.equal(m.needsGuide({ failCount: 1 }), false); assert.equal(m.needsGuide({ failCount: 2 }), true); });
+  test("needsGuide: 「知らなかった」は初回から、それ以外は落とした回数2以上", () => {
+    assert.equal(m.needsGuide({ failCount: 1, etype: "分かっていたが間違えた" }), false); assert.equal(m.needsGuide({ failCount: 2, etype: "読み間違えた" }), true);
+    assert.equal(m.needsGuide({ failCount: 1, etype: "知らなかった" }), true); assert.equal(m.needsGuide({ failCount: 1 }), false);
+  });
   test("guideFor: Opus 5 で説明と例題を作り、教科書のページを添える", async () => {
     const orig = globalThis.fetch; let sent = null; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
     globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"explain":"負×負は正。\\n符号を先に決める。","example":{"q":"(−3)×(−2)","a":"符号は正。3×2=6 で 6"}}' }] }) }; };
