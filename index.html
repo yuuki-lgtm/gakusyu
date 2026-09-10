@@ -202,7 +202,7 @@ const Dot = ({ s }) => <span className="dot" style={{ background: HUE[s] }} />;
 /* ---- 空データと移行 ---- */
 /* レコードを消して墓標（deleted）に残す。同期で他の端末からも消えるように */
 const removeRec = (d, key, ids) => { const set = new Set([].concat(ids)); return { ...d, [key]: d[key].filter((x) => !set.has(x.id)), deleted: [...d.deleted, ...set] }; };
-const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], papers: [], log: {}, exams: [], writing: [], materials: [], deleted: [] });
+const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], papers: [], log: {}, exams: [], writing: [], materials: [], backupOn: null, deleted: [] });
 /* v2 → v3 移行。既存データを引き継ぐ */
 function migrate(d) {
   if (!d) return blank();
@@ -229,7 +229,7 @@ async function pushRemote(data) { await sbFetch("state", { method: "POST", heade
 function mergeData(a, b) {
   const del = new Set([...(a.deleted || []), ...(b.deleted || [])]);
   const byId = (xs, ys) => { const m = new Map(); [...(xs || []), ...(ys || [])].forEach((r) => { if (del.has(r.id)) return; const p = m.get(r.id); if (!p || (r.updatedAt || "") > (p.updatedAt || "")) m.set(r.id, r); }); return [...m.values()]; };
-  return { v: 3, updatedAt: now(), units: byId(a.units, b.units), items: byId(a.items, b.items), tests: byId(a.tests, b.tests), papers: byId(a.papers, b.papers), exams: byId(a.exams, b.exams), writing: byId(a.writing, b.writing), materials: byId(a.materials, b.materials), log: { ...(a.log || {}), ...(b.log || {}) }, deleted: [...del] };
+  return { v: 3, updatedAt: now(), units: byId(a.units, b.units), items: byId(a.items, b.items), tests: byId(a.tests, b.tests), papers: byId(a.papers, b.papers), exams: byId(a.exams, b.exams), writing: byId(a.writing, b.writing), materials: byId(a.materials, b.materials), log: { ...(a.log || {}), ...(b.log || {}) }, backupOn: [a.backupOn, b.backupOn].filter(Boolean).sort().pop() || null, deleted: [...del] };
 }
 
 /* ---- 教材画像（Supabase Storage） ---- */
@@ -457,6 +457,7 @@ function nextActions(d) {
     if (d.items.length > 0 && d.units.some(taught) && (!cum || diffDays(cum, t) >= 30)) A.push({ k: "cum", title: cum ? `累積テストを作る（前回から ${diffDays(cum, t)} 日）` : "累積テストを作る", why: "過去の範囲を混ぜて初見で測る。学力の推移はこれで見る。月1回。", tab: "week", mode: "cum", t: "生成3分＋印刷" });
     if (left !== null && left <= 14 && left >= 0) A.push({ k: "exam", title: `定期テストまで ${left} 日。範囲の未定着だけやる`, why: "新しいことはやらない期間です。未出題の範囲があれば最優先。", tab: "exam", t: "" });
     if (stuck.length) A.push({ k: "stuck", title: `3回以上落ちている ${stuck.length} 件を診断する`, why: "反復では解決しません。前提に戻る手順を出します。", tab: "today", mode: "cards", t: "" });
+    if (d.items.length > 0 && (!d.backupOn || diffDays(d.backupOn, t) >= 30)) A.push({ k: "backup", title: d.backupOn ? `バックアップを書き出す（前回から ${diffDays(d.backupOn, t)} 日）` : "バックアップを書き出す", why: "月1回。「設定」の「書き出す」でファイルに残す。同期先が消えても戻せる。", tab: "set", t: "1分" });
   }
   return { A, due, left, nx };
 }
@@ -1688,7 +1689,7 @@ function Settings({ d, save, setSync }) {
   const saveSync = () => { localStorage.setItem(SB_URL, url.trim()); localStorage.setItem(SB_KEY, anon.trim()); localStorage.setItem(SB_ROOM, room.trim()); say("同期設定を保存しました"); };
   const genRoom = () => setRoom("fam-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10));
   const testSync = async () => { setBusy("sync"); saveSync(); try { const remote = await pullRemote(); const merged = remote ? mergeData(d, migrate(remote.data)) : d; await pushRemote(merged); save(merged); setSync("ok"); say("同期できました。サーバーの内容と統合しました。"); } catch (e) { setSync("err"); say("失敗: " + e.message); } setBusy(""); };
-  const backup = () => { const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `gakushu_${today()}.json`; document.body.appendChild(a); a.click(); a.remove(); };
+  const backup = () => { const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `gakushu_${today()}.json`; document.body.appendChild(a); a.click(); a.remove(); save({ ...d, backupOn: today() }); say("書き出しました"); };
   const restore = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const p = JSON.parse(r.result); if (!p.items || !p.units) throw new Error(); save(mergeData(d, migrate(p))); say("統合しました"); } catch { say("読み込めませんでした"); } }; r.readAsText(f); };
   const [paste, setPaste] = useState("");
   const copyLink = async () => { saveSync(); localStorage.setItem(AKEY, key.trim()); const link = cfgLink(window.location.href); say((await copyToClipboard(link)) ? "リンクをコピーしました。LINE やメールで自分に送ってください" : "コピーできませんでした"); };
@@ -1711,7 +1712,7 @@ function Settings({ d, save, setSync }) {
     <section className="sec"><h3 className="s-h">APIキー</h3><p className="lead">AI機能に必要です。console.anthropic.com で発行。この端末の中にだけ保存されます。</p>
       <Fld label="Anthropic API キー"><input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-..." autoComplete="off" /></Fld>
       <div className="q-btns"><button className="btn-sm" onClick={saveKey}>保存</button><button className="btn-sm" onClick={testKey} disabled={busy === "key" || !key.trim()}>{busy === "key" ? "確認中…" : "接続を確認"}</button></div></section>
-    <section className="sec"><h3 className="s-h">バックアップ</h3><p className="lead">月1回は書き出してください。読み込みは上書きではなく統合です。</p>
+    <section className="sec"><h3 className="s-h">バックアップ</h3><p className="lead">月1回は書き出してください。30日たつとホームに出ます。読み込みは上書きではなく統合です。{d.backupOn ? `前回 ${d.backupOn}。` : "まだ書き出していません。"}</p>
       <div className="q-btns"><button className="btn-sm" onClick={backup}>書き出す</button><label className="btn-sm ctr">読み込む<input type="file" accept="application/json" onChange={restore} hidden /></label></div>
       <p className="q-warn">未定着 {d.items.filter((i) => i.status === "active").length} ／ 安定 {d.items.filter((i) => i.status === "stable").length} ／ 記録 {d.tests.length} ／ 単元 {d.units.length}</p></section>
     <section className="sec"><h3 className="s-h">ホーム画面に追加</h3><p className="lead">Safariで開き、共有ボタン →「ホーム画面に追加」。印刷もSafariの共有から行えます。</p></section>

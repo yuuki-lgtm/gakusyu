@@ -37,7 +37,7 @@
 下のタブ: ホーム／今日／テスト／登録／分析／定期／依頼文／設定。`App` が `tab` と `mode`（サブ画面）を持ち、`go(tab, mode)` で遷移する。ホームの「いまやること」は `nextActions(d)` が決める。
 
 ### ホーム `HomeTab`
-`nextActions(d)` の先頭1つを大きく、残りを「そのあと」に。順序: 単元未登録 → 進度未設定 → 未採点の答案 → ワークの×を登録 → 子どもの画面判定の確定 → **昨日の分を採点（`printedOn < 今日` の項目）→ 今日の分を印刷（`printSet`）** → 最初の項目 → 週末の進度更新と作問 → **累積テストを作る（前回の累積テスト `lastCumOn` から30日以上。`go("week","cum")` で作る画面を累積で開く）** → 定期テスト14日前 → 3回落ちた項目の診断。
+`nextActions(d)` の先頭1つを大きく、残りを「そのあと」に。順序: 単元未登録 → 進度未設定 → 未採点の答案 → ワークの×を登録 → 子どもの画面判定の確定 → **昨日の分を採点（`printedOn < 今日` の項目）→ 今日の分を印刷（`printSet`）** → 最初の項目 → 週末の進度更新と作問 → **累積テストを作る（前回の累積テスト `lastCumOn` から30日以上。`go("week","cum")` で作る画面を累積で開く）** → 定期テスト14日前 → 3回落ちた項目の診断 → **バックアップを書き出す（`backupOn` から30日以上。書き出すと `backupOn` を更新、同期では新しい日を採用）**。
 
 ### 今日 `TodayTab`（採点／印刷／カード）
 - **印刷 `TodayMake`**: `printSet(d)`＝明日までに期日が来る未印刷の項目（画面判定中は除く）。`genForItem()` で類題を自動生成（今日作った類題があれば再利用）し、`genToPaper()` で1つの用紙にして `exportPDF()`。成功した項目に `printedOn` を付ける。生成に失敗した項目は次回に回る。「採点待ちの分をもう一度PDFにする」は再生成なしで同じ内容を出す。
@@ -77,8 +77,8 @@
           refs:[{n, kind, page, path}](資料にする教材ページの参照), imgs:[b64](旧データの写真), status:'printed'|'graded', model, updatedAt}],
   log:{'YYYY-MM-DD':true}, exams:[{id,name,date,unitIds,actual:{教科:点},updatedAt}],
   writing:[{id,date,subject,len,structure,surface,note,updatedAt}],
-  materials:[{id, subject, kind:'ワーク'|'教科書', page, path, doneOn(やった日|null), idx:{ns:[問題番号], at}|undefined, updatedAt}],
-  deleted:[id] }
+  materials:[{id, subject, kind:'ワーク'|'教科書'|'テスト', page, path, doneOn(やった日|null), idx:{ns:[問題番号], at}|undefined, updatedAt}],
+  backupOn(最後に書き出した日|null), deleted:[id] }
 ```
 - 定数: `FORMATS`（出題形式8種）、`ETYPES`（誤答の種類4種）、`INT=[1,3,7,14,30,60]`、`STABLE_LEVEL=4`、`MKINDS=["ワーク","教科書","テスト"]`（`BOOK_KINDS` は目次のある教科書とワークだけ）、`SUBJ_CODE`、`KIND_CODE`（wb/tb/ts）。
 - `applyJudgment(item, r)` が間隔反復の核。変えるときは必ずテストを通す。

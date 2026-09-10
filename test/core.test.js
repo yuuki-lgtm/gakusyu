@@ -830,3 +830,20 @@ describe("今日やった最後のページ", () => {
     assert.equal(m.applyAutoProgress(m.markDoneUpTo({ ...d, units: d.units.map((u) => ({ ...u, learnedOn: null })) }, "数学", "ワーク", 12)).units.find((u) => u.id === "u2").learnedOn, T, "進度も進む");
   });
 });
+
+describe("バックアップの間隔（30日）", () => {
+  test("blank/migrate に backupOn があり、mergeData は新しい日を採用", () => {
+    assert.equal(m.blank().backupOn, null); assert.equal(m.migrate({ v: 3, items: [], units: [] }).backupOn, null);
+    assert.equal(m.mergeData({ ...m.blank(), backupOn: "2026-09-01" }, { ...m.blank(), backupOn: "2026-08-01" }).backupOn, "2026-09-01");
+    assert.equal(m.mergeData({ ...m.blank() }, { ...m.blank(), backupOn: "2026-08-01" }).backupOn, "2026-08-01");
+    assert.equal(m.mergeData({ v: 3 }, { v: 3 }).backupOn, null);
+  });
+  test("ホーム: 書き出していない、または30日以上たてば「バックアップを書き出す」。項目が無ければ出ない", () => {
+    const d = F.demo();
+    assert.equal(m.nextActions(d).A.find((x) => x.k === "backup").title, "バックアップを書き出す");
+    assert.equal(m.nextActions({ ...d, backupOn: day(-5) }).A.find((x) => x.k === "backup"), undefined);
+    assert.ok(m.nextActions({ ...d, backupOn: day(-31) }).A.find((x) => x.k === "backup").title.includes("31 日"));
+    assert.equal(m.nextActions({ ...d, items: [] }).A.find((x) => x.k === "backup"), undefined);
+    assert.equal(m.nextActions(d).A.slice(-1)[0].k, "backup", "優先度は最後");
+  });
+});

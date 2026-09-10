@@ -218,3 +218,7 @@ test("デモ: ×の登録に「p.N までやった」の1タップが出る", ()
   assert.ok(html.includes("までやった") && html.includes("今日やった最後のページ"));
   assert.ok(!html.includes("×なし（やった）"));
 });
+test("設定: バックアップの前回日が出る", () => {
+  assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("まだ書き出していません"));
+  assert.ok(render(m.Settings, { d: { ...F.demo(), backupOn: "2026-09-01" }, save: noop, setSync: noop }).html.includes("前回 2026-09-01"));
+});
