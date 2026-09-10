@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 10:54"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 10:55"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1290,7 +1290,7 @@ function ManualTest({ d, save }) {
     <SubjRow value={subject} onChange={(s) => { setSubject(s); setSel([]); }} />
     <div className="seg sm">{["週次", "累積", "定期"].map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
     <div className="grid2"><Fld label="実施日"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Fld><Fld label="使った教材"><input value={source} onChange={(e) => setSource(e.target.value)} placeholder="例：学校ワーク p.32-35" /></Fld></div>
-    <Fld label="形式ごとの成績">{rows.map((r) => (<div className="fmtrow" key={r.id}><select value={r.fmt} onChange={(e) => upd(r.id, "fmt", e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select><input type="number" className="cnt" placeholder="出題" value={r.total} onChange={(e) => upd(r.id, "total", e.target.value)} /><input type="number" className="cnt" placeholder="正答" value={r.correct} onChange={(e) => upd(r.id, "correct", e.target.value)} />{rows.length > 1 && <button className="btn-x" onClick={() => setRows((x) => x.filter((y) => y.id !== r.id))}>×</button>}</div>))}
+    <Fld label="形式ごとの成績">{rows.map((r) => (<div className="fmtrow" key={r.id}><select value={r.fmt} onChange={(e) => upd(r.id, "fmt", e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select><input type="number" className="num" placeholder="出題" value={r.total} onChange={(e) => upd(r.id, "total", e.target.value)} /><input type="number" className="num" placeholder="正答" value={r.correct} onChange={(e) => upd(r.id, "correct", e.target.value)} />{rows.length > 1 && <button className="btn-x" onClick={() => setRows((x) => x.filter((y) => y.id !== r.id))}>×</button>}</div>))}
       <button className="btn-sm" onClick={() => setRows((r) => [...r, { id: uid(), fmt: FORMATS[0], total: "", correct: "" }])}>形式を追加</button></Fld>
     <Fld label="出題した単元"><div className="chips">{subjUnits.length === 0 && <span className="empty">単元が未登録です。</span>}{subjUnits.map((u) => (<button key={u.id} className={"chip" + (sel.includes(u.id) ? " on" : "")} style={sel.includes(u.id) ? { background: HUE[subject] } : {}} onClick={() => setSel((s) => (s.includes(u.id) ? s.filter((x) => x !== u.id) : [...s, u.id]))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>))}</div></Fld>
     <button className="btn-main" onClick={submit}>記録する</button>{msg && <p className="msg">{msg}</p>}
@@ -1639,7 +1639,7 @@ function ExamCard({ ex, d, save }) {
       {rangeItems.length === 0 && <p className="done">範囲内の未定着はゼロ。直前に詰め込む必要はありません。</p>}</>)}
     <div className="calib"><div className="cand-h">実際の点数（返却後に入力）と、ツール上の予測</div>
       {SUBJECTS.map((s) => { const p = predicted(s); const a = ex.actual?.[s]; const gap = a !== undefined && a !== "" && p !== null ? Number(a) - p : null; return (
-        <div className="cal-row" key={s}><span className="m-n" style={{ color: HUE[s] }}>{s}</span><input type="number" className="cnt" placeholder="実点" value={a ?? ""} onChange={(e) => upd({ actual: { ...(ex.actual || {}), [s]: e.target.value } })} /><span className="cal-p">予測 {p === null ? "—" : p + "%"}</span>{gap !== null && <span className="cal-g" style={{ color: Math.abs(gap) <= 7 ? "#2F6F5E" : "#A8443B" }}>{gap > 0 ? "+" : ""}{gap}</span>}</div>); })}
+        <div className="cal-row" key={s}><span className="m-n" style={{ color: HUE[s] }}>{s}</span><input type="number" className="num" placeholder="実点" value={a ?? ""} onChange={(e) => upd({ actual: { ...(ex.actual || {}), [s]: e.target.value } })} /><span className="cal-p">予測 {p === null ? "—" : p + "%"}</span>{gap !== null && <span className="cal-g" style={{ color: Math.abs(gap) <= 7 ? "#2F6F5E" : "#A8443B" }}>{gap > 0 ? "+" : ""}{gap}</span>}</div>); })}
       <p className="blk-s">予測＝直近の累積テストの正答率。ずれが±7を超える教科は、自作の物差しが本番と合っていません。その教科の作問の難易度か範囲を見直す材料です。</p></div>
   </div>);
 }
@@ -1798,7 +1798,7 @@ const CSS = `
 .cand-h{font-size:11px;font-weight:700;color:var(--ink2);margin:10px 0 6px}
 .cand2{display:block;padding:9px;margin-bottom:6px;border:1px solid var(--line);border-radius:3px;background:var(--card);font-size:13px;line-height:1.45}.cand2.on{border-color:var(--ink)}.cand2-l{display:flex;gap:8px;align-items:flex-start;cursor:pointer}.cand2 input[type=checkbox]{width:auto;margin-top:3px}.pg{font-style:normal;font-size:10px;color:var(--ink3)}
 .cand{display:block;width:100%;text-align:left;padding:9px;margin-bottom:5px;border:1px solid var(--line);background:var(--card);border-radius:3px;cursor:pointer;font-family:inherit}.cd-l{display:block;font-size:13px;line-height:1.45}.cd-n{display:block;font-size:11px;color:var(--ink3);margin-top:2px}
-.fmtrow{display:flex;gap:5px;margin-bottom:6px;align-items:center}.fmtrow select{flex:1;min-width:0;font-size:12px;padding:6px}.cnt{width:58px;text-align:center;font-size:12px;padding:6px}.root input.cnt{width:64px}
+.fmtrow{display:flex;gap:5px;margin-bottom:6px;align-items:center}.fmtrow select{flex:1;min-width:0;font-size:12px;padding:6px}.num{width:58px;text-align:center;font-size:12px;padding:6px}.root input.num{width:64px}
 .rub{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}.rub-b{display:flex;gap:4px}.rub-b button{width:34px;height:30px;border:1px solid var(--line);background:var(--card);border-radius:3px;cursor:pointer;font-family:inherit}.rub-b button.on{background:var(--ink);color:#fff}
 .mini{margin-top:10px;font-size:11px;color:var(--ink2);line-height:1.8}
 .urow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.urow:last-child{border:none}.u-name{font-size:13px}.u-meta{font-size:11px;color:var(--ink3);margin-top:2px}.never{color:#A8443B;font-weight:700}
