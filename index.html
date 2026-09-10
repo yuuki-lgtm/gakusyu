@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 11:21"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 11:23"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1986,7 +1986,9 @@ const CSS = `
 .blk h3{margin:0 0 8px;font-size:13px}.blk-s{font-size:11px;color:var(--ink3);margin:-2px 0 8px;line-height:1.6}.cnt{font-weight:400;font-size:11px;color:var(--ink3);margin-left:6px}.s-h{font-size:13px;margin:0 0 7px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid2>*{min-width:0}.fld{display:block;margin-bottom:11px}.fld>span{display:block;font-size:11px;color:var(--ink3);margin-bottom:3px}
 .root input,.root select,.root textarea{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:3px;background:var(--card);font-size:14px;font-family:inherit;color:var(--ink)}
-.root input[type=date]{min-width:0;max-width:100%;-webkit-appearance:none;appearance:none;box-sizing:border-box;line-height:1.3;height:38px}
+.root input:not([type=checkbox]):not([type=file]),.root select{height:40px;padding-top:0;padding-bottom:0;line-height:38px;box-sizing:border-box;-webkit-appearance:none;appearance:none;border-radius:3px}
+.root input[type=date]{min-width:0;max-width:100%;display:block}
+.root select.et-sel{height:auto;line-height:normal;padding:3px 6px}
 .root input:focus,.root select:focus,.root textarea:focus{outline:2px solid #3D6B8E;outline-offset:-1px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:13px;margin-bottom:10px}
 .c-meta{font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}.dot{width:7px;height:7px;border-radius:50%;flex:0 0 7px;display:inline-block;margin-right:4px}
