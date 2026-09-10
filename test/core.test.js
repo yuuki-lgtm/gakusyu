@@ -1522,3 +1522,26 @@ describe("○×の欄の読み取り", () => {
   });
 });
 
+
+describe("名前を付け直す", () => {
+  test("nameAndApply: AI が名前を返せば反映して件数の文、返せなければ失敗の文。既存の一覧に自分は入れない", async () => {
+    const orig = globalThis.fetch; let sent = "";
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    const src = { path: "fam/math/wb/11.jpg", kind: "ワーク", page: 11, x: 0.3, y: 0.4 };
+    const d = { ...m.blank(), items: [item({ id: "a", subject: "数学", unitId: "u", label: "ワーク p.11 の×（1）", named: false, src }), item({ id: "b", subject: "数学", unitId: "u", label: "既存の項目" })] };
+    let saved = null; const save = (f) => { saved = typeof f === "function" ? f(d) : f; };
+    globalThis.fetch = async (url, opts) => {
+      if (url.includes("/storage/")) return { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer };
+      sent = JSON.stringify(JSON.parse(opts.body));
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: JSON.stringify({ items: [{ n: 1, label: "係数が分数の一次方程式", fmt: "計算", summary: "3x/2=6 を解く" }] }) }] }) };
+    };
+    try {
+      const msg = await m.nameAndApply(d, [d.items[0]], "数学", () => ({ name: "一次方程式" }), save);
+      assert.ok(msg.startsWith("1件に項目名を付けました"), msg);
+      const a = saved.items.find((x) => x.id === "a"); assert.deepEqual([a.label, a.note, a.named], ["係数が分数の一次方程式", "3x/2=6 を解く", true]);
+      assert.ok(sent.includes("既存の項目") && !sent.includes("ワーク p.11 の×"), "既存の一覧に自分自身は入れない");
+      globalThis.fetch = async (url) => (url.includes("/storage/") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer } : { ok: false, status: 500, text: async () => "x" });
+      assert.ok((await m.nameAndApply(d, [d.items[0]], "数学", () => null, save)).startsWith("項目名を付けられませんでした"));
+    } finally { globalThis.fetch = orig; for (const k of ["sb_url", "sb_key", "anthropic_api_key"]) m.stubs.localStorage.removeItem(k); }
+  });
+});

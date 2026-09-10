@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 22:24"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 22:29"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1658,6 +1658,18 @@ function MarkPop({ x, y, children }) {
   }, [x, y]);
   return (<div ref={ref} className="mpop pop" style={pos ? { left: pos.left, top: pos.top } : { left: `${x * 100}%`, top: `${y * 100}%`, visibility: "hidden" }} onClick={(e) => e.stopPropagation()}>{children}</div>);
 }
+/* 仮の名前の項目に AI で名前を付けて反映する（登録直後と、未定着一覧の「名前を付け直す」で共通）。
+   同じ教科の既存の項目と同じ技能なら統合、リスニングは未定着から外して形式の成績に。戻り値は画面に出す文 */
+async function nameAndApply(d, add, subject, unitOf, save) {
+  const meta = {}; const ids = add.map((i) => i.id);
+  const existing = d.items.filter((x) => x.subject === subject && x.status === "active" && x.named !== false && !ids.includes(x.id)).map((x) => ({ id: x.id, label: x.label }));
+  const patch = await nameItems(add, unitOf, null, meta, existing);
+  const n = Object.keys(patch).length;
+  const { ids: lis, tests: lisTests } = splitListening(add, patch, meta.listening);
+  let merged = 0;
+  if (n) save((cur) => { const withNames = { ...cur, items: cur.items.filter((x) => !lis.includes(x.id)).map((x) => (patch[x.id] ? { ...x, ...patch[x.id], same: undefined, updatedAt: now() } : x)), tests: [...cur.tests, ...lisTests], deleted: [...cur.deleted, ...lis] }; const r = mergeSameSkill(withNames, ids.filter((id) => !lis.includes(id)), patch); merged = r.merged; return r.d; });
+  return n ? `${n - lis.length - merged}件に項目名を付けました${merged ? `。既存の項目と同じ技能 ${merged} 件は統合（回数を増やして明日に）` : ""}${lis.length ? `。リスニング ${lis.length}問は紙で反復できないので、未定着には入れず形式の成績（分析）に記録しました` : ""}` : "項目名を付けられませんでした。類題を作るときにもう一度試します";
+}
 function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const kinds = MKINDS.filter((k) => matsOf(d, subject, k).length);
   const [kind, setKind] = useState(kinds[0] || MKINDS[0]);
@@ -1700,13 +1712,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     save(applyAutoProgress(markDone({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }, taps.map((t) => t.path))));
     const spread = add.filter((i) => i.nextDue !== addDays(today(), 1)).length;
     setTaps([]); setMsg(`${add.length}件を登録しました。${spread ? `多いので ${spread} 件は明後日以降に分散しました。` : "明日の「今日」に出ます"}${hasKey() ? "。項目名をAIが付けています…" : ""}`);
-    if (hasKey()) { setNaming(true); const meta = {}; const existing = d.items.filter((x) => x.subject === subject && x.status === "active" && x.named !== false).map((x) => ({ id: x.id, label: x.label }));
-      nameItems(add, (id) => us.find((u) => u.id === id), null, meta, existing).then((patch) => {
-      const n = Object.keys(patch).length;
-      const { ids: lis, tests: lisTests } = splitListening(add, patch, meta.listening);
-      let merged = 0;
-      if (n) save((cur) => { const withNames = { ...cur, items: cur.items.filter((x) => !lis.includes(x.id)).map((x) => (patch[x.id] ? { ...x, ...patch[x.id], same: undefined, updatedAt: now() } : x)), tests: [...cur.tests, ...lisTests], deleted: [...cur.deleted, ...lis] }; const r = mergeSameSkill(withNames, add.map((i) => i.id).filter((id) => !lis.includes(id)), patch); merged = r.merged; return r.d; });
-      setMsg(n ? `${n - lis.length - merged}件に項目名を付けました${merged ? `。既存の項目と同じ技能 ${merged} 件は統合（回数を増やして明日に）` : ""}${lis.length ? `。リスニング ${lis.length}問は紙で反復できないので、未定着には入れず形式の成績（分析）に記録しました` : ""}` : "項目名を付けられませんでした。類題を作るときにもう一度試します"); setNaming(false); setTimeout(() => setMsg(""), 7000); }); }
+    if (hasKey()) { setNaming(true); nameAndApply(d, add, subject, (id) => us.find((u) => u.id === id), save).then((m) => { setMsg(m); setNaming(false); setTimeout(() => setMsg(""), 7000); }); }
     else setTimeout(() => setMsg(""), 4000);
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
@@ -1768,10 +1774,15 @@ function ItemReg({ d, save }) {
 }
 function ItemList({ d, save }) {
   const unitOf = (id) => unitById(d, id);
+  const [naming, setNaming] = useState(null); const [msg, setMsg] = useState("");
+  const rename = async (i) => { if (!hasKey()) { setMsg("APIキーが未設定です（その他→設定）"); return; } setNaming(i.id); setMsg("");
+    try { setMsg(await nameAndApply(d, [i], i.subject, unitOf, save)); } catch (e) { setMsg(`付けられませんでした：${e.message || e}`); }
+    setNaming(null); setTimeout(() => setMsg(""), 7000); };
   return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
+    {msg && <p className="msg">{msg}</p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
-        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}{i.noWhy && <em className="tag">説明不要</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
+        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}{i.noWhy && <em className="tag">説明不要</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}{i.named === false && hasPos(i.src) && <button className="btn-sm rename" disabled={!!naming} onClick={() => rename(i)}>{naming === i.id ? "AI が名前を付けています…" : "名前を付け直す（AI）"}</button>}<div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
           <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select>
           {i.fmt !== "知識・用語" && <button className={"et why" + (i.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{i.noWhy ? "説明不要" : "説明あり"}</button>}</div><button className="btn-x" onClick={() => save(removeRec(d, "items", i.id))}>×</button></div>); })}</div>); })}</>);
 }
@@ -2178,7 +2189,7 @@ const CSS = `
 .rub{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}.rub-b{display:flex;gap:4px}.rub-b button{width:34px;height:30px;border:1px solid var(--line);background:var(--card);border-radius:3px;cursor:pointer;font-family:inherit}.rub-b button.on{background:var(--ink);color:#fff}
 .mini{margin-top:10px;font-size:11px;color:var(--ink2);line-height:1.8}
 .urow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.urow:last-child{border:none}.u-name{font-size:13px}.u-meta{font-size:11px;color:var(--ink3);margin-top:2px}.never{color:#A8443B;font-weight:700}
-.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-note{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.5}
+.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-note{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.5}.btn-sm.rename{margin:4px 0 2px;display:inline-block}
 .ir-meta{font-size:11px;color:var(--ink3);margin-top:2px}
 .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;margin:4px 0 8px}.big small{font-size:12px;color:var(--ink3);font-weight:400}
 .mrow{margin-bottom:9px}.mr-name{font-size:12px;margin-bottom:3px}.mr-bar{height:6px;background:#E7EAE7;border-radius:3px;overflow:hidden}.mr-bar span{display:block;height:100%}.mr-meta{display:flex;gap:10px;font-size:10px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums}.fmn{font-style:normal;font-size:10px;color:#A8443B;margin-left:6px}

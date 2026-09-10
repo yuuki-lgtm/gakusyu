@@ -398,3 +398,9 @@ test("未定着一覧: 項目名の下に「どういう問題だったか」（
   assert.ok(h.includes('<div class="ir-note">符号を落とす</div>'));
   assert.equal((h.match(/class="ir-note"/g) || []).length, F.demo().items.filter((i) => i.status === "active" && i.note).length);
 });
+test("未定着一覧: 仮の名前でタップ登録した項目には「名前を付け直す（AI）」。名前付きや手入力には出ない", () => {
+  const d = F.demo(); const src = { path: "fam/math/wb/11.jpg", kind: "ワーク", page: 11, x: 0.3, y: 0.4 };
+  d.items = d.items.map((i, k) => (k === 0 ? { ...i, named: false, src } : k === 1 ? { ...i, named: false, src: undefined } : i));
+  const h = render(m.ItemList, { d, save: noop }).html;
+  assert.equal((h.match(/名前を付け直す（AI）/g) || []).length, 1);
+});
