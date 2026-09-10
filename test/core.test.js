@@ -505,3 +505,53 @@ describe("設定を別の端末へ渡すリンク", () => {
     assert.equal(m.importCfg(m.cfgLink("https://a/")), 0);
   });
 });
+
+describe("紙で回す（印刷セット・採点セット・一括確定）", () => {
+  const it = (o) => item({ history: [], ...o });
+  test("printSet: 明日までに期日が来る未印刷の項目。判定中と印刷済みは除く。落とした回数順", () => {
+    const d = { ...m.blank(), items: [
+      it({ id: "a", nextDue: day(1), failCount: 0 }), it({ id: "b", nextDue: T, failCount: 2 }), it({ id: "c", nextDue: day(2) }),
+      it({ id: "p", nextDue: T, printedOn: day(-1) }), it({ id: "q", nextDue: T, pending: { d: T, self: "o" } }), it({ id: "o", nextDue: day(-3), failCount: 2 })] };
+    assert.deepEqual(m.printSet(d).map((i) => i.id), ["o", "b", "a"]);
+  });
+  test("gradeSet: 印刷済みだけ、古い順", () => {
+    const d = { ...m.blank(), items: [it({ id: "a", printedOn: T }), it({ id: "b", printedOn: day(-2) }), it({ id: "c" }), it({ id: "d", printedOn: day(-2), failCount: 3 })] };
+    assert.deepEqual(m.gradeSet(d).map((i) => i.id), ["d", "b", "a"]);
+  });
+  test("judgeAll: 判定した項目だけ applyJudgment と履歴、印刷を解除。skip は印刷前に戻す。未判定はそのまま", () => {
+    const d = { ...m.blank(), items: [it({ id: "a", level: 1, printedOn: day(-1), etype: "知らなかった" }), it({ id: "b", level: 2, printedOn: day(-1) }), it({ id: "c", printedOn: day(-1) }), it({ id: "s", printedOn: day(-1) })] };
+    const { d: nd, n } = m.judgeAll(d, { a: { r: "x", self: "o", etype: "読み間違えた" }, b: { r: "oo", self: "oo" }, s: { skip: true } });
+    assert.equal(n, 2);
+    const [a, b, c, s] = nd.items;
+    assert.deepEqual([a.level, a.failCount, a.printedOn, a.etype, a.nextDue], [0, 1, null, "読み間違えた", day(1)]);
+    assert.deepEqual(a.history[0], { d: T, r: "x", self: "o", etype: "読み間違えた", etypeSelf: "" });
+    assert.deepEqual([b.level, b.printedOn, b.history[0].r, b.history[0].etype], [3, null, "oo", ""]);
+    assert.equal(c.printedOn, day(-1)); assert.equal(c.history.length, 0);
+    assert.equal(s.printedOn, null); assert.equal(s.history.length, 0);
+    assert.equal(nd.log[T], true);
+    assert.equal(m.judgeAll(d, {}).n, 0); assert.equal(m.judgeAll(d, {}).d.log[T], undefined);
+  });
+  test("genToPaper: 項目ごとに見出し、説明の問いを最後に足し、自分の判定の欄を付ける。用語は説明なし", () => {
+    const u = { id: "u", name: "正負の数" };
+    const items = [
+      { id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", gen: { problems: [{ q: "q1", a: "a1" }, { q: "q2", a: "a2" }], why: "なぜ符号が変わるか" } },
+      { id: "2", subject: "社会", unitId: "u", label: "B", fmt: "知識・用語", gen: { problems: [{ q: "t1", a: "b1" }], why: "無視される" } },
+      { id: "3", subject: "国語", unitId: "u", label: "C", fmt: "計算", gen: null }];
+    const p = m.genToPaper(items, () => u);
+    assert.equal(p.questions.length, 4);
+    assert.ok(p.questions[0].q.startsWith("【数学・正負の数】q1") && !p.questions[0].q.includes(m.SELF_LINE));
+    assert.equal(p.questions[1].q, "q2");
+    assert.ok(p.questions[2].q.startsWith("説明：なぜ符号が変わるか") && p.questions[2].q.endsWith(m.SELF_LINE) && p.questions[2].a.includes("説明もできた"));
+    assert.ok(p.questions[3].q.startsWith("【社会・正負の数】t1") && p.questions[3].q.endsWith(m.SELF_LINE), "用語は最後の問題に判定欄");
+    assert.equal(p.questions[3].n, 4); assert.equal(p.subject, "回収");
+    assert.ok(m.paperHTML(p).includes("自分の判定"));
+  });
+  test("ctxFor / itemContext", () => {
+    const d = F.demo(); const i = d.items.find((x) => x.id === "i1");
+    const c = m.ctxFor(d, i);
+    assert.deepEqual(c.siblings, d.items.filter((x) => x.unitId === "u1" && x.status === "active" && x.id !== "i1").map((x) => x.label));
+    assert.ok(c.stable.includes("絶対値") && c.units.includes("正負の数"));
+    const t = m.itemContext(i, d.units[0], c);
+    assert.ok(t.includes("教科: 数学") && t.includes("未定着項目: 負の数のかけ算") && t.includes("落とした回数: 2"));
+  });
+});

@@ -27,7 +27,7 @@ function fixtures(m) {
         history: [{ d: day(-8), r: "x", self: "x", etype: "分かっていたが間違えた", etypeSelf: "知らなかった" }, { d: day(-7), r: "o", self: "o", etype: "", etypeSelf: "" }, { d: day(-1), r: "x", self: "o", etype: "分かっていたが間違えた", etypeSelf: "" }],
         level: 0, failCount: 2, nextDue: T, status: "active", pending: null,
         gen: { problems: [{ q: "(−2)×(+5) を計算しなさい。", a: "−10" }, { q: "(−3)×(−4) を計算しなさい。", a: "12" }, { q: "(−6)÷(+2) を計算しなさい。", a: "−3" }], why: "負×負が正になる理由", passage: "" },
-        diag: null, src: { path: "fam-demo/math/wb/11.jpg", kind: "ワーク", page: 11, q: "3" }, updatedAt: ts(-1) },
+        diag: null, src: { path: "fam-demo/math/wb/11.jpg", kind: "ワーク", page: 11, q: "3" }, genOn: day(-1), printedOn: day(-1), updatedAt: ts(-1) },
       { id: "i2", subject: "数学", unitId: "u2", label: "文字式の表し方（÷）", note: "", fmt: "図・作図・グラフ", etype: "知らなかった", createdOn: day(-20),
         history: [{ d: day(-20), r: "x", self: "x", etype: "知らなかった", etypeSelf: "知らなかった" }, { d: day(-15), r: "x", self: "o", etype: "知らなかった", etypeSelf: "" }, { d: day(-3), r: "x", self: "x", etype: "読み間違えた", etypeSelf: "読み間違えた" }],
         level: 0, failCount: 3, nextDue: day(-2), status: "active", pending: null, gen: null,

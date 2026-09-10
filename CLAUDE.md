@@ -26,7 +26,7 @@
   items:[{id, subject, unitId, label, note, fmt, etype, createdOn,
           history:[{d, r:'x'|'o'|'oo', self, etype, etypeSelf}],
           level(0-5), failCount, nextDue, status:'active'|'stable',
-          pending:{d, self, selfE, pm}|null, gen, diag, updatedAt}],
+          pending:{d, self, selfE, pm}|null, gen, genOn(類題を作った日), printedOn(紙に印刷した日|null), diag, src, updatedAt}],
   tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解', source, rows:[{fmt,total,correct}], total, correct, unitIds, paperId, updatedAt}],
   papers:[{id, code, subject, date, kind, title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg,fig}],
           refs:[{n, kind, page, path}](資料にする教材ページの参照), imgs:[b64](旧データの写真), status:'printed'|'graded', model, updatedAt}],
@@ -49,7 +49,13 @@
 - ×の登録は「教科→教材→ページ→問題番号」の選択式。AIが該当問題を読んで項目名を作る。項目は `src:{path, kind, page, q}` を持ち、類題生成でその画像を渡す。
 
 ## 画面
-ホーム（いまやること1つ）／今日（回収）／テスト（作る・撮る・読解・記述・手入力）／登録（単元・項目・一覧・教材）／分析／定期／依頼文／設定
+ホーム（いまやること1つ）／今日（採点・印刷・カード）／テスト（作る・撮る・読解・記述・手入力）／登録（単元・項目・一覧・教材）／分析／定期／依頼文／設定
+
+## 「今日」の運用（紙で回す）
+- 夜の2ステップ。ホームの「いまやること」は「昨日の分を採点 → 今日の分を印刷」の順。
+- 印刷: `printSet(d)`（明日までに期日が来る未印刷の項目）の類題を `genForItem()` で自動生成し（1項目3問、用語は「〜を書きなさい」の記述形式、その他は説明の問いを1問足す）、`genToPaper()` で教科・単元の見出し付き1枚のPDFに。解答は別ページ。各項目の最後に「自分の判定」の欄。生成後に `printedOn` を付ける。
+- 採点: `gradeSet(d)`（`printedOn` のある項目）を一覧にし、子どもの判定（紙の印）→親の判定を押して `judgeAll()` でまとめて確定。「やっていない」は印刷前に戻す。判定の中身は `applyJudgment` のまま。
+- カード: 従来の1件ずつの画面（類題を画面で見る、診断）。子どもが画面で判定する運用もここに残る。
 
 ## AI
 - Anthropic API を直接呼ぶ（`anthropic-dangerous-direct-browser-access`）。キーは localStorage。
@@ -81,6 +87,7 @@
    - 「登録→教材」で PDF と複数画像の取り込み（iPhone Safari で pdf.js が動くか、ページ番号が合うか）。
    - 「登録→単元」でワークの目次を撮り、既存単元への対応づけとページ範囲の手直し。
    - 「テスト→作る」で「添付される教材」が出て作問が通るか。図を参照した問題があれば PDF の資料ページに教材のページが入るか。「登録→項目」で教材から×を登録し、翌日の類題に元の問題が効くか。
+   - 「今日→印刷」で類題の自動生成と1枚のPDF（見出し・説明の問い・自分の判定の欄）、翌日「今日→採点」でまとめて確定できるか。
 2. iPhone Safari で PDF 生成（共有シート）を確認。Windows Chrome での生成・保存は 2026-09-09 に確認済み。
 3. iPhone Safari で写真読み取り（採点済み答案、目次、ワークの×）を確認。
 4. Supabase 同期を2端末で確認。
