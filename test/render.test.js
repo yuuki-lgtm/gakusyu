@@ -208,3 +208,8 @@ test("デモ: 教材の取り込みと×の登録に「テスト」の種別が�
   const unit = render(m.RegTab, { d: F.demo(), save: noop, initial: "unit" }).html;
   assert.ok(unit.includes("教科書の目次") && unit.includes("ワークの目次") && !unit.includes("テストの目次"));
 });
+test("テスト/作る を cum で開くと累積が選ばれている", () => {
+  const html = render(m.WeekTab, { d: F.demo(), save: noop, initial: "cum" }).html;
+  assert.ok(/class="on">累積</.test(html) && !/class="on">週次</.test(html));
+  assert.ok(/class="on">週次</.test(render(m.WeekTab, { d: F.demo(), save: noop, initial: "make" }).html));
+});

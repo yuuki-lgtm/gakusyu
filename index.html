@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 10:59"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 11:02"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -424,6 +424,8 @@ function untouchedPages(d, unitIds) {
 }
 
 /* ---- ホームの「いまやること」 ---- */
+/* 前回の累積テストの日（作った用紙と記録した結果の新しい方）。無ければ null */
+const lastCumOn = (d) => [...(d.papers || []).filter((p) => p.kind === "累積").map((p) => p.date), ...(d.tests || []).filter((x) => x.kind === "累積").map((x) => x.date)].sort().pop() || null;
 function nextActions(d) {
   const t = today();
   const due = d.items.filter((i) => i.nextDue <= t);
@@ -449,6 +451,8 @@ function nextActions(d) {
     if (d.items.length === 0 && !pending.length) A.push({ k: "first", title: "最初の項目を入れる", why: "返却されたテストの答案を撮るのが最良の入口。なければ週末のテストから。", tab: "reg", mode: "item", t: "20分" });
     if (weekend && !paperThisWeek && !pending.length && d.items.length > 0) A.push({ k: "prog2", title: "「今週どこまで進んだ？」を聞いて進度を更新", why: "作問の前に。子どもに聞いて、該当の単元で「ここまで」を押すだけ。", tab: "reg", mode: "unit", t: "1分" });
     if (weekend && !paperThisWeek && !pending.length && d.items.length > 0) A.push({ k: "make", title: "今週のテストを作って印刷する", why: "5教科まとめて1タップ。単元は自動で選ばれます。", tab: "week", mode: "make", t: "生成3分＋印刷" });
+    const cum = lastCumOn(d);
+    if (d.items.length > 0 && d.units.some(taught) && (!cum || diffDays(cum, t) >= 30)) A.push({ k: "cum", title: cum ? `累積テストを作る（前回から ${diffDays(cum, t)} 日）` : "累積テストを作る", why: "過去の範囲を混ぜて初見で測る。学力の推移はこれで見る。月1回。", tab: "week", mode: "cum", t: "生成3分＋印刷" });
     if (left !== null && left <= 14 && left >= 0) A.push({ k: "exam", title: `定期テストまで ${left} 日。範囲の未定着だけやる`, why: "新しいことはやらない期間です。未出題の範囲があれば最優先。", tab: "exam", t: "" });
     if (stuck.length) A.push({ k: "stuck", title: `3回以上落ちている ${stuck.length} 件を診断する`, why: "反復では解決しません。前提に戻る手順を出します。", tab: "today", mode: "cards", t: "" });
   }
@@ -982,8 +986,9 @@ function ItemCard({ item: i, unit: u, onConfirm, onStore, ctx }) {
 /* ---- テスト ---- */
 function WeekTab({ d, save, initial }) {
   const pending = d.papers.some((p) => p.status === "printed");
-  const [mode, setMode] = useState(initial || (pending ? "grade" : "make"));
-  useEffect(() => { if (initial) setMode(initial); }, [initial]);
+  const asMode = (m) => (m === "cum" ? "make" : m); // cum＝累積テストを作る（作る画面を累積で開く）
+  const [mode, setMode] = useState(asMode(initial) || (pending ? "grade" : "make"));
+  useEffect(() => { if (initial) setMode(asMode(initial)); }, [initial]);
   return (
     <div className="pane">
       <p className="tabhint">週末の作業。進度を更新 → 作る → 印刷 → 解く → 赤ペンで採点 → 撮る、の順です。</p>
@@ -992,7 +997,7 @@ function WeekTab({ d, save, initial }) {
         <button className={mode === "read" ? "on" : ""} onClick={() => setMode("read")}>読解</button>
         <button className={mode === "write" ? "on" : ""} onClick={() => setMode("write")}>記述</button>
         <button className={mode === "manual" ? "on" : ""} onClick={() => setMode("manual")}>手入力</button></div>
-      {mode === "make" && <MakePapers d={d} save={save} />}
+      {mode === "make" && <MakePapers d={d} save={save} initialKind={initial === "cum" ? "累積" : "週次"} />}
       {mode === "grade" && <GradeFlow d={d} save={save} />}
       {mode === "read" && <ReadingMaker d={d} save={save} />}
       {mode === "write" && <WritingFlow d={d} save={save} />}
@@ -1000,10 +1005,11 @@ function WeekTab({ d, save, initial }) {
     </div>
   );
 }
-function MakePapers({ d, save }) {
+function MakePapers({ d, save, initialKind = "週次" }) {
   const [sel, setSel] = useState([...SUBJECTS]);
   const [n, setN] = useState("10");
-  const [kind, setKind] = useState("週次");
+  const [kind, setKind] = useState(initialKind);
+  useEffect(() => { setKind(initialKind); }, [initialKind]);
   const [busy, setBusy] = useState("");
   const [log, setLog] = useState([]);
   const [customUnits, setCustomUnits] = useState({});

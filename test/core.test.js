@@ -799,3 +799,22 @@ describe("教材種別「テスト」", () => {
     assert.equal(its[0].unitId, "u1"); assert.equal(its[0].label, "テスト p.1 の×（1）"); assert.equal(its[0].src.kind, "テスト");
   });
 });
+
+describe("累積テストの間隔（30日）", () => {
+  test("lastCumOn: 用紙と結果の新しい方。無ければ null", () => {
+    assert.equal(m.lastCumOn(F.demo()), day(-10), "p2 の用紙は今日に変えていない。t3 が -12、p2 が -10");
+    assert.equal(m.lastCumOn(m.blank()), null);
+    assert.equal(m.lastCumOn({ tests: [{ kind: "累積", date: "2026-01-05" }, { kind: "週次", date: "2026-02-01" }] }), "2026-01-05");
+  });
+  test("ホーム: 30日以上あいたら「累積テストを作る」。29日なら出ない。習った単元と項目が無ければ出ない", () => {
+    const d = F.demo();
+    const with30 = { ...d, papers: d.papers.filter((p) => p.kind !== "累積"), tests: d.tests.map((x) => (x.kind === "累積" ? { ...x, date: day(-30) } : x)) };
+    const a = m.nextActions(with30).A.find((x) => x.k === "cum");
+    assert.ok(a && a.title.includes("30 日") && a.mode === "cum" && a.tab === "week");
+    const with29 = { ...with30, tests: with30.tests.map((x) => (x.kind === "累積" ? { ...x, date: day(-29) } : x)) };
+    assert.equal(m.nextActions(with29).A.find((x) => x.k === "cum"), undefined);
+    const never = { ...d, papers: d.papers.filter((p) => p.kind !== "累積"), tests: d.tests.filter((x) => x.kind !== "累積") };
+    assert.equal(m.nextActions(never).A.find((x) => x.k === "cum").title, "累積テストを作る");
+    assert.equal(m.nextActions({ ...never, items: [] }).A.find((x) => x.k === "cum"), undefined);
+  });
+});
