@@ -847,3 +847,34 @@ describe("バックアップの間隔（30日）", () => {
     assert.equal(m.nextActions(d).A.slice(-1)[0].k, "backup", "優先度は最後");
   });
 });
+
+describe("定期テスト前の後ろ倒し", () => {
+  const it = (o) => item({ history: [], ...o });
+  const base = (left) => ({ ...m.blank(), exams: [{ id: "e", name: "中間", date: day(left), unitIds: ["in"], actual: {}, updatedAt: "" }],
+    items: [it({ id: "a", unitId: "out", nextDue: day(2), level: 2 }), it({ id: "b", unitId: "in", nextDue: day(1) }), it({ id: "c", unitId: "", nextDue: day(2) }),
+      it({ id: "p", unitId: "out", nextDue: day(1), printedOn: day(-1) }), it({ id: "q", unitId: "out", nextDue: T, pending: { d: T, self: "o" } }), it({ id: "f", unitId: "out", nextDue: day(40) })] });
+  test("14日前から、範囲外で期日が来る項目だけをテスト翌日に。level は変えない", () => {
+    const r = m.deferForExam(base(10));
+    const a = r.items.find((x) => x.id === "a");
+    assert.equal(a.nextDue, day(11)); assert.deepEqual(a.defer, { examId: "e", from: day(2) }); assert.equal(a.level, 2);
+    for (const id of ["b", "c", "p", "q"]) assert.equal(r.items.find((x) => x.id === id).nextDue, base(10).items.find((x) => x.id === id).nextDue, id + " は触らない");
+    assert.equal(r.items.find((x) => x.id === "f").nextDue, day(40), "テスト後の期日はそのまま");
+    assert.equal(m.printSet(r).length, 1, "印刷対象は範囲内だけ");
+    const r2 = m.deferForExam(r); assert.deepEqual(r2, r, "何度呼んでも同じ");
+  });
+  test("15日前・範囲なし・テストなし・過ぎたテストでは何もしない", () => {
+    assert.equal(m.deferForExam(base(15)).items.find((x) => x.id === "a").nextDue, day(2));
+    const noRange = base(10); noRange.exams[0].unitIds = []; assert.equal(m.deferForExam(noRange).items.find((x) => x.id === "a").nextDue, day(2));
+    assert.equal(m.deferForExam(m.blank()).items.length, 0);
+    assert.equal(m.deferForExam(base(-1)).items.find((x) => x.id === "a").nextDue, day(2));
+  });
+  test("テスト後: 判定すると元の間隔で進み、後ろ倒しの印が消える", () => {
+    const a = m.deferForExam(base(10)).items.find((x) => x.id === "a");
+    const j = m.applyJudgment(a, "o"); assert.equal(j.level, 3); assert.equal(j.nextDue, day(14)); assert.equal(j.defer, null);
+  });
+  test("deferredFor: そのテストで後ろ倒し中の項目", () => {
+    const r = m.deferForExam(base(10));
+    assert.deepEqual(m.deferredFor(r, r.exams[0]).map((x) => x.id), ["a"]);
+    assert.deepEqual(m.deferredFor(F.demo(), F.demo().exams[0]), []);
+  });
+});

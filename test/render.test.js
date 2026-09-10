@@ -222,3 +222,9 @@ test("設定: バックアップの前回日が出る", () => {
   assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("まだ書き出していません"));
   assert.ok(render(m.Settings, { d: { ...F.demo(), backupOn: "2026-09-01" }, save: noop, setSync: noop }).html.includes("前回 2026-09-01"));
 });
+test("定期: 14日前は範囲外の後ろ倒し件数が出る", () => {
+  const d = F.demo(); d.exams = d.exams.map((e) => (e.id === "e1" ? { ...e, date: F.day(10), unitIds: ["u1"] } : e));
+  const r = m.deferForExam(d);
+  const html = render(m.ExamTab, { d: r, save: noop }).html;
+  assert.ok(html.includes("まで後ろ倒し"), (html.match(/範囲内の未定着[^<]*/) || [])[0]);
+});

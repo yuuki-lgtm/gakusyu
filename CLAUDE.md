@@ -59,7 +59,7 @@
 
 ### 分析 `AnaTab`／定期 `ExamTab`／依頼文 `ExportTab`／設定 `Settings`
 - 分析: 保持率（30日以上あけた再出題の正答率）、形式別、子どもと親の判定の一致率、誤答の種類の分布。見るだけ。
-- 定期: テストの登録と範囲。範囲内の未定着、未出題の単元、**ワークで手つかずのページ（`untouchedPages`）**、実点と予測のずれ。
+- 定期: テストの登録と範囲。範囲内の未定着、未出題の単元、**ワークで手つかずのページ（`untouchedPages`）**、実点と予測のずれ。**14日前から `deferForExam()` が範囲外の項目の再出題日をテスト翌日に後ろ倒しする**（起動時と保存のたびに適用。`level` は変えないので、判定すれば元の間隔で進む。印刷済み・判定中・単元なしは触らない）。後ろ倒し中の件数を表示。
 - 依頼文: 学習状況を文章にしてコピー。
 - 設定: 設定を別の端末に渡すリンク（`cfgLink`／`importCfg`、#cfg= で開くか貼り付け）、Supabase（URL・anon キー・共有ID、SQL の案内）、API キー、バックアップ、バージョン。
 
@@ -71,7 +71,8 @@
           history:[{d, r:'x'|'o'|'oo', self, etype, etypeSelf}],
           level(0-5), failCount, nextDue, status:'active'|'stable',
           pending:{d, self, selfE, pm}|null, gen, genOn(類題を作った日), printedOn(紙に印刷した日|null), diag,
-          src:{path, kind, page, x, y}|undefined(教材のページとタップ位置。旧データは q=問題番号), named(false なら仮の名前), updatedAt}],
+          src:{path, kind, page, x, y}|undefined(教材のページとタップ位置。旧データは q=問題番号), named(false なら仮の名前),
+          defer:{examId, from}|null(定期テスト前の後ろ倒し中), updatedAt}],
   tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解', source, rows:[{fmt,total,correct}], total, correct, unitIds, paperId, updatedAt}],
   papers:[{id, code, subject, date, kind, title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg,fig}],
           refs:[{n, kind, page, path}](資料にする教材ページの参照), imgs:[b64](旧データの写真), status:'printed'|'graded', model, updatedAt}],
@@ -139,6 +140,7 @@
 - ×の登録をタップ式にし、索引や番号の一致に依存しない: 索引が外れても登録と類題が止まらない。
 - 見開きを自動判定して綴じ目で切る: 片ページだけの1枚を別に入れる手間をなくす。
 - 日付はローカル: `toISOString` で1日ずれていた既存バグを 2026-09-10 に修正。
+- 定期テスト前の後ろ倒しは `nextDue` だけ動かし `level` は保つ: 設計思想4（間隔は正解で伸び、落とせば戻る）を崩さずに、14日前から範囲だけに集中させるため。
 
 ## やらないこと
 - 通知、ゲーミフィケーション、子ども向けダッシュボード、画面上での出題。

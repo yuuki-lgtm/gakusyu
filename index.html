@@ -319,7 +319,7 @@ function applyJudgment(item, r) {
   if (r === "x") { level = 0; failCount += 1; }
   else if (r === "oo" || item.fmt === "知識・用語") { level = Math.min(level + 1, INT.length - 1); }
   else { level = Math.min(level + 1, 3); }
-  return { ...item, level, failCount, nextDue: addDays(t, INT[level]), status: level >= STABLE_LEVEL ? "stable" : "active", gen: r === "x" ? null : item.gen, updatedAt: now() };
+  return { ...item, level, failCount, nextDue: addDays(t, INT[level]), status: level >= STABLE_LEVEL ? "stable" : "active", gen: r === "x" ? null : item.gen, defer: null, updatedAt: now() };
 }
 function retention(items) {
   let c = 0, t = 0;
@@ -333,6 +333,23 @@ function streakDays(log) {
   while (log[d]) { n++; d = addDays(d, -1); }
   return n;
 }
+
+/* ---- 定期テスト前の後ろ倒し ---- */
+/* 直近の定期テスト（範囲あり）の14日前から、範囲外の項目の再出題日をテスト翌日に後ろ倒しする。
+   level は変えないので、テスト後は元の間隔で進む。印刷済み・判定中・単元なしの項目は触らない。何度呼んでも同じ */
+function deferForExam(d) {
+  const t = today();
+  const ex = (d.exams || []).filter((e) => e.date >= t && (e.unitIds || []).length).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+  if (!ex || diffDays(t, ex.date) > 14) return d;
+  const after = addDays(ex.date, 1); let changed = false;
+  const items = d.items.map((i) => {
+    if (!i.unitId || ex.unitIds.includes(i.unitId) || i.nextDue >= after || i.printedOn || i.pending?.d === t) return i;
+    changed = true; return { ...i, nextDue: after, defer: { examId: ex.id, from: i.nextDue }, updatedAt: now() };
+  });
+  return changed ? { ...d, items } : d;
+}
+/* 後ろ倒し中の項目（そのテストで、まだ再出題日が来ていないもの） */
+const deferredFor = (d, ex) => d.items.filter((i) => i.defer && i.defer.examId === ex.id && i.nextDue > today());
 
 /* ---- 紙で回す（印刷セット・採点セット・一括確定） ---- */
 /* 明日までに期日が来る未印刷の項目（子どもが判定中のものは除く） */
@@ -713,11 +730,12 @@ function App() {
     let cur = null;
     try { const l = localStorage.getItem(KEY) || localStorage.getItem("gakushu_loop_v2"); cur = migrate(l ? JSON.parse(l) : null); } catch { cur = blank(); }
     if (syncOn()) { try { const remote = await pullRemote(); if (remote) { cur = mergeData(cur, migrate(remote.data)); localStorage.setItem(KEY, JSON.stringify(cur)); } setSync("ok"); } catch { setSync("err"); } }
+    cur = deferForExam(cur);
     dRef.current = cur; setD(cur);
   })(); }, []);
   const dRef = useRef(null);
   const save = async (next) => {
-    const n = { ...(typeof next === "function" ? next(dRef.current) : next), updatedAt: now() };
+    const n = { ...deferForExam(typeof next === "function" ? next(dRef.current) : next), updatedAt: now() };
     dRef.current = n; setD(n); localStorage.setItem(KEY, JSON.stringify(n));
     if (syncOn()) { clearTimeout(pushTimer.current); pushTimer.current = setTimeout(async () => {
       try { const remote = await pullRemote(); const merged = remote ? mergeData(n, migrate(remote.data)) : n; await pushRemote(merged); if (remote) { dRef.current = merged; setD(merged); localStorage.setItem(KEY, JSON.stringify(merged)); } setSync("ok"); } catch { setSync("err"); } }, 1500); }
@@ -1643,7 +1661,7 @@ function ExamCard({ ex, d, save }) {
     <div className="ex-h"><strong>{ex.name || "テスト"}</strong> {ex.date} {!past && <em className={"cnt-b" + (left <= 14 ? " near" : "")}>D-{left}</em>}<button className="btn-x" onClick={() => save(removeRec(d, "exams", ex.id))}>×</button></div>
     <Fld label="出題範囲"><div className="chips">{d.units.map((u) => (<button key={u.id} className={"chip" + (ex.unitIds.includes(u.id) ? " on" : "")} style={ex.unitIds.includes(u.id) ? { background: HUE[u.subject] } : {}} onClick={() => upd({ unitIds: ex.unitIds.includes(u.id) ? ex.unitIds.filter((x) => x !== u.id) : [...ex.unitIds, u.id] })}>{u.subject}・{u.name}</button>))}</div></Fld>
     {!past && ex.unitIds.length > 0 && (<>
-      <div className={"count" + (left <= 14 ? " near" : "")}><div className="cn-n">あと {left} 日</div><div className="cn-s">範囲内の未定着 <strong>{rangeItems.length}</strong> 件{left <= 14 && " · 新しいことはやらず、これだけを潰す"}</div></div>
+      <div className={"count" + (left <= 14 ? " near" : "")}><div className="cn-n">あと {left} 日</div><div className="cn-s">範囲内の未定着 <strong>{rangeItems.length}</strong> 件{left <= 14 && " · 新しいことはやらず、これだけを潰す"}{left <= 14 && deferredFor(d, ex).length > 0 && ` · 範囲外の ${deferredFor(d, ex).length} 件は ${addDays(ex.date, 1).slice(5)} まで後ろ倒し`}</div></div>
       {(() => { const un = untouchedPages(d, ex.unitIds); return un.length > 0 && (<div className="sub-b"><strong>ワークで手つかずのページ</strong><ul className="plain">{un.map((x) => (<li key={x.unit.id}><Dot s={x.unit.subject} />{x.unit.name} p.{pagesToRanges(x.pages)}<em> {x.problems ? `問題 ${x.problems}` : ""}{x.noIdx ? `（索引なし ${x.noIdx}ページ）` : ""}</em></li>))}</ul><p className="blk-s">「登録→落とした項目」でページを開いて×を登録するか、「×なし（やった）」を押すと消えます。</p></div>); })()}
       {never.length > 0 && <div className="alert"><strong>一度も出題していない範囲 {never.length} 件</strong><p>落とした記録がないのは試していないから。最優先でテストしてください。</p><ul className="plain">{never.map((u) => (<li key={u.id}><Dot s={u.subject} />{u.subject}・{u.name}</li>))}</ul></div>}
       {stuck.length > 0 && <div className="sub-b"><strong>3回以上落ちている {stuck.length} 件</strong> — 反復では解決しません。診断か相談を。</div>}
