@@ -414,6 +414,7 @@ test("ホーム: 数字カード（連続・未定着・安定・マス目）は
 test("スナックバー: ok は文だけ、err は × 付き。空なら何も出さない", () => {
   const h = render(m.Snacks, { list: [{ id: "1", text: "保存しました", kind: "ok" }, { id: "2", text: "失敗", kind: "err" }], onClose: noop }).html;
   assert.ok(h.includes('class="snack ok"') && h.includes('class="snack err"') && (h.match(/aria-label="閉じる"/g) || []).length === 1);
+  assert.equal((h.match(/class="sn-i"/g) || []).length, 2, "先頭にアイコン");
   assert.equal(render(m.Snacks, { list: [], onClose: noop }).html, "");
   assert.doesNotThrow(() => m.notify("x", "err"), "App が無いときは何もしない");
 });
