@@ -150,14 +150,13 @@ test("デモ: テスト/作る に自動で添付される教材が出る。空�
   assert.ok(html.includes("添付される教材：数学 ワーク p.10–12、教科書 p.12 ／ 英語 教科書 p.8 ／ 社会 なし"), html.match(/添付される教材：[^<]*/)?.[0]);
   assert.ok(!render(m.WeekTab, { d: F.empty(), save: noop, initial: "make" }).html.includes("添付される教材"));
 });
-test("デモ: 登録/項目 はページで×をタップする画面が既定。ページの単元が出る。空データは写真だけ", () => {
+test("デモ: 登録/項目 はページで×をタップする画面。ページの単元が出る。空データは手入力だけ", () => {
   const { html } = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" });
-  assert.ok(html.includes("ページで×をタップ") && html.includes("答案の写真から"));
   assert.ok(html.includes("正負の数"), "p.10 はワーク p.4-11 の単元");
-  assert.ok(html.includes("×だった問題をタップ"));
-  assert.ok(!html.includes("答案の写真から候補を出す"), "タップの画面では写真ボタンを出さない");
+  assert.ok(html.includes("×だった問題をタップ") && html.includes("手で1つ追加"));
+  assert.ok(!html.includes("答案の写真から"), "写真から候補を出す方式は無い");
   const e = render(m.RegTab, { d: F.empty(), save: noop, initial: "item" }).html;
-  assert.ok(!e.includes("ページで×をタップ") && e.includes("答案の写真から候補を出す"));
+  assert.ok(!e.includes("×だった問題をタップ") && e.includes("手で1つ追加") && e.includes("未定着リストに追加"));
 });
 test("TapReg: 単元と対応しないページはその旨を出す。教材が無ければ何も出さない", () => {
   const d = F.demo(); d.units = d.units.map((u) => ({ ...u, wbPages: "" }));

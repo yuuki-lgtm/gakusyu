@@ -305,7 +305,7 @@ function nextActions(d) {
     const noProg = SUBJECTS.filter((sub) => d.units.some((u) => u.subject === sub) && !d.units.some((u) => u.subject === sub && u.learnedOn));
     if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
     if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: "grade", t: "1枚2分" });
-    if (!weekend && d.units.length > 0) A.push({ k: "wb", title: "今日のワークの×を撮って登録", why: "その場で「解答→閉じて再現→説明」をやったあと、夜に登録。明日の「今日」に出ます。", tab: "reg", mode: "item", t: "2分" });
+    if (!weekend && d.units.length > 0) A.push({ k: "wb", title: "今日のワークの×を登録", why: "ページを開いて×だった問題をタップするだけ。明日の「今日」に出ます。", tab: "reg", mode: "item", t: "2分" });
     const pendN = d.items.filter((i) => i.pending?.d === t).length;
     if (pendN) A.push({ k: "confirm", title: `子どもの判定 ${pendN} 件を確定する`, why: "机の紙と照らして、親の確定を押す。ここで初めて次回の日程が決まります。", tab: "today", mode: "cards", t: "5分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
@@ -337,7 +337,7 @@ function HomeTab({ d, go }) {
       {nx && <div><div className="hm-k">{nx.name || "定期"}</div><div className="hm-v" style={{ color: left <= 14 ? "#8E3830" : "inherit" }}>D-{left}</div></div>}</div>
       <div className="heat sm">{days.map((dd) => (<span key={dd} className={d.log[dd] ? "on" : ""} />))}</div></div>
     <div className="blk"><h3>1週間の流れ</h3><ol className="flow">
-      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て「自分の判定」に印 → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> 昨日の紙を「採点」→「印刷」で明日の分を1枚に → ワークの×を登録</li><li><b>土曜</b> 進度更新 → ワークの×を撮る → 5教科作る → 印刷 → 解く → 採点 → 撮る</li><li><b>日曜</b> 読解1本・記述1本 → 撮る</li><li><b>週1</b> 「依頼文」をコピーして相談</li><li><b>返却時</b> 「登録」で答案を撮って項目に。「定期」で実点を入れる</li></ol></div>
+      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て「自分の判定」に印 → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> 昨日の紙を「採点」→「印刷」で明日の分を1枚に → ワークの×をタップで登録</li><li><b>土曜</b> ワークの×を登録 → 5教科作る → 印刷 → 解く → 採点 → 撮る</li><li><b>日曜</b> 読解1本・記述1本 → 撮る</li><li><b>週1</b> 「依頼文」をコピーして相談</li><li><b>返却時</b> 「登録」で答案を撮って項目に。「定期」で実点を入れる</li></ol></div>
   </div>);
 }
 
@@ -1204,7 +1204,7 @@ function RegTab({ d, save, initial }) {
   const [mode, setMode] = useState(initial || (d.units.length ? "item" : "unit"));
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
   return (<div className="pane">
-    <p className="tabhint">単元は学期に1回＋週1の進度更新。項目は、平日のワークの×・学校ワーク・返却テストで落としたものを入れる場所です。自作テストの×は「テスト→撮る」で自動です。</p>
+    <p className="tabhint">単元は学期に1回。項目は、平日のワークの×をページで指してタップする場所です。進度はワークの×から自動、拾えなければ「単元」で「ここまで」。自作テストの×は「テスト→撮る」で自動です。</p>
     <div className="seg"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着一覧</button><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>教材</button></div>
     {mode === "unit" && <UnitReg d={d} save={save} />}
     {mode === "item" && <ItemReg d={d} save={save} />}
@@ -1390,46 +1390,24 @@ function ItemReg({ d, save }) {
   const [subject, setSubject] = useState("数学");
   const [unitId, setUnitId] = useState(""); const [label, setLabel] = useState(""); const [note, setNote] = useState("");
   const [fmt, setFmt] = useState(FORMATS[0]); const [etype, setEtype] = useState(ETYPES[0]);
-  const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false); const [cands, setCands] = useState(null); const [err, setErr] = useState("");
-  const [ck, setCk] = useState({}); const [cet, setCet] = useState({});
+  const [msg, setMsg] = useState("");
   const hasMat = MKINDS.some((k) => matsOf(d, subject, k).length);
-  const [from, setFrom] = useState(hasMat ? "mat" : "photo");
-  useEffect(() => { setFrom(hasMat ? "mat" : "photo"); }, [subject, hasMat]);
-  const sec = useElapsed(busy);
   const us = d.units.filter((u) => u.subject === subject);
-  const commitAll = () => { if (!unitId) { setMsg("単元を選んでください"); return; }
-    const add = (cands || []).filter((_, i) => ck[i]).map((c, i) => ({ id: uid(), subject, unitId, label: c.label, note: c.note || "", fmt: FORMATS.includes(c.fmt) ? c.fmt : FORMATS[0], etype: cet[i] || (ETYPES.includes(c.etype) ? c.etype : ETYPES[0]), createdOn: today(), history: [{ d: today(), r: "x", etype: cet[i] || c.etype || ETYPES[0] }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }));
-    if (!add.length) return; save({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }); setCands(null); setMsg(`${add.length}件を追加しました。明日の「今日」に出ます`); setTimeout(() => setMsg(""), 3000); };
   useEffect(() => { setUnitId(us.length ? us[us.length - 1].id : ""); }, [subject, d.units.length]);
   const add = () => { if (!label.trim() || !unitId) { setMsg("単元と項目を入れてください"); return; }
     save({ ...d, items: [...d.items, { id: uid(), subject, unitId, label: label.trim(), note: note.trim(), fmt, etype, createdOn: today(), history: [{ d: today(), r: "x", etype }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }], log: { ...d.log, [today()]: true } });
     setLabel(""); setNote(""); setMsg("追加しました。明日の「今日」に出ます"); setTimeout(() => setMsg(""), 2000); };
-  const extract = async (f) => { setBusy(true); setErr(""); setCands(null);
-    try { const b64 = await compressImage(f, 1400); const un = us.find((u) => u.id === unitId)?.name;
-      const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年生の${subject}の答案です。${un ? "単元は「" + un + "」。" : ""}間違っている設問と空欄の設問について「何が身についていないか」を項目として書き出してください。` }],
-        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。noteは答案から読める誤り方。fmtは ${FORMATS.join("／")} から。etypeは ${ETYPES.join("／")} から（空欄なら時間切れ・空欄）。判読できない設問は除外。最大10件。JSONのみ: {"items":[{"label":"","note":"","fmt":"","etype":""}]}`, 2400);
-      const cs = parseJSON(t).items || []; setCands(cs); const c = {}, e = {}; cs.forEach((x, i) => { c[i] = true; e[i] = ETYPES.includes(x.etype) ? x.etype : ETYPES[0]; }); setCk(c); setCet(e); } catch (e) { setErr(e.message || "読み取れませんでした"); } setBusy(false); };
   return (<section className="sec">
-    <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて×だった問題をタップし、最後に「まとめて登録」。項目名はAIがあとで付けます。翌日の「今日」に出ます。" : "その日のワークの×を、その夜に登録します。翌日の「今日」に出すためです。「登録→教材」でワークを取り込んでおくと、ページを開いて×をタップするだけで登録できます。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
+    <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて×だった問題をタップし、最後に「まとめて登録」。項目名はAIがあとで付けます。翌日の「今日」に出ます。" : "その日のワークの×を、その夜に登録します。「登録→教材」でワークを取り込んでおくと、ページを開いて×をタップするだけで登録できます。取り込むまでは下の手入力で。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
     <SubjRow value={subject} onChange={setSubject} />
-    {hasMat && <div className="seg sm"><button className={from === "mat" ? "on" : ""} onClick={() => setFrom("mat")}>ページで×をタップ</button><button className={from === "photo" ? "on" : ""} onClick={() => setFrom("photo")}>答案の写真から</button></div>}
-    {from === "mat" && hasMat && <TapReg d={d} save={save} subject={subject} us={us} fallbackUnitId={unitId} />}
-    <Fld label={from === "mat" && hasMat ? "単元（ページが単元と対応していないときに使う）" : "単元"}><select value={unitId} onChange={(e) => setUnitId(e.target.value)}><option value="">—</option>{us.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</select></Fld>
-    {from === "photo" && <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "答案の写真から候補を出す"}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) extract(f); }} /></label>}
-    {err && <div className="errbox"><p>{err}</p></div>}
-    {cands && (<>
-      <p className="ph-note">読み取った候補。内容を確認し、誤答の種類を選んで、まとめて登録。手順1で解けたなら「分かっていたが間違えた」、解答を見て再現できた・できなかったなら「知らなかった」。</p>
-      {cands.length === 0 && <p className="empty">候補なし。</p>}
-      {cands.map((c, i) => (<div className={"cand2" + (ck[i] ? " on" : "")} key={i}>
-        <label className="cand2-l"><input type="checkbox" checked={!!ck[i]} onChange={(e) => setCk((x) => ({ ...x, [i]: e.target.checked }))} /><span>{c.label}{c.note && <em className="cd-n">{c.note}</em>}<em className="pg"> {c.fmt}</em></span></label>
-        <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (cet[i] === e ? " on" : "")} onClick={() => setCet((x) => ({ ...x, [i]: e }))}>{e}</button>))}</div></div>))}
-      {cands.length > 0 && <button className="btn-main" onClick={commitAll}>チェックした {Object.values(ck).filter(Boolean).length} 件を登録</button>}
-      <details className="det"><summary>候補を1つ選んで手で直す</summary>{cands.map((c, i) => (<button className="cand" key={i} onClick={() => { setLabel(c.label); setNote(c.note || ""); if (FORMATS.includes(c.fmt)) setFmt(c.fmt); if (ETYPES.includes(c.etype)) setEtype(c.etype); }}><span className="cd-l">{c.label}</span></button>))}</details>
-    </>)}
-    <Fld label="項目"><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="例：係数が分数の一次方程式" /></Fld>
-    <Fld label="どう間違えたか（任意）"><input value={note} onChange={(e) => setNote(e.target.value)} /></Fld>
-    <div className="grid2"><Fld label="形式"><select value={fmt} onChange={(e) => setFmt(e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select></Fld><Fld label="誤答の種類"><select value={etype} onChange={(e) => setEtype(e.target.value)}>{ETYPES.map((f) => (<option key={f}>{f}</option>))}</select></Fld></div>
-    <button className="btn-main" onClick={add}>未定着リストに追加</button>{msg && <p className="msg">{msg}</p>}
+    {hasMat && <TapReg d={d} save={save} subject={subject} us={us} fallbackUnitId={unitId} />}
+    <Fld label={hasMat ? "単元（ページが単元と対応していないときに使う）" : "単元"}><select value={unitId} onChange={(e) => setUnitId(e.target.value)}><option value="">—</option>{us.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</select></Fld>
+    <details className="det" open={!hasMat}><summary>手で1つ追加（学校のワーク以外、口頭で分かった弱点など）</summary>
+      <Fld label="項目"><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="例：係数が分数の一次方程式" /></Fld>
+      <Fld label="どう間違えたか（任意）"><input value={note} onChange={(e) => setNote(e.target.value)} /></Fld>
+      <div className="grid2"><Fld label="形式"><select value={fmt} onChange={(e) => setFmt(e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select></Fld><Fld label="誤答の種類"><select value={etype} onChange={(e) => setEtype(e.target.value)}>{ETYPES.map((f) => (<option key={f}>{f}</option>))}</select></Fld></div>
+      <button className="btn-main" onClick={add}>未定着リストに追加</button></details>
+    {msg && <p className="msg">{msg}</p>}
   </section>);
 }
 

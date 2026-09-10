@@ -22,17 +22,18 @@
 ## データ構造（v3）
 ```
 { v:3, updatedAt,
-  units:[{id, subject, name, pages, learnedOn(習った日|null), lastTestedOn, updatedAt}],
+  units:[{id, subject, name, pages(教科書), wbPages(ワーク), learnedOn(習った日|null), learnedBy('auto'|undefined), lastTestedOn, updatedAt}],
   items:[{id, subject, unitId, label, note, fmt, etype, createdOn,
           history:[{d, r:'x'|'o'|'oo', self, etype, etypeSelf}],
           level(0-5), failCount, nextDue, status:'active'|'stable',
-          pending:{d, self, selfE, pm}|null, gen, genOn(類題を作った日), printedOn(紙に印刷した日|null), diag, src, updatedAt}],
+          pending:{d, self, selfE, pm}|null, gen, genOn(類題を作った日), printedOn(紙に印刷した日|null), diag,
+          src:{path, kind, page, x, y}|undefined(教材のページとタップ位置), named(false なら仮の名前), updatedAt}],
   tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解', source, rows:[{fmt,total,correct}], total, correct, unitIds, paperId, updatedAt}],
   papers:[{id, code, subject, date, kind, title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg,fig}],
           refs:[{n, kind, page, path}](資料にする教材ページの参照), imgs:[b64](旧データの写真), status:'printed'|'graded', model, updatedAt}],
   log:{'YYYY-MM-DD':true}, exams:[{id,name,date,unitIds,actual:{教科:点},updatedAt}],
   writing:[{id,date,subject,len,structure,surface,note,updatedAt}],
-  materials:[{id, subject, kind, page, path, updatedAt}], deleted:[id] }
+  materials:[{id, subject, kind, page, path, doneOn(やった日|null), idx:{ns:[問題番号], at}|undefined, updatedAt}], deleted:[id] }
 ```
 - 定数: `FORMATS`（出題形式8種）、`ETYPES`（誤答の種類4種）、`INT=[1,3,7,14,30,60]`、`STABLE_LEVEL=4`
 - `applyJudgment(item, r)` が間隔反復の核。変えるときは必ずテストを通す。
@@ -46,7 +47,10 @@
 - 単元は教科書のページ範囲 `pages` とワークのページ範囲 `wbPages` を別々に持つ。`parsePages()` で数値の配列にする。
 - 作問は選んだ単元の教科書・ワークのページを「図1〜図N」として自動で添付する。どちらか片方だけでも、なくても動く。手で写真を撮る欄はない。
 - 問題文が参照した図（「図3」または `fig`）のページだけを用紙の `refs` に参照として持ち、資料ページに印刷する。画像は用紙に持たず、`resolveRefs()` が PDF 生成時・HTML 保存時に Storage から読む。プレビューは枠だけ。
-- ×の登録は「教科→教材→ページ→問題番号」の選択式。AIが該当問題を読んで項目名を作る。項目は `src:{path, kind, page, q}` を持ち、類題生成でその画像を渡す。
+- ×の登録は「教科→教材→ページを開く→×の問題を指でタップ」。保存するのはタップ位置だけ（`src:{path, kind, page, x, y}`、0〜1の割合）。仮の名前 `named:false` で登録し、`nameItems()` が登録直後にページごとに1回 AI を呼んで名前と形式を付ける。失敗しても仮の名前のまま動き、類題生成のとき `applyGen()` でもう一度付ける。誤答の種類は「知らなかった」が初期値で、一覧と印のポップアップで変えられる。
+- AI に問題を指すときは `annotateB64()` でページ画像に赤い印（複数なら番号つき）を描き込んで渡す。索引や番号の一致は使わない。読み間違いは「別の問題」で作り直す。
+- 索引は裏で持つ。`materials[].doneOn`（×を登録した、または「×なし（やった）」を押した日）と `materials[].idx:{ns:[問題番号], at}`（ページを開いたときに `buildIndex()` が裏で作る）。用途は `applyAutoProgress()`（やったページを含む単元を自動で「習った」に。手動の「ここまで」は補助）と、定期テスト画面の `untouchedPages()`（範囲内で取り込み済みなのにやっていないページと問題数）だけ。索引が外れていても登録と類題には影響しない。
+- 「答案の写真から候補を出す」方式と「問題番号の入力」方式は廃止。手入力の1件追加は残す。
 
 ## 画面
 ホーム（いまやること1つ）／今日（採点・印刷・カード）／テスト（作る・撮る・読解・記述・手入力）／登録（単元・項目・一覧・教材）／分析／定期／依頼文／設定
@@ -61,7 +65,7 @@
 - Anthropic API を直接呼ぶ（`anthropic-dangerous-direct-browser-access`）。キーは localStorage。
 - モデルは `claude-opus-5`、失敗時 `claude-sonnet-4-6`。
 - 出力は必ず JSON 指定、`parseJSON()` で取り出す。
-- 用途: 類題生成／診断／採点済み答案の○×読み取り／目次から単元抽出／答案から項目抽出／作問／読解の文章と設問／記述の添削。
+- 用途: 類題生成／診断／採点済み答案の○×読み取り（自作テスト）／目次から単元抽出／タップした問題の項目名付け／ページの問題番号の索引／作問／読解の文章と設問／記述の添削。
 - 教科書・既存作品の文章は複製しない。文章は新規に書く。
 
 ## 印刷
@@ -89,6 +93,7 @@
    - 「登録→単元」でワークの目次を撮り、既存単元への対応づけとページ範囲の手直し。
    - 「テスト→作る」で「添付される教材」が出て作問が通るか。図を参照した問題があれば PDF の資料ページに教材のページが入るか。「登録→項目」で教材から×を登録し、翌日の類題に元の問題が効くか。
    - 「今日→印刷」で類題の自動生成と1枚のPDF（見出し・説明の問い・自分の判定の欄）、翌日「今日→採点」でまとめて確定できるか。
+   - 「登録→落とした項目」でページの×をタップして登録し、数秒後に項目名が付くか。印の当たり判定（22px）が指で押しやすいか。定期テストの画面に手つかずのページが出るか。
 2. iPhone Safari で PDF 生成（共有シート）を確認。Windows Chrome での生成・保存は 2026-09-09 に確認済み。
 3. iPhone Safari で写真読み取り（採点済み答案、目次、ワークの×）を確認。
 4. Supabase 同期を2端末で確認。
