@@ -716,3 +716,14 @@ describe("日付（ローカル日付。UTC 変換で1日ずれない）", () =>
     assert.equal(m.diffDays(t, m.addDays(t, 1)), 1);
   });
 });
+
+describe("見開きの取り込み", () => {
+  test("spreadPages: 見開きなら1枚に2ページ、片ページなら1ページずつ", () => {
+    assert.deepEqual(m.spreadPages(12, 3, true), [[12, 13], [14, 15], [16, 17]]);
+    assert.deepEqual(m.spreadPages(12, 3, false), [[12], [13], [14]]);
+    assert.deepEqual(m.spreadPages(1, 0, true), []);
+  });
+  test("splitSpread は canvas が無ければ同じ画像を2つ返す", async () => {
+    assert.deepEqual(await m.splitSpread("AAAA", false), ["AAAA", "AAAA"]);
+  });
+});
