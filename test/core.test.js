@@ -610,3 +610,57 @@ describe("×のタップ登録（座標だけ保存）", () => {
     assert.equal(m.srcLabel({ path: "p", kind: "ワーク", page: 2, q: "3" }), "ワーク p.2 「3」");
   });
 });
+
+describe("印の位置を AI に渡す（項目名・類題）", () => {
+  const src = { path: "fam/math/wb/11.jpg", kind: "ワーク", page: 11, x: 0.3, y: 0.4 };
+  test("hasPos / markDesc", () => {
+    assert.equal(m.hasPos(src), true); assert.equal(m.hasPos({ path: "p", q: "3" }), false); assert.equal(m.hasPos(null), false);
+    assert.equal(m.markDesc(src), "赤い○印の位置にある問題（ワーク p.11）");
+    assert.equal(m.markDesc(src, "②"), "赤い②の印の位置にある問題（ワーク p.11）");
+    assert.equal(m.markDesc({ path: "p", kind: "ワーク", page: 2, q: "3" }), "ワーク p.2 「3」");
+  });
+  test("annotateB64 は canvas が無ければそのまま返す。印が無ければそのまま", async () => {
+    assert.equal(await m.annotateB64("AAAA", [{ x: 0.1, y: 0.1 }]), "AAAA");
+    assert.equal(await m.annotateB64("AAAA", []), "AAAA");
+  });
+  test("genContent: 座標つきなら印の位置を指し、名前が仮なら label/fmt も求める", () => {
+    const c = m.genContent({ src, named: false }, "IMG", "本文");
+    assert.ok(c[0].text.includes("赤い○印の位置にある問題（ワーク p.11）") && c[0].text.includes("label に"));
+    const c2 = m.genContent({ src, named: true }, "IMG", "本文");
+    assert.ok(!c2[0].text.includes("label に"));
+  });
+  test("applyGen: 仮の名前なら AI の label/fmt を採用、付いていれば類題だけ", () => {
+    const g = { problems: [], label: "係数が分数の一次方程式", fmt: "計算" };
+    const p = m.applyGen({ named: false, src, fmt: "" }, g);
+    assert.deepEqual([p.label, p.fmt, p.named, p.genOn], ["係数が分数の一次方程式", "計算", true, T]);
+    assert.equal(p.gen, g);
+    const p2 = m.applyGen({ named: true, src, label: "既存" }, g);
+    assert.equal(p2.label, undefined); assert.equal(p2.gen, g);
+    const p3 = m.applyGen({ named: false, src, fmt: "計算" }, { problems: [], label: "x", fmt: "変な形式" });
+    assert.equal(p3.fmt, "計算", "不明な形式は元のまま");
+    assert.equal(m.applyGen({ label: "手入力" }, g).label, undefined, "座標の無い項目は名前を触らない");
+  });
+  test("nameItems: ページごとに1回 AI を呼び、印の番号順に名前を付ける。失敗したページは仮のまま", async () => {
+    const orig = globalThis.fetch; const calls = [];
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => {
+      calls.push(url);
+      if (url.includes("/storage/")) return url.includes("bad.jpg") ? { ok: false, status: 404 } : { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer };
+      const body = JSON.parse(opts.body); const txt = body.messages[0].content.map((c) => c.text || "").join("");
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: JSON.stringify({ items: txt.includes("①〜2") ? [{ n: 2, label: "二番", fmt: "計算", summary: "s2" }, { n: 1, label: "一番", fmt: "知識・用語", summary: "s1" }] : [{ n: 1, label: "単独", fmt: "謎" }] }) }] }) };
+    };
+    try {
+      const items = [
+        { id: "a", subject: "数学", unitId: "u", named: false, src: { ...src, x: 0.1 } }, { id: "b", subject: "数学", unitId: "u", named: false, src: { ...src, x: 0.6 } },
+        { id: "c", subject: "数学", unitId: "u", named: false, src: { ...src, path: "fam/math/wb/12.jpg", page: 12 } },
+        { id: "d", subject: "数学", unitId: "u", named: false, src: { ...src, path: "bad.jpg" } },
+        { id: "e", subject: "数学", unitId: "u", named: true, src }, { id: "f", subject: "数学", unitId: "u", named: false }];
+      const r = await m.nameItems(items, () => ({ name: "正負の数" }));
+      assert.deepEqual(r.a, { label: "一番", fmt: "知識・用語", note: "s1", named: true });
+      assert.deepEqual(r.b, { label: "二番", fmt: "計算", note: "s2", named: true });
+      assert.deepEqual(r.c, { label: "単独", fmt: "", note: "", named: true });
+      assert.equal(r.d, undefined); assert.equal(r.e, undefined); assert.equal(r.f, undefined);
+      assert.equal(calls.filter((u) => u.includes("anthropic")).length, 2, "ページごとに1回");
+    } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+});

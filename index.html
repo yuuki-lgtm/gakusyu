@@ -250,13 +250,14 @@ function App() {
     let cur = null;
     try { const l = localStorage.getItem(KEY) || localStorage.getItem("gakushu_loop_v2"); cur = migrate(l ? JSON.parse(l) : null); } catch { cur = blank(); }
     if (syncOn()) { try { const remote = await pullRemote(); if (remote) { cur = mergeData(cur, migrate(remote.data)); localStorage.setItem(KEY, JSON.stringify(cur)); } setSync("ok"); } catch { setSync("err"); } }
-    setD(cur);
+    dRef.current = cur; setD(cur);
   })(); }, []);
+  const dRef = useRef(null);
   const save = async (next) => {
-    const n = { ...next, updatedAt: now() };
-    setD(n); localStorage.setItem(KEY, JSON.stringify(n));
+    const n = { ...(typeof next === "function" ? next(dRef.current) : next), updatedAt: now() };
+    dRef.current = n; setD(n); localStorage.setItem(KEY, JSON.stringify(n));
     if (syncOn()) { clearTimeout(pushTimer.current); pushTimer.current = setTimeout(async () => {
-      try { const remote = await pullRemote(); const merged = remote ? mergeData(n, migrate(remote.data)) : n; await pushRemote(merged); if (remote) { setD(merged); localStorage.setItem(KEY, JSON.stringify(merged)); } setSync("ok"); } catch { setSync("err"); } }, 1500); }
+      try { const remote = await pullRemote(); const merged = remote ? mergeData(n, migrate(remote.data)) : n; await pushRemote(merged); if (remote) { dRef.current = merged; setD(merged); localStorage.setItem(KEY, JSON.stringify(merged)); } setSync("ok"); } catch { setSync("err"); } }, 1500); }
   };
 
   if (!d) return <div style={{ padding: 40, color: "#888" }}>読み込み中…</div>;
@@ -399,7 +400,7 @@ function TodayMake({ d, save }) {
       setBusy(`類題を作成 ${k + 1}/${set.length}`);
       let cur = items.find((x) => x.id === set[k].id);
       if (!fresh(cur)) {
-        try { const g = await genForItem(cur, unitOf(cur.unitId), ctxFor(d, cur), cur.gen?.problems?.map((p) => p.q).join(" / ") || "なし"); cur = { ...cur, gen: g, genOn: today(), updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x)); save({ ...d, items }); }
+        try { const g = await genForItem(cur, unitOf(cur.unitId), ctxFor(d, cur), cur.gen?.problems?.map((p) => p.q).join(" / ") || "なし"); cur = { ...cur, ...applyGen(cur, g), updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x)); save({ ...d, items }); }
         catch (e) { bad.push(`${cur.label}：${e.message || "失敗"}`); continue; }
       }
       ok.push(cur);
@@ -504,23 +505,66 @@ const JUDGE = [["x", "できなかった", "ng"], ["o", "解けた", "mid"], ["o
 const srcLabel = (s) => (s && s.path ? `${s.kind} p.${s.page}${s.q ? ` 「${s.q}」` : ""}` : "");
 function genContent(item, b64, text) {
   if (!b64 || !item.src) return text;
-  return [{ type: "text", text: `【元の問題】${srcLabel(item.src)} — 子どもが落とした問題。同じ考え方・同じ形式を問い、数値や設定は変える。問題文をそのまま写さない。` }, imgBlock(b64), { type: "text", text }];
+  return [{ type: "text", text: `【元の問題】${markDesc(item.src)} — 子どもが落とした問題。同じ考え方・同じ形式を問い、数値や設定は変える。問題文をそのまま写さない。${item.named === false ? "あわせて、この問題を解くのに必要な「身についていないと解けない一点」を label に（後日その一点だけを聞き直せる粒度）、形式を fmt に（" + FORMATS.join("／") + " から）入れる。" : ""}` }, imgBlock(b64), { type: "text", text }];
 }
 const ctxFor = (d, i) => ({ siblings: d.items.filter((x) => x.unitId === i.unitId && x.status === "active" && x.id !== i.id).map((x) => x.label), stable: d.items.filter((x) => x.subject === i.subject && x.status === "stable").map((x) => x.label), units: d.units.filter((x) => x.subject === i.subject).map((x) => x.name) });
 const itemContext = (i, u, ctx) => `教科: ${i.subject}\n単元: ${u ? u.name : "不明"}\n未定着項目: ${i.label}\n${i.note ? "間違え方: " + i.note : ""}\n出題形式: ${i.fmt || "不明"} / 誤答の種類: ${i.etype || "不明"}\n落とした回数: ${i.failCount}\n履歴: ${(i.history || []).map((h) => `${h.d}:${h.r}`).join(" ") || "なし"}\n同単元の他の未定着: ${ctx.siblings.join(" / ") || "なし"}\n安定している項目: ${ctx.stable.slice(0, 12).join(" / ") || "なし"}\n習った範囲: ${ctx.units.join(" / ")}`;
+/* ページ画像に赤い印（番号つき）を描き込む。AI に「印の位置の問題」を読ませるため。canvas が無い環境ではそのまま返す */
+async function annotateB64(b64, marks) {
+  if (!marks.length || typeof Image === "undefined") return b64;
+  const img = new Image(); img.src = `data:image/jpeg;base64,${b64}`;
+  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("画像を読めません")); });
+  const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+  const g = c.getContext("2d"); g.drawImage(img, 0, 0);
+  const r = Math.max(14, Math.round(img.width * 0.028));
+  marks.forEach((mk, k) => {
+    const x = mk.x * img.width, y = mk.y * img.height;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.lineWidth = Math.max(3, r / 4); g.strokeStyle = "#E0201A"; g.stroke();
+    g.fillStyle = "rgba(224,32,26,.12)"; g.fill();
+    if (marks.length > 1) { g.fillStyle = "#E0201A"; g.font = `bold ${Math.round(r * 1.1)}px sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(k + 1), x, y - r * 1.6); }
+  });
+  return c.toDataURL("image/jpeg", 0.85).split(",")[1];
+}
+const hasPos = (s) => !!(s && s.path && typeof s.x === "number" && typeof s.y === "number");
+/* 印の位置にある問題の説明（AIへ渡す文） */
+const markDesc = (s, n = null) => (hasPos(s) ? `${n ? `赤い${n}の印` : "赤い○印"}の位置にある問題（${s.kind} p.${s.page}）` : srcLabel(s));
+
+/* 座標つきで登録された項目に、AI が名前と形式を付ける。ページごとに1回。失敗したページは仮の名前のまま。戻り値は {id: {label, fmt, note, named}} */
+async function nameItems(items, unitOf, model = null) {
+  const out = {};
+  const byPath = {}; items.filter((i) => hasPos(i.src) && !i.named).forEach((i) => { (byPath[i.src.path] = byPath[i.src.path] || []).push(i); });
+  for (const path of Object.keys(byPath)) {
+    const group = byPath[path]; const s0 = group[0];
+    const u = unitOf(s0.unitId);
+    try {
+      const b64 = await annotateB64(await stGet(path), group.map((i) => ({ x: i.src.x, y: i.src.y })));
+      const t = await callAI([imgBlock(b64), { type: "text", text: `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。${u ? `単元は「${u.name}」。` : ""}赤い印（${group.length > 1 ? `①〜${group.length}の番号つき` : "1つ"}）の位置にある問題を子どもが間違えました。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。` }],
+        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":""}]}`, 1200, model);
+      const rs = parseJSON(t).items || [];
+      group.forEach((i, k) => { const r = rs.find((x) => Number(x.n) === k + 1) || rs[k]; if (r && r.label) out[i.id] = { label: r.label, fmt: FORMATS.includes(r.fmt) ? r.fmt : "", note: r.summary || "", named: true }; });
+    } catch (e) { /* 仮の名前のまま。類題生成のときにもう一度試す */ }
+  }
+  return out;
+}
+/* 類題の生成結果を項目に反映する。名前が仮のままなら、AI が返した label / fmt も採用 */
+function applyGen(item, g) {
+  const patch = { gen: g, genOn: today() };
+  if (!item.named && item.src && hasPos(item.src) && g && g.label) { patch.label = g.label; patch.fmt = FORMATS.includes(g.fmt) ? g.fmt : item.fmt || ""; patch.named = true; }
+  return patch;
+}
 /* 1項目ぶんの類題（3問＋説明の問い）。用語は記述形式。元の問題の画像があれば渡す */
 async function genForItem(i, u, ctx, prev = "なし", model = null) {
   const context = itemContext(i, u, ctx);
   const isRead = i.fmt === "長文読解", isWrite = i.fmt === "記述・作文" || i.fmt === "英作文", isTerm = i.fmt === "知識・用語";
-  let b64 = null; if (i.src && i.src.path) { try { b64 = await stGet(i.src.path); } catch { b64 = null; } } // 読めなければ画像なしで続ける
+  let b64 = null; if (i.src && i.src.path) { try { b64 = await stGet(i.src.path); if (hasPos(i.src)) b64 = await annotateB64(b64, [{ x: i.src.x, y: i.src.y }]); } catch { b64 = null; } } // 読めなければ画像なしで続ける
   const t = isRead
     ? await callAI(genContent(i, b64, `${context}\n直前の問題（重複させない）: ${prev}\n\nこの読解技能だけを問う練習問題を。150〜250字のオリジナルの短い文章を1つ書き、その文章についてこの技能を問う設問を2問。`),
-        `日本の中学1年生向け。文章は完全オリジナルで既存作品の引用をしない。設問の解答には根拠の箇所を示す。whyは「どこを見て、どう判断したか」を子どもに言わせる問い。\nJSONのみ: {"passage":"","problems":[{"q":"","a":""}],"why":"","point":"","script":""}`, 2600, model)
+        `日本の中学1年生向け。文章は完全オリジナルで既存作品の引用をしない。設問の解答には根拠の箇所を示す。whyは「どこを見て、どう判断したか」を子どもに言わせる問い。\nJSONのみ: {"passage":"","problems":[{"q":"","a":""}],"why":"","point":"","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2600, model)
     : isWrite
     ? await callAI(genContent(i, b64, `${context}\n\nこの誤りの種類だけを練習する短い課題を3問。各問は1〜2文を書かせる程度の分量にし、この種類の誤りが起きやすい場面を意図的に含める。`),
-        `日本の中学1年生向け。aは模範解答と、この誤りが起きやすい箇所の指摘。whyは「書いたあと何を確認するか」を子どもに言わせる問い。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"","script":""}`, 2400, model)
+        `日本の中学1年生向け。aは模範解答と、この誤りが起きやすい箇所の指摘。whyは「書いたあと何を確認するか」を子どもに言わせる問い。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2400, model)
     : await callAI(genContent(i, b64, `${context}\n直前に出した問題（重複させない）: ${prev}\n\n${isTerm ? "この用語だけを狙った問題を3問。3問とも「〜を何といいますか。書きなさい」「〜を書きなさい」の記述形式（選択肢・穴埋めのヒントなし）。1問目は用語そのものを書かせる、2問目は意味や使い方、3問目は別の聞き方。whyは空でよい。" : "この項目だけを狙った練習問題を3問。1問目は最も基本の形、2問目は本題、3問目は同じ考え方を別の見た目で。あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。"}`),
-        `日本の中学1年生を教える講師。厳守: 中1範囲を超えない／習った範囲から逸脱しない／直前の問題と同じ数値・設定にしない／ヒントや選択肢を付けず白紙から解かせる／数学は途中式を書かせる／安定している項目は既知として扱ってよい／未定着の項目を前提にしない。\nwhyは「なぜその手順になるのか」を子どもの言葉で言わせる問い。scriptは採点後の声かけ。できている点を先に述べ、直す点は1つだけ。専門用語なし。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"落とし続ける原因の推定","script":""}`, 2600, model);
+        `日本の中学1年生を教える講師。厳守: 中1範囲を超えない／習った範囲から逸脱しない／直前の問題と同じ数値・設定にしない／ヒントや選択肢を付けず白紙から解かせる／数学は途中式を書かせる／安定している項目は既知として扱ってよい／未定着の項目を前提にしない。\nwhyは「なぜその手順になるのか」を子どもの言葉で言わせる問い。scriptは採点後の声かけ。できている点を先に述べ、直す点は1つだけ。専門用語なし。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"落とし続ける原因の推定","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2600, model);
   return parseJSON(t);
 }
 
@@ -553,7 +597,7 @@ function ItemCard({ item: i, unit: u, onConfirm, onStore, ctx }) {
       if (kind === "gen") {
         setShowA(false); setPm({});
         const p = await genForItem(i, u, ctx, q?.problems?.map((x) => x.q).join(" / ") || "なし", model);
-        setQ(p); onStore(i.id, { gen: p, genOn: today() });
+        setQ(p); onStore(i.id, applyGen(i, p));
       } else {
         const t = await callAI(`${context}\n\n同じ項目を${i.failCount}回落としています。反復では解決しないと判断しました。抜けている前提を特定し、そこまで戻って積み上げ直す手順を。`,
           `日本の中学1年生を教える講師。causeは最も可能性が高い原因1つ。prereqは戻るべき前提の単元（小学校範囲でも可）。stepsは3〜4段階、各段階は「何をやらせるか」だけ短く。checkは通過の判定方法。\nJSONのみ: {"cause":"","prereq":"","steps":[{"do":"","check":""}]}`, 2000, model);
@@ -1242,7 +1286,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const [img, setImg] = useState(null); const [imgErr, setImgErr] = useState("");
   const [taps, setTaps] = useState([]); // 未登録の印（ページをまたいで持つ）
   const [sel, setSel] = useState(null); // 登録済みの印をタップしたときの項目 id
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState(""); const [naming, setNaming] = useState(false);
   const cur = ms.find((m) => m.page === page) || null;
   const unit = unitForPage(us, kind, page);
   const here = taps.filter((t) => cur && t.path === cur.path);
@@ -1268,8 +1312,12 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     if (!taps.length) return;
     const add = tapsToItems(taps, subject, us, fallbackUnitId);
     save({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } });
-    setTaps([]); setMsg(`${add.length}件を登録しました。明日の「今日」に出ます`); setTimeout(() => setMsg(""), 4000);
-    onRegistered && onRegistered(add);
+    setTaps([]); setMsg(`${add.length}件を登録しました。明日の「今日」に出ます${hasKey() ? "。項目名をAIが付けています…" : ""}`);
+    if (hasKey()) { setNaming(true); nameItems(add, (id) => us.find((u) => u.id === id)).then((patch) => {
+      const n = Object.keys(patch).length;
+      if (n) save((cur) => ({ ...cur, items: cur.items.map((x) => (patch[x.id] ? { ...x, ...patch[x.id], updatedAt: now() } : x)) }));
+      setMsg(n ? `${n}件に項目名を付けました` : "項目名を付けられませんでした。類題を作るときにもう一度試します"); setNaming(false); setTimeout(() => setMsg(""), 5000); }); }
+    else setTimeout(() => setMsg(""), 4000);
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
   if (!kinds.length) return null;
@@ -1289,7 +1337,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
       <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selItem.etype === e ? " on" : "")} onClick={() => setEtype(selItem, e)}>{e}</button>))}</div></div>)}
     {taps.length > 0 && (<><p className="tap-sum">印 {taps.length}（{Object.entries(byPage).map(([k, n]) => `${k}: ${n}`).join("、")}）</p>
       <button className="btn-main" onClick={commit}>まとめて登録（{taps.length}件）</button></>)}
-    {msg && <p className="msg">{msg}</p>}
+    {msg && <p className={"msg" + (naming ? " naming" : "")}>{msg}</p>}
   </div>);
 }
 
@@ -1345,7 +1393,7 @@ function ItemList({ d, save }) {
   return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
-        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
+        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
           <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select></div><button className="btn-x" onClick={() => save({ ...d, items: d.items.filter((x) => x.id !== i.id), deleted: [...d.deleted, i.id] })}>×</button></div>); })}</div>); })}</>);
 }
 
@@ -1619,6 +1667,7 @@ const CSS = `
 .mwrap{position:relative;display:block;user-select:none;-webkit-user-select:none;cursor:crosshair}.mwrap img{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff;-webkit-touch-callout:none}
 .mk-new,.mk-old{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel{box-shadow:0 0 0 3px #C08A3E}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
+.msg.naming{color:#C08A3E}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}
 .matpick{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}.matpick .seg{margin-bottom:8px}.qn-row{display:flex;gap:6px;margin-top:8px}.qn-row input{flex:1}
 .src-n{font-size:11px;color:var(--ink2);display:flex;align-items:center;gap:4px;margin:0 0 8px;padding:6px 8px;background:#EEF3F6;border-left:2px solid #3D6B8E}.src-n .btn-x{margin-left:auto}
