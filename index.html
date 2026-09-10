@@ -1185,8 +1185,10 @@ function MaterialReg({ d, save }) {
   const [start, setStart] = useState("1");
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [msg, setMsg] = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
   const sec = useElapsed(busy);
   const mine = matsOf(d, subject, kind);
+  useEffect(() => { setConfirmDel(false); }, [subject, kind]);
   const isPdf = files.length === 1 && /pdf$/i.test(files[0].type || files[0].name);
   const pick = (e) => { setErr(""); setMsg(""); setFiles(Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true }))); e.target.value = ""; };
 
@@ -1240,7 +1242,8 @@ function MaterialReg({ d, save }) {
     </section>
     {mine.length > 0 && (<section className="sec"><h3 className="s-h">{subject}の{kind} <span className="cnt">{mine.length}ページ</span></h3>
       <p className="lead">p.{pagesToRanges(mine.map((m) => m.page))}。ページ番号を間違えたときは、いったん全部消してから入れ直してください。</p>
-      <button className="btn-x wide-x" onClick={removeAll} disabled={!!busy}>{subject}の{kind}を全部削除</button></section>)}
+      {confirmDel ? (<div className="del-ask"><p>{subject}の{kind} {mine.length}ページを共有先から消します。元に戻せません。</p><div className="q-btns"><button className="btn-sm danger" onClick={() => { setConfirmDel(false); removeAll(); }} disabled={!!busy}>本当に削除する</button><button className="btn-sm" onClick={() => setConfirmDel(false)}>やめる</button></div></div>)
+        : <button className="btn-x wide-x" onClick={() => setConfirmDel(true)} disabled={!!busy}>{subject}の{kind}を全部削除</button>}</section>)}
     <section className="sec"><h3 className="s-h">取り込み方</h3><ol className="flow"><li>スキャンアプリ（iPhoneの「メモ」やプリンタ付属のもの）で1冊をPDFにするか、1ページずつ撮る。</li><li>見開きで撮ると左右2ページが1枚になるので、片ページずつ。</li><li>ページ番号は本の印刷どおりに。単元のページ範囲と照合します。</li></ol></section>
   </>);
 }
@@ -1433,6 +1436,7 @@ const CSS = `
 .msg.fixed{position:sticky;bottom:8px;background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
 .tp{margin-bottom:12px}.tp .btn-sm.wide{margin-top:0}
 .mat-sum{font-size:12px;color:var(--ink2);line-height:1.8;margin:-4px 0 10px}.mat-sum b{color:var(--ink);margin-right:4px}
+.del-ask{background:#FBF3F2;border:1px solid #E4C4C0;border-radius:3px;padding:10px}.del-ask p{font-size:12px;color:#8E3830;margin:0 0 8px;line-height:1.6}.btn-sm.danger{background:#A8443B;border-color:#A8443B;color:#fff;font-weight:700}
 .mat-pre{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;font-size:12px;line-height:1.6}.mat-files{margin:6px 0 0;padding-left:18px;font-size:11px;color:var(--ink3)}
 .matpick{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}.matpick .seg{margin-bottom:8px}.qn-row{display:flex;gap:6px;margin-top:8px}.qn-row input{flex:1}
 .src-n{font-size:11px;color:var(--ink2);display:flex;align-items:center;gap:4px;margin:0 0 8px;padding:6px 8px;background:#EEF3F6;border-left:2px solid #3D6B8E}.src-n .btn-x{margin-left:auto}
