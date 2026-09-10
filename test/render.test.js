@@ -252,3 +252,7 @@ test("テスト/撮る: 模試の用紙が選べて、用紙の説明に「1回�
   const ps = render(m.PrintSheet, { paper: mk }).html;
   assert.ok(ps.includes("1回きり") && ps.includes("模試（2学期中間）"));
 });
+test("今日/採点: 「紙を撮る」があり、紙の順番が出る", () => {
+  const html = render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade" }).html;
+  assert.ok(html.includes("紙を撮る（判定欄を読み取る") && html.includes("紙の1番目"));
+});

@@ -1027,3 +1027,33 @@ describe("模試（段階6: ×は未定着へ、模試は再利用しない）",
     const pending = d.papers.filter((p) => p.status === "printed"); assert.ok(pending.some((p) => p.kind === "模試"));
   });
 });
+
+describe("紙を撮って判定欄を読む", () => {
+  const it = (o) => item({ history: [], ...o });
+  test("gradeSet は印刷日→紙の順→落とした回数", () => {
+    const d = { ...m.blank(), items: [it({ id: "b", printedOn: T, printedAs: 2 }), it({ id: "a", printedOn: T, printedAs: 1 }), it({ id: "z", printedOn: T, failCount: 5 }), it({ id: "o", printedOn: day(-1), printedAs: 3 })] };
+    assert.deepEqual(m.gradeSet(d).map((i) => i.id), ["o", "a", "b", "z"]);
+  });
+  test("selfMarksText: 紙の順に見出しと最初の問題", () => {
+    const d = F.demo(); const t = m.selfMarksText(m.gradeSet(d), (id) => m.unitById(d, id));
+    assert.ok(t.startsWith("1. 【数学・正負の数】 最初の問題: (−2)×(+5)"));
+  });
+  test("applySelfMarks: 読めた項目だけ子ども＝親の初期値。× は前回の誤答の種類。用語の oo は o に。空は入れない", () => {
+    const items = [it({ id: "a", etype: "読み間違えた" }), it({ id: "b", fmt: "知識・用語" }), it({ id: "c" }), it({ id: "d" })];
+    const r = m.applySelfMarks(items, { 1: "x", 2: "oo", 3: "", 4: "o" });
+    assert.deepEqual(r.a, { self: "x", r: "x", etype: "読み間違えた", skip: false });
+    assert.deepEqual(r.b, { self: "o", r: "o", etype: "", skip: false });
+    assert.equal(r.c, undefined); assert.equal(r.d.r, "o");
+    assert.equal(m.judgeAll({ ...m.blank(), items: items.map((i) => ({ ...i, printedOn: T })) }, r).n, 3);
+  });
+  test("readSelfMarks: 画像と項目の一覧を渡し、印を {n: self} で返す。変な値は空", async () => {
+    const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk"); let sent = null;
+    globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"marks":[{"n":1,"self":"oo"},{"n":2,"self":"?"},{"n":"3","self":"x"}]}' }] }) }; };
+    try {
+      const fake = { name: "a.jpg" }; const origC = m.stubs; // compressImage は node では動かないので差し替え不可 → 空の画像配列で呼ぶ
+      const r = await m.readSelfMarks([], [it({ id: "a", subject: "数学", unitId: "u1" })], () => ({ name: "正負の数" }));
+      assert.deepEqual(r, { 1: "oo", 2: "", 3: "x" });
+      assert.ok(JSON.stringify(sent).includes("1. 【数学・正負の数】"));
+    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+});

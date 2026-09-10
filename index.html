@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 11:12"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 11:18"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -375,7 +375,15 @@ function printSet(d) {
 }
 /* 印刷済みで、まだ確定していない項目 */
 function gradeSet(d) {
-  return d.items.filter((i) => i.printedOn).sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : b.failCount - a.failCount));
+  return d.items.filter((i) => i.printedOn).sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : (a.printedAs || 999) - (b.printedAs || 999) || b.failCount - a.failCount));
+}
+/* 紙の判定欄の読み取り。AI に渡す項目の一覧（紙の順、見出しと最初の問題で位置を示す） */
+const selfMarksText = (items, unitOf) => items.map((i, k) => { const u = unitOf(i.unitId); return `${k + 1}. 【${i.subject}・${u ? u.name : ""}】${i.gen?.problems?.[0]?.q ? " 最初の問題: " + String(i.gen.problems[0].q).slice(0, 40) : ""}`; }).join("\n");
+/* 読み取った印（{n: "x"|"o"|"oo"|""}）を採点画面の判定に。子どもの判定＝親の判定の初期値。× なら前回の誤答の種類 */
+function applySelfMarks(items, marks) {
+  const out = {};
+  items.forEach((i, k) => { const r = marks[k + 1]; if (r === "x" || r === "o" || r === "oo") { const rr = r === "oo" && i.fmt === "知識・用語" ? "o" : r; out[i.id] = { self: rr, r: rr, etype: rr === "x" ? i.etype || "" : "", skip: false }; } });
+  return out;
 }
 /* decisions: {id: {r, self, etype, etypeSelf}} または {id: {skip:true}}。r のあるものだけ判定し、skip は印刷前に戻す */
 function judgeAll(d, decisions) {
@@ -633,6 +641,15 @@ function normalizePts(qs, total = 100) {
   let acc = 0; qs.forEach((q, k) => { q.pts = Math.max(1, Math.round((raw[k] * total) / sum)); acc += q.pts; });
   qs[qs.length - 1].pts = Math.max(1, qs[qs.length - 1].pts + (total - acc));
   return qs;
+}
+
+/* 「今日の分」の紙を撮って、各項目の「自分の判定」の印（□ できなかった／□ 解けた／□ 説明もできた）を読む。戻り値は {n: "x"|"o"|"oo"|""} */
+async function readSelfMarks(files, items, unitOf, model = null) {
+  const imgs = []; for (const f of files) imgs.push(imgBlock(await compressImage(f, 1600, 0.8)));
+  const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。項目ごとに「自分の判定：□ できなかった　□ 解けた　□ 説明もできた」の欄があり、子どもがどれかに印（✓・○・塗りつぶし）を付けています。次の項目の順に、印の付いた欄を読み取ってください。\n${selfMarksText(items, unitOf)}` }],
+    `印が無い・判読できない項目は "" にする。解答の正誤は判断しない（印だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|""}]}`, 800, model);
+  const out = {}; (parseJSON(t).marks || []).forEach((mk) => { out[Number(mk.n)] = mk.self === "x" || mk.self === "o" || mk.self === "oo" ? mk.self : ""; });
+  return out;
 }
 
 /* ---- 模試（定期テストの範囲で、1教科ずつ） ---- */
@@ -927,8 +944,8 @@ function TodayMake({ d, save }) {
     try {
       setBusy("PDFを作成");
       await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`));
-      const ids = new Set(ok.map((i) => i.id));
-      save({ ...d, items: items.map((x) => (ids.has(x.id) ? { ...x, printedOn: today(), updatedAt: now() } : x)), log: { ...d.log, [today()]: true } });
+      const pos = new Map(ok.map((i, k) => [i.id, k + 1]));
+      save({ ...d, items: items.map((x) => (pos.has(x.id) ? { ...x, printedOn: today(), printedAs: pos.get(x.id), updatedAt: now() } : x)), log: { ...d.log, [today()]: true } });
       setLog([`${ok.length}件を1枚にまとめました。印刷して明日の机に。`, ...bad.map((b) => `作れなかった項目（次回に回します）: ${b}`)]);
     } catch (e) { setErr(e.message || "PDFを作れませんでした"); }
     setBusy("");
@@ -951,7 +968,16 @@ function TodayGrade({ d, save }) {
   const set = gradeSet(d);
   const [dc, setDc] = useState({});
   const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [lastFiles, setLastFiles] = useState(null);
+  const sec = useElapsed(busy);
   const upd = (id, patch) => setDc((x) => ({ ...x, [id]: { ...(x[id] || {}), ...patch } }));
+  const shoot = async (files, model = null) => {
+    if (!files.length) return; setBusy(true); setErr(""); setLastFiles(files);
+    try { const marks = await readSelfMarks(files, set, unitOf, model); const patch = applySelfMarks(set, marks); const n = Object.keys(patch).length;
+      setDc((x) => ({ ...x, ...patch })); setMsg(n ? `${n}件の判定を読み取りました。違う行だけ直して「まとめて確定」。` : "印を読み取れませんでした。手で押してください。"); setTimeout(() => setMsg(""), 6000); }
+    catch (e) { setErr(e.message || "読み取れませんでした"); }
+    setBusy(false);
+  };
   const pickSelf = (i, r) => upd(i.id, { self: r, r, etype: r === "x" ? (dc[i.id]?.etype || i.etype || "") : "", skip: false });
   const pickParent = (i, r) => upd(i.id, { r, etype: r === "x" ? (dc[i.id]?.etype || i.etype || "") : "", skip: false });
   const decided = set.filter((i) => dc[i.id]?.r || dc[i.id]?.skip);
@@ -960,10 +986,12 @@ function TodayGrade({ d, save }) {
   const commit = () => { const { d: nd, n } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; setMsg(`${n}件を確定しました。${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); setTimeout(() => setMsg(""), 4000); };
   return (<section className="sec">
     {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
-      <p className="lead">紙を見て押す。まず子どもの判定を写す（親の欄にも入る）。違えば親の欄を直す。<strong>3問すべて正解で「解けた」、説明の問いにも答えられていれば「説明もできた」。</strong></p>
+      <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>3問すべて正解で「解けた」、説明の問いにも答えられていれば「説明もできた」。</strong></p>
+      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（判定欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
+      {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, FALLBACK)}>Sonnet 4.6 で読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = i.fmt === "知識・用語"; return (
         <div className={"grow" + (c.skip ? " skip" : c.r ? " done" : "")} key={i.id}>
-          <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}<em className="lv">印刷 {i.printedOn.slice(5)}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
+          <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}<em className="lv">印刷 {i.printedOn.slice(5)}{i.printedAs ? ` · 紙の${i.printedAs}番目` : ""}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
           <div className="c-label">{i.label}</div>
           {!c.skip && (<>
             <div className="grow-r"><span className="j-who">子ども</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.self === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickSelf(i, r)}>{l}</button>))}</div></div>
