@@ -180,9 +180,10 @@ test("デモ: 登録/項目 のページに「済」と「×なし（やった�
   const html = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html;
   assert.ok(html.includes("済"), "p.10 はやった");
 });
-test("設定にバージョンが出る。形式は日時", () => {
+test("バージョンは「その他」の更新ボタンに出る。形式は日時。設定には出さない", () => {
   assert.match(m.VERSION, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
-  assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("v" + m.VERSION));
+  assert.ok(render(m.MoreTab, { d: F.demo(), go: noop }).html.includes("v" + m.VERSION));
+  assert.ok(!render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("v" + m.VERSION));
 });
 test("デモ: 教材の取り込みと×の登録に「テスト」の種別が出る。目次の切り替えには出ない", () => {
   const mat = render(m.RegTab, { d: F.demo(), save: noop, initial: "mat" }).html;
@@ -318,8 +319,9 @@ test("採点に「問題が変」があり、分析に件数が出る", () => {
   const ana = render(m.AnaTab, { d: { ...F.demo(), genCount: 20, badCount: 2 } }).html;
   assert.ok(ana.includes("問題が変") && ana.includes("生成 20 件（10%）"));
 });
-test("設定: 「最新版に更新（再読み込み）」がある", () => {
-  assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("最新版に更新（再読み込み）"));
+test("その他: 「最新版に更新（再読み込み）」が設定の下にある", () => {
+  const h = render(m.MoreTab, { d: F.demo(), go: noop }).html;
+  assert.ok(h.indexOf('<span class="nxt-t">設定</span>') < h.indexOf("最新版に更新（再読み込み）"));
 });
 test("今日/採点: 「全部を印刷に戻す」がある", () => {
   assert.ok(render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade" }).html.includes("全部を印刷に戻す（判定しない）"));

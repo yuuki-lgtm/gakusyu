@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 19:06"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 19:09"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1846,11 +1846,13 @@ function MoreTab({ d, go }) {
     ["reg", "登録", "落とした項目（ページをタップして登録。夜の作業の外からもここで）・単元・教材の取り込み・未定着一覧。", last(d.units)],
     ["ana", "分析", "保持率・形式別・一致率・問題が変。見るだけ。月1の振り返りに。", ""],
     ["export", "依頼文", "学習状況を文章にしてコピー。週1の相談に。", ""],
-    ["set", "設定", "同期・APIキー・今日の分の上限・バックアップ・バージョン。", d.backupOn || ""],
+    ["set", "設定", "同期・APIキー・今日の分の上限・バックアップ。", d.backupOn || ""],
   ];
+  const reload = () => { try { window.location.replace(window.location.pathname + "?r=" + Date.now()); } catch {} };
   return (<div className="pane">
     <p className="tabhint">たまにしか使わない画面。毎日の操作はホーム、週末の作業は「週末」にあります。</p>
     {rows.map(([k, t, w, when]) => (<button className="nxt" key={k} onClick={() => go(k)}><span className="nxt-t">{t}</span><span className="nxt-w">{w}{when ? `　最終 ${String(when).slice(0, 10)}` : ""}</span></button>))}
+    <button className="nxt" onClick={reload}><span className="nxt-t">最新版に更新（再読み込み）</span><span className="nxt-w">いまは v{VERSION}。画面が古いと感じたら押す。それでも古ければアプリを完全に終了して開き直す。</span></button>
   </div>);
 }
 
@@ -2000,8 +2002,6 @@ function Settings({ d, save, setSync }) {
   const copyLink = async () => { saveSync(); localStorage.setItem(AKEY, key.trim()); const link = cfgLink(window.location.href); say((await copyToClipboard(link)) ? "リンクをコピーしました。LINE やメールで自分に送ってください" : "コピーできませんでした"); };
   const doImport = () => { const n = importCfg(paste); if (!n) { say("読み取れませんでした。リンク全体を貼ってください"); return; } setUrl(LS(SB_URL)); setAnon(LS(SB_KEY)); setRoom(LS(SB_ROOM)); setKey(LS(AKEY)); setPaste(""); say(`${n}件を取り込みました。「接続して同期」を押してください`); };
   return (<div className="pane">
-    <section className="sec"><h3 className="s-h">バージョン</h3><p className="lead">v{VERSION}（コミットの日時）。画面が古いと感じたら下のボタンで読み込み直してください。それでも古ければ、アプリを完全に終了して開き直します。</p>
-      <button className="btn-sm wide" onClick={() => { try { window.location.replace(window.location.pathname + "?r=" + Date.now()); } catch {} }}>最新版に更新（再読み込み）</button></section>
     <section className="sec"><h3 className="s-h">設定を別の端末に渡す</h3>
       <p className="lead">設定済みの端末で「リンクをコピー」すると、プロジェクトURL・anon キー・共有ID・APIキーの入っているもの全部が1本のリンクになります。LINE やメールで自分に送る。もう一方の端末でそのリンクを開くか、下の欄に貼って「取り込む」。ホーム画面のアプリは Safari と保存場所が別なので、アプリ側では貼り付けを使ってください。</p>
       <button className="btn-sm" onClick={copyLink} disabled={!url && !anon && !room && !key}>リンクをコピー</button>
