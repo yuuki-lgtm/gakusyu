@@ -1563,3 +1563,13 @@ describe("取り込みの最初の番号", () => {
     assert.equal(m.nextPageNo(d, "数学", "ワーク"), 1);
   });
 });
+
+describe("名前付けの応答の読み取り", () => {
+  test("parseItemsLoose: 正しい JSON はそのまま。途中で切れていても完成した項目だけ拾う。何も無ければ失敗", () => {
+    const ok = m.parseItemsLoose('{"items":[{"n":1,"label":"a","fmt":"計算"}],"listening_total":2}');
+    assert.deepEqual(ok, { items: [{ n: 1, label: "a", fmt: "計算" }], listening_total: 2 });
+    const cut = m.parseItemsLoose('説明します。{"items":[{"n":1,"label":"一番","summary":"s1","fmt":"計算","rote":false,"same":0},{"n":2,"label":"二番","summary":"s2","fmt":"計');
+    assert.deepEqual(cut.items.map((x) => x.label), ["一番"]); assert.equal(cut.listening_total, 0);
+    assert.throws(() => m.parseItemsLoose("読めません"), /JSON を読めません/);
+  });
+});
