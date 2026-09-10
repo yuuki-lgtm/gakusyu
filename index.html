@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 22:20"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 22:21"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1758,7 +1758,7 @@ function ItemReg({ d, save }) {
     <SubjRow value={subject} onChange={setSubject} />
     {hasMat && <TapReg d={d} save={save} subject={subject} us={us} fallbackUnitId={unitId} />}
     <Fld label={hasMat ? "単元（ページが単元と対応していないときに使う）" : "単元"}><select value={unitId} onChange={(e) => setUnitId(e.target.value)}><option value="">—</option>{us.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</select></Fld>
-    <details className="det" open={!hasMat}><summary>手で1つ追加（学校のワーク以外、口頭で分かった弱点など）</summary>
+    <details className="det"><summary>手で1つ追加（学校のワーク以外、口頭で分かった弱点など）</summary>
       <Fld label="項目"><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="例：係数が分数の一次方程式" /></Fld>
       <Fld label="どう間違えたか（任意）"><input value={note} onChange={(e) => setNote(e.target.value)} /></Fld>
       <div className="grid2"><Fld label="形式"><select value={fmt} onChange={(e) => setFmt(e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select></Fld><Fld label="誤答の種類"><select value={etype} onChange={(e) => setEtype(e.target.value)}>{ETYPES.map((f) => (<option key={f}>{f}</option>))}</select></Fld></div>
