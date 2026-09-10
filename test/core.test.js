@@ -913,3 +913,32 @@ describe("模試（段階1: 種別と範囲）", () => {
     assert.equal(m.lastCumOn(d), day(-10));
   });
 });
+
+describe("模試（段階2: 本番の形式）", () => {
+  test("flattenSections: 大問ごとの問題を1列にし、sec に大問名", () => {
+    const qs = m.flattenSections({ sections: [{ title: "【1】用語", questions: [{ q: "a" }, { q: "b" }] }, { title: "【2】計算", questions: [{ q: "c" }] }] });
+    assert.deepEqual(qs.map((x) => [x.q, x.sec]), [["a", "【1】用語"], ["b", "【1】用語"], ["c", "【2】計算"]]);
+    assert.deepEqual(m.flattenSections({ questions: [{ q: "z" }] }).map((x) => x.sec), [""]);
+    assert.deepEqual(m.flattenSections({}), []);
+  });
+  test("normalizePts: 合計をちょうど100に。欠けは1点扱い、端数は最後で調整", () => {
+    const qs = [{ pts: 3 }, { pts: 3 }, { pts: 3 }]; m.normalizePts(qs, 100);
+    assert.equal(qs.reduce((a, q) => a + q.pts, 0), 100); assert.deepEqual(qs.map((q) => q.pts), [33, 33, 34]);
+    const q2 = [{ pts: 0 }, { pts: "x" }, { pts: 8 }]; m.normalizePts(q2, 100);
+    assert.equal(q2.reduce((a, q) => a + q.pts, 0), 100); assert.ok(q2[2].pts > q2[0].pts);
+    assert.deepEqual(m.normalizePts([], 100), []);
+  });
+  test("用紙: 大問の見出し・配点・50分・100点満点が出る", () => {
+    const p = { id: "p", code: "c", subject: "数学", date: T, kind: "模試", examName: "中間", minutes: 50, maxScore: 100, title: "", passage: "", unitIds: [], imgs: [], status: "printed",
+      questions: [{ n: 1, q: "q1", a: "a1", label: "l", aim: "", fmt: "計算", svg: "", sec: "【1】用語", pts: 40 }, { n: 2, q: "q2", a: "a2", label: "l", aim: "", fmt: "計算", svg: "", sec: "【1】用語", pts: 30 }, { n: 3, q: "q3", a: "a3", label: "l", aim: "", fmt: "記述・作文", svg: "", sec: "【4】記述", pts: 30 }] };
+    const h = m.paperHTML(p);
+    assert.equal((h.match(/class="sech"/g) || []).length, 2, "同じ大問の見出しは1回");
+    assert.ok(h.includes("【1】用語") && h.includes("【4】記述") && h.includes("（40点）") && h.includes("50分") && h.includes("／100") && h.includes("模試（中間）"));
+    assert.ok(!m.paperHTML({ ...p, kind: "週次", minutes: undefined, maxScore: undefined, questions: p.questions.map((q) => ({ ...q, sec: "", pts: 0 })) }).includes("sech"));
+  });
+  test("mockPromptFor は教科ごとの大問構成と、参考答案があればその指示を含む", () => {
+    assert.ok(m.MOCK_SECTIONS && Object.keys(m.MOCK_SECTIONS).length === 5);
+    assert.ok(m.mockPromptFor("数学", 0).includes("50分・100点満点") && m.mockPromptFor("数学", 0).includes("【2】計算") && !m.mockPromptFor("数学", 0).includes("参考"));
+    assert.ok(m.mockPromptFor("英語", 2).includes("参考") && m.mockPromptFor("英語", 2).includes("英作文"));
+  });
+});

@@ -46,7 +46,7 @@
 
 ### テスト `WeekTab`（作る／撮る／読解／記述／手入力）
 - **作る `MakePapers`**: 教科ごとに `pickUnits()`（未定着がある単元と最近出していない単元）か手で選んだ単元で `genPaper()`（週次・累積・模試で共通の作問関数。AI 節）を呼び、`materialsForUnits()` の教材ページを「図1〜図N」として添付して作問。問題文が参照した図（「図3」または `fig`）のページだけ `refs` に残す。「今日作った N 教科を1つのPDFに」で `exportPDF(papers)`。各行の `PaperRow`→`PrintSheet` は1教科ずつ。
-- **模試 `MockMaker`**: 「定期」で範囲を選んだ直近のテストの範囲で、1教科ずつ `genPaper(kind:"模試")` で作る。用紙は `examId`・`examName`・`left`・`round` を持つ。週次の判断（`paperThisWeek`）や「今日作った教科をまとめてPDF」には混ぜない。模試の用紙は再利用しない。
+- **模試 `MockMaker`**: 「定期」で範囲を選んだ直近のテストの範囲で、1教科ずつ `genPaper(kind:"模試")` で作る。用紙は `examId`・`examName`・`left`・`round`・`minutes:50`・`maxScore:100` を持つ。形式は本番に寄せる: 大問は教科ごとの `MOCK_SECTIONS`（知識→計算→応用→記述の順）、各問に配点 `pts`（`normalizePts` で合計をちょうど100に）、`sec` に大問名。用紙には大問の見出し・配点・50分・100点満点が出る。週次の判断（`paperThisWeek`）や「今日作った教科をまとめてPDF」には混ぜない。模試の用紙は再利用しない。
 - **撮る `GradeFlow`**: 採点済みの答案を撮り、AI が○×を読む。×と空欄を未定着に入れ、形式別の結果を `tests` に入れる。
 - **読解 `ReadingMaker`**: 新規の文章と設問を作る（既存作品は使わない）。落とした設問は「読解の技能」として未定着に。
 - **記述 `WritingFlow`**: 課題を作り、答案を撮って添削。表面の誤りの種類を未定着に。

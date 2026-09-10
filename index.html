@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 11:09"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 11:10"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -602,11 +602,20 @@ ${mock ? MOCK_JSON : 'JSONのみ: {"questions":[{"q":"問題文","a":"解答（�
   const paper = { id: uid(), code: `${today().slice(5).replace("-", "")}${subject[0]}${mock ? "模" : ""}`, subject, date: today(), kind, unitIds: units.map((u) => u.id), questions: qs, imgs: [], refs, status: "printed", model: usedLabel(), ...(mock ? { minutes: 50, maxScore: 100 } : {}), ...fields, updatedAt: now() };
   return { paper, note: matNote || (matDesc ? `教材 ${matDesc} を参照${refs.length ? `、資料 ${refs.length}ページ` : ""}` : "教材なし") };
 }
-/* 模試の形式の指示（段階2で本番形式に） */
-const mockPromptFor = (subject, nRef) => `本番の定期テストと同じ形式で作ってください。`;
-const MOCK_JSON = 'JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":"","fig":0}]}';
-const flattenSections = (parsed) => (parsed.questions || []).map((x) => ({ ...x, sec: "" }));
-const normalizePts = (qs, total) => qs;
+/* 模試の形式。本番の定期テストに寄せる: 50分・100点満点・各問に配点・大問は 知識→計算→応用→記述 の順 */
+const MOCK_SECTIONS = { 数学: "【1】用語・基本事項 →【2】計算 →【3】応用（文章題・図形・関数）→【4】記述（考え方や理由を説明）", 英語: "【1】単語・文法の知識 →【2】書きかえ・並べかえ →【3】読解（本文は自作）→【4】英作文", 国語: "【1】漢字・語句・文法 →【2】読解（本文は自作の短文）→【3】応用（要旨・心情）→【4】記述（字数指定）", 社会: "【1】用語 →【2】年代・地名・数値 →【3】資料・地図の読み取り →【4】記述（理由や影響を説明）", 理科: "【1】用語 →【2】計算 →【3】実験・観察・グラフの読み取り →【4】記述（理由を説明）" };
+const mockPromptFor = (subject, nRef) => `本番の定期テストと同じ形式で作ってください。50分・100点満点。大問は ${MOCK_SECTIONS[subject] || "【1】知識 →【2】計算・基本 →【3】応用 →【4】記述"} の順で4つ。問題数は25〜35問。各問に配点 pts（整数）を付け、合計をちょうど100点にする。配分の目安は知識3割・計算/基本3割・応用3割・記述1割。記述は解答が2〜4行になる問いを2〜3問。${nRef ? "添付の【参考】は実際に返却された定期テストの答案。大問の数、配点の配分、記述の量、設問の言い回しをこれに寄せる。問題文をそのまま写さない。" : ""}`;
+const MOCK_JSON = 'JSONのみ: {"sections":[{"title":"【1】用語・基本事項","questions":[{"q":"問題文","a":"解答（途中式含む）","pts":4,"unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":"","fig":0}]}]}';
+/* 大問ごとの問題を1列にする。sec に大問名 */
+const flattenSections = (parsed) => (parsed.sections || []).flatMap((sc) => (sc.questions || []).map((x) => ({ ...x, sec: sc.title || "" }))).concat((parsed.questions || []).map((x) => ({ ...x, sec: x.sec || "" })));
+/* 配点の合計をちょうど total に。0 や欠けは1点扱いで比例配分し、端数は最後の問題で調整 */
+function normalizePts(qs, total = 100) {
+  if (!qs.length) return qs;
+  const raw = qs.map((q) => (Number(q.pts) > 0 ? Number(q.pts) : 1)); const sum = raw.reduce((a, b) => a + b, 0);
+  let acc = 0; qs.forEach((q, k) => { q.pts = Math.max(1, Math.round((raw[k] * total) / sum)); acc += q.pts; });
+  qs[qs.length - 1].pts = Math.max(1, qs[qs.length - 1].pts + (total - acc));
+  return qs;
+}
 
 /* ---- 模試（定期テストの範囲で、1教科ずつ） ---- */
 const upcomingExams = (d) => (d.exams || []).filter((e) => e.date >= today() && (e.unitIds || []).length).sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -642,6 +651,7 @@ const SHEET_CSS = `
 .sw .at{flex:1;min-width:0;white-space:pre-wrap}
 .sw .cols{column-count:2;column-gap:9mm}
 .sw .aim{margin-top:7mm;padding-top:3.5mm;border-top:0.5pt dashed #888;font-size:9pt;line-height:1.7;color:#444}
+.sw .sech{font-size:11.5pt;font-weight:700;margin:5mm 0 2.5mm;padding-bottom:1mm;border-bottom:0.6pt solid #333}.sw .pts{font-size:9.5pt;color:#555;margin-left:2mm}
 .sw .ref{margin-bottom:8mm;page-break-inside:avoid}
 .sw .ref .cap{font-size:10pt;font-weight:600;margin-bottom:2mm}
 .sw .ref img{max-width:100%;border:0.4pt solid #999;display:block}
@@ -672,11 +682,12 @@ function paperHTML(p, res = {}) {
   const figs = paperFigs(p, res);
   const ref = figs.length ? `<div class="sheet" data-part="q"><div class="ttl"><span>${escHTML(p.subject)}　資料</span><small>${escHTML(p.code)}</small></div><p class="note">問題文の図番号はこのページを指します。</p>${figs.map((f) => `<div class="ref"><div class="cap">${escHTML(f.cap)}</div>${f.b64 ? `<img src="data:image/jpeg;base64,${f.b64}" alt="">` : `<div class="ref-wait">${f.pending ? "PDF生成時に教材のページを読み込みます" : "画像なし"}</div>`}</div>`).join("")}</div>` : "";
   const passage = p.passage ? `<div class="psg">${escHTML(p.title || "")}${p.title ? "<br><br>" : ""}${escHTML(p.passage).replace(/\n/g, "<br>")}</div>` : "";
-  const qs = p.questions.map((q) => { const svg = safeSvg(q.svg); return `<div class="p"><div class="pn">${q.n}.</div><div class="pt"><p class="pq">${escHTML(q.q)}</p>${svg ? `<div class="fig">${svg}</div>` : ""}${Array.from({ length: svg ? Math.max(2, nl - 1) : nl }, () => `<div class="rule"></div>`).join("")}</div></div>`; }).join("");
+  let lastSec = null;
+  const qs = p.questions.map((q) => { const svg = safeSvg(q.svg); const head = q.sec && q.sec !== lastSec ? `<div class="sech">${escHTML(q.sec)}</div>` : ""; lastSec = q.sec || lastSec; const pts = q.pts ? `<span class="pts">（${q.pts}点）</span>` : ""; return `${head}<div class="p"><div class="pn">${q.n}.</div><div class="pt"><p class="pq">${escHTML(q.q)}${pts}</p>${svg ? `<div class="fig">${svg}</div>` : ""}${Array.from({ length: svg ? Math.max(2, nl - 1) : nl }, () => `<div class="rule"></div>`).join("")}</div></div>`; }).join("");
   const anyFig = false;
-  const ans = `<div class="${anyFig ? "" : "cols"}">${p.questions.map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.a)}</div></div>`).join("")}</div>`;
+  const ans = `<div class="${anyFig ? "" : "cols"}">${p.questions.map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.a)}${q.pts ? ` <span class="pts">（${q.pts}点）</span>` : ""}</div></div>`).join("")}</div>`;
   const aim = `<div class="aim"><div style="font-weight:600;margin-bottom:2mm">出題のねらい</div>${p.questions.map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.label || q.aim)}${q.aim && q.aim !== q.label ? " — " + escHTML(q.aim) : ""}</div></div>`).join("")}</div>`;
-  return `${ref}<div class="sheet" data-part="q"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(paperTitle(p))}</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span><span>点　　　／${p.questions.length}</span></div>${passage}${qs}</div><div class="sheet" data-part="a"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
+  return `${ref}<div class="sheet" data-part="q"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(paperTitle(p))}</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span>${p.minutes ? `<span>${p.minutes}分</span>` : ""}<span>点　　　／${p.maxScore || p.questions.length}</span></div>${passage}${qs}</div><div class="sheet" data-part="a"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
 }
 function fileHTML(p, res = {}) {
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHTML(p.subject)} ${escHTML(p.code)}</title><style>@page{size:A4;margin:17mm 16mm}html,body{margin:0;padding:0}${SHEET_CSS}.sw .sheet{page-break-after:always}.sw .sheet:last-child{page-break-after:auto}#pb{position:fixed;right:16px;bottom:16px;padding:15px 26px;background:#1E2321;color:#fff;border:none;border-radius:5px;font-size:15px;font-family:-apple-system,sans-serif;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35)}@media screen{body{background:#8A928C;padding:14px 0}.sw .sheet{width:210mm;min-height:297mm;margin:0 auto 16px;padding:17mm 16mm;box-sizing:border-box;box-shadow:0 2px 10px rgba(0,0,0,.35)}}@media print{#pb{display:none}}</style></head><body><div class="sw">${paperHTML(p, res)}</div><button id="pb" onclick="window.print()">印刷する</button></body></html>`;
