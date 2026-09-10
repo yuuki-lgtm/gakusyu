@@ -365,7 +365,7 @@ test("夜の作業の進み具合は番号つきのステップ表示（ボタ�
 });
 test("使い方: ホームには「1週間の流れ」を置かず、使い方への動線だけ。その他の下から2番目に「使い方」。使い方の画面はいまの呼び名を使う", () => {
   const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
-  assert.ok(!h.includes("1週間の流れ") && h.includes('class="guide-link"') && h.includes("使い方を見る →"));
+  assert.ok(!h.includes("1週間の流れ") && h.includes('class="guide-row"') && h.includes(">使い方を見る</button>") && !h.includes("使い方がわからない"));
   const more = render(m.MoreTab, { d: F.demo(), go: noop }).html; const rows = [...more.matchAll(/<span class="nxt-t">([^<]*)<\/span>/g)].map((x) => x[1]);
   assert.equal(rows[rows.length - 2], "使い方"); assert.equal(rows[rows.length - 1], "最新版に更新（再読み込み）");
   const g = render(m.GuideTab, { go: noop }).html;
@@ -414,7 +414,7 @@ test("ホーム: 数字カード（連続・未定着・安定・マス目）は
   const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
   assert.ok(!h.includes("hm-row") && !h.includes('class="heat sm"') && !h.includes(">連続<"));
   assert.ok(/class="blk exam-line"/.test(h) && /あと\d+日/.test(h) && !/D-\d+/.test(h) && h.includes("範囲の未定着 "));
-  const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(e.includes("exam-line") && e.includes(">未定着<") && e.includes("0件"), "定期テストが無ければ未定着の件数");
+  const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(e.includes("exam-line") && e.includes(">未定着<") && e.includes("0件") && !e.includes("で登録"), "定期テストが無ければ未定着の件数");
 });
 test("スナックバー: ok は文だけ、err は × 付き。空なら何も出さない", () => {
   const h = render(m.Snacks, { list: [{ id: "1", text: "保存しました", kind: "ok" }, { id: "2", text: "失敗", kind: "err" }], onClose: noop }).html;

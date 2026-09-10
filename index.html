@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 08:47"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 08:51"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1122,8 +1122,8 @@ function HomeTab({ d, go }) {
     <MorningPrint d={d} />
     {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt press" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span><span className="chev">›</span></button>))}</div>)}
     {nx ? (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>あと{left}日</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)
-      : (<button className="blk exam-line" onClick={() => go("reg", "list")}><span className="hm-k">未定着</span><strong>{d.items.filter((i) => i.status === "active").length}件</strong><span className="ex-n">安定 {d.items.filter((i) => i.status === "stable").length}件 · 定期テストは「テスト→定期テスト」で登録</span></button>)}
-    <button className="guide-link" onClick={() => go("guide")}><span>使い方がわからないときは</span><b>使い方を見る →</b></button>
+      : (<button className="blk exam-line" onClick={() => go("reg", "list")}><span className="hm-k">未定着</span><strong>{d.items.filter((i) => i.status === "active").length}件</strong><span className="ex-n">安定 {d.items.filter((i) => i.status === "stable").length}件</span></button>)}
+    <p className="guide-row"><button className="btn-sm" onClick={() => go("guide")}>使い方を見る</button></p>
   </div>);
 }
 
@@ -2230,7 +2230,7 @@ const CSS = `
 .nxt-t{display:block;font-size:13px;font-weight:700;color:var(--ink)}.nxt-w{display:block;font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
 .exam-line{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink2)}.exam-line strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}.exam-line strong.near{color:#8E3830}.exam-line .ex-n{flex:1}.hm-k{font-size:10px;color:var(--ink3)}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
 
-.guide-link{display:flex;align-items:center;justify-content:space-between;width:100%;margin:4px 0 8px;padding:12px 14px;border:1px dashed var(--line);border-radius:4px;background:none;font-family:inherit;font-size:12px;color:var(--ink2);cursor:pointer;-webkit-tap-highlight-color:transparent}.guide-link b{color:var(--ink);font-size:13px}
+.guide-row{text-align:center;margin:10px 0 4px}
 .guide .g-p{font-size:13px;line-height:1.8;margin:0}.g-ol,.g-ul{margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--ink2)}.g-ol li,.g-ul li{margin-bottom:6px}.g-ol b,.g-ul b{color:var(--ink)}.flow b{color:var(--ink)}
 .root{--ink:#1E2321;--ink2:#5A615C;--ink3:#8A928C;--paper:#F6F7F5;--card:#FFF;--line:#DDE2DD;
  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
