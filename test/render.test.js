@@ -270,3 +270,8 @@ test("最後のページ: 取り込んだ教科・教材ごとに1行。済み�
   assert.ok(!html.includes("数学のテスト"));
   assert.ok(render(m.LastPageStep, { d: F.empty(), save: noop }).html.includes("取り込んだ教科がありません"));
 });
+test("ホーム: 採点待ちの類題があれば「今日の分を印刷する（PDFだけ）」が出る。無ければ出ない", () => {
+  assert.ok(render(m.HomeTab, { d: F.demo(), go: noop }).html.includes("今日の分を印刷する（1件・PDFだけ）"));
+  assert.ok(!render(m.HomeTab, { d: F.empty(), go: noop }).html.includes("PDFだけ"));
+  assert.equal(render(m.MorningPrint, { d: F.empty() }).html, "");
+});
