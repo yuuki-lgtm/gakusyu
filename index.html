@@ -44,7 +44,7 @@ const READ_TYPES = ["指示語の内容", "接続語の選択", "理由の説明
 const RUBRIC = [["len", "字数を満たした"], ["structure", "段落の型に沿った"], ["surface", "助詞・送り仮名・脱字がない"]];
 /* 類題を印刷用の用紙に変換 */
 /* 類題を印刷用の用紙に変換。項目ごとに教科・単元の見出し、最後に説明の問いと「自分の判定」の欄 */
-const SELF_LINE = "自分の判定：□ できなかった　□ 解けた　□ 説明もできた";
+const SELF_LINE = "自分の判定：□ できなかった　□ 解けた　□ 説明もできた　□ 問題が変";
 
 /* ---- 日付・文字列 ---- */
 /* 日付は端末のローカル日付で扱う（toISOString は UTC になり、日本では日付が1日ずれる） */
@@ -424,15 +424,16 @@ const selfMarksText = (items, unitOf) => items.map((i, k) => { const u = unitOf(
 /* 読み取った印（{n: "x"|"o"|"oo"|""}）を採点画面の判定に。子どもの判定＝親の判定の初期値。× なら前回の誤答の種類 */
 function applySelfMarks(items, marks) {
   const out = {};
-  items.forEach((i, k) => { const r = marks[k + 1]; if (r === "x" || r === "o" || r === "oo") { const rr = r === "oo" && !needsWhy(i) ? "o" : r; out[i.id] = { self: rr, r: rr, etype: rr === "x" ? i.etype || "" : "", skip: false }; } });
+  items.forEach((i, k) => { const r = marks[k + 1]; if (r === "bad") { out[i.id] = { bad: true, self: null, r: null, skip: false }; } else if (r === "x" || r === "o" || r === "oo") { const rr = r === "oo" && !needsWhy(i) ? "o" : r; out[i.id] = { self: rr, r: rr, etype: rr === "x" ? i.etype || "" : "", skip: false }; } });
   return out;
 }
 /* decisions: {id: {r, self, etype, etypeSelf}} または {id: {skip:true}}。r のあるものだけ判定し、skip は印刷前に戻す */
 function judgeAll(d, decisions) {
-  const t = today(); let n = 0;
+  const t = today(); let n = 0, bad = 0;
   const items = d.items.map((i) => {
     const dc = decisions[i.id]; if (!dc) return i;
     if (dc.skip) return { ...i, printedOn: null, printedOrig: null, updatedAt: now() };
+    if (dc.bad) { bad++; return { ...i, printedOn: null, printedOrig: null, gen: null, genOn: null, badN: (i.badN || 0) + 1, updatedAt: now() }; } // 問題が変: 判定せず翌日に作り直す
     if (!dc.r) return i;
     n++;
     const next = applyJudgment(i, dc.r);
@@ -441,7 +442,7 @@ function judgeAll(d, decisions) {
     if (dc.r === "x" && dc.etype) next.etype = dc.etype;
     return next;
   });
-  return { d: { ...d, items, log: n ? { ...d.log, [t]: true } : d.log }, n };
+  return { d: { ...d, items, badCount: (d.badCount || 0) + bad, log: n ? { ...d.log, [t]: true } : d.log }, n, bad };
 }
 
 /* ---- ×のタップ登録 ---- */
@@ -731,9 +732,9 @@ async function diagnose(i, u, ctx, model = OPUS) {
 /* 「今日の分」の紙を撮って、各項目の「自分の判定」の印（□ できなかった／□ 解けた／□ 説明もできた）を読む。戻り値は {n: "x"|"o"|"oo"|""} */
 async function readSelfMarks(files, items, unitOf, model = null) {
   const imgs = []; for (const f of files) imgs.push(imgBlock(await compressImage(f, 1600, 0.8)));
-  const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。項目ごとに「自分の判定：□ できなかった　□ 解けた　□ 説明もできた」の欄があり、子どもがどれかに印（✓・○・塗りつぶし）を付けています。次の項目の順に、印の付いた欄を読み取ってください。\n${selfMarksText(items, unitOf)}` }],
-    `印が無い・判読できない項目は "" にする。解答の正誤は判断しない（印だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|""}]}`, 800, model);
-  const out = {}; (parseJSON(t).marks || []).forEach((mk) => { out[Number(mk.n)] = mk.self === "x" || mk.self === "o" || mk.self === "oo" ? mk.self : ""; });
+  const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。項目ごとに「自分の判定：□ できなかった　□ 解けた　□ 説明もできた　□ 問題が変」の欄があり、子どもがどれかに印（✓・○・塗りつぶし）を付けています。次の項目の順に、印の付いた欄を読み取ってください。\n${selfMarksText(items, unitOf)}` }],
+    `印が無い・判読できない項目は "" にする。「問題が変」に印があれば "bad"。解答の正誤は判断しない（印だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|"bad"|""}]}`, 800, model);
+  const out = {}; (parseJSON(t).marks || []).forEach((mk) => { out[Number(mk.n)] = ["x", "o", "oo", "bad"].includes(mk.self) ? mk.self : ""; });
   return out;
 }
 
@@ -1121,10 +1122,10 @@ function TodayGrade({ d, save }) {
   };
   const pickSelf = (i, r) => upd(i.id, { self: r, r, etype: r === "x" ? (dc[i.id]?.etype || i.etype || "") : "", skip: false });
   const pickParent = (i, r) => upd(i.id, { r, etype: r === "x" ? (dc[i.id]?.etype || i.etype || "") : "", skip: false });
-  const decided = set.filter((i) => dc[i.id]?.r || dc[i.id]?.skip);
+  const decided = set.filter((i) => dc[i.id]?.r || dc[i.id]?.skip || dc[i.id]?.bad);
   const judged = decided.filter((i) => dc[i.id]?.r);
   const missingE = set.filter((i) => dc[i.id]?.r === "x" && !dc[i.id]?.etype);
-  const commit = () => { const { d: nd, n } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; setMsg(`${n}件を確定しました。${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); setTimeout(() => setMsg(""), 4000); };
+  const commit = () => { const { d: nd, n, bad } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; setMsg(`${n}件を確定しました。${bad ? `「問題が変」${bad} 件は明日作り直します。` : ""}${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); setTimeout(() => setMsg(""), 4000); };
   return (<section className="sec">
     {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
       <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
@@ -1139,9 +1140,10 @@ function TodayGrade({ d, save }) {
             <div className="grow-r"><span className="j-who">子ども</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.self === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickSelf(i, r)}>{l}</button>))}</div></div>
             <div className="grow-r"><span className="j-who">親</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.r === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickParent(i, r)}>{l}</button>))}</div></div>
             {c.r === "x" && <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (c.etype === e ? " on" : "")} onClick={() => upd(i.id, { etype: e })}>{e}</button>))}</div>}
+            <div className="grow-r"><span className="j-who"></span><button className={"et bad" + (c.bad ? " on" : "")} onClick={() => upd(i.id, { bad: !c.bad, r: null, self: null })}>{c.bad ? "問題が変（判定せず明日作り直す）" : "問題が変"}</button></div>
           </>)}
         </div>); })}
-      <button className="btn-main" onClick={commit} disabled={!decided.length || missingE.length > 0}>まとめて確定（{judged.length}件）</button>
+      <button className="btn-main" onClick={commit} disabled={!decided.length || missingE.length > 0}>まとめて確定（{judged.length}件{decided.filter((i) => dc[i.id]?.bad).length ? `＋問題が変 ${decided.filter((i) => dc[i.id]?.bad).length}` : ""}）</button>
       {missingE.length > 0 && <p className="warn-t">「できなかった」には誤答の種類を選んでください（{missingE.length}件）。</p>}
       {set.length - decided.length > 0 && <p className="ph-note">押していない {set.length - decided.length} 件は採点待ちのまま残ります。「やっていない」を押すと次の印刷に入ります。</p>}
       {msg && <p className="msg">{msg}</p>}
@@ -1799,6 +1801,7 @@ function AnaTab({ d }) {
 
     <FormatBlock d={d} />
 
+    <div className="blk"><h3>問題が変 <span className="cnt">類題の品質</span></h3><div className="big">{d.badCount || 0}<small> 件 / 生成 {d.genCount || 0} 件{d.genCount ? `（${pct(d.badCount || 0, d.genCount)}%）` : ""}</small></div><p className="blk-s">紙の「問題が変」か採点の「問題が変」を押した回数。多ければ作問の指示を見直す。</p></div>
     <div className="blk"><h3>説明不要の項目 <span className="cnt">暗記もの。「解けた」で先へ進む</span></h3><div className="big">{d.items.filter((i) => i.status === "active" && !needsWhy(i)).length}<small> / 未定着 {d.items.filter((i) => i.status === "active").length}件（用語 {d.items.filter((i) => i.status === "active" && i.fmt === "知識・用語").length}、印あり {d.items.filter((i) => i.status === "active" && i.noWhy && i.fmt !== "知識・用語").length}）</small></div><p className="blk-s">多すぎるなら、説明させる項目が減っています。「登録→未定着一覧」で外せます。</p></div>
     <div className="blk"><h3>誤答の種類 <span className="cnt">対処が違う</span></h3>
       {etAgg.length === 0 ? <p className="empty">記録なし。</p> : etAgg.map(([t, c]) => (<div className="erow" key={t}><span className="er-name">{t}</span><span className="er-bar"><span style={{ width: `${(c / etMax) * 100}%` }} /></span><span className="er-n">{c}</span></div>))}
@@ -1970,7 +1973,7 @@ const CSS = `
 .lastp{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--ink2)}.lastp .btn-sm{margin-left:auto;white-space:nowrap}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
-.et.why{margin-top:4px;margin-left:4px}.et.why.on{background:#C08A3E;border-color:#C08A3E}
+.et.bad.on{background:#A8443B;border-color:#A8443B;color:#fff}.et.why{margin-top:4px;margin-left:4px}.et.why.on{background:#C08A3E;border-color:#C08A3E}
 .chk{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--ink2);line-height:1.6;margin:6px 0 10px}.chk input{width:auto;height:auto;margin-top:3px}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}
 .matpick{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}.matpick .seg{margin-bottom:8px}.qn-row{display:flex;gap:6px;margin-top:8px}.qn-row input{flex:1}

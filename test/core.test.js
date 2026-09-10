@@ -1407,3 +1407,19 @@ describe("検算（数学・理科の計算、英語の文法・英作文）", (
     assert.equal(m.mergeData({ v: 3 }, { v: 3 }).genCount, 0);
   });
 });
+
+describe("問題が変", () => {
+  const it = (o) => item({ history: [], ...o });
+  test("紙の判定欄に「問題が変」があり、読み取りと反映で bad になる", () => {
+    assert.ok(m.SELF_LINE.includes("□ 問題が変"));
+    const r = m.applySelfMarks([it({ id: "a" }), it({ id: "b" })], { 1: "bad", 2: "o" });
+    assert.deepEqual(r.a, { bad: true, self: null, r: null, skip: false }); assert.equal(r.b.r, "o");
+  });
+  test("judgeAll: 問題が変 は判定せず、印刷と類題を消して翌日に作り直す。回数を数える", () => {
+    const d = { ...m.blank(), items: [it({ id: "a", level: 2, printedOn: day(-1), gen: { problems: [] }, genOn: day(-1) }), it({ id: "b", printedOn: day(-1) })] };
+    const { d: nd, n, bad } = m.judgeAll(d, { a: { bad: true }, b: { r: "o" } });
+    assert.equal(n, 1); assert.equal(bad, 1); assert.equal(nd.badCount, 1);
+    const a = nd.items[0]; assert.deepEqual([a.level, a.printedOn, a.gen, a.genOn, a.badN, a.history.length], [2, null, null, null, 1, 0]);
+    assert.equal(m.printSet({ ...nd, items: nd.items.map((x) => (x.id === "a" ? { ...x, nextDue: day(-1) } : x)) }).some((x) => x.id === "a"), true, "翌日の候補に戻る");
+  });
+});

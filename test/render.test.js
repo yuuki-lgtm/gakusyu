@@ -309,3 +309,8 @@ test("設定: 今日の分の上限の欄がある", () => {
 test("設定: 「すべて Opus 5 を使う」の切り替えがある", () => {
   assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("すべて Opus 5 を使う"));
 });
+test("採点に「問題が変」があり、分析に件数が出る", () => {
+  assert.ok(render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade" }).html.includes(">問題が変<"));
+  const ana = render(m.AnaTab, { d: { ...F.demo(), genCount: 20, badCount: 2 } }).html;
+  assert.ok(ana.includes("問題が変") && ana.includes("生成 20 件（10%）"));
+});
