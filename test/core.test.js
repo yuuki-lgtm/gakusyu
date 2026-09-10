@@ -546,7 +546,7 @@ describe("紙で回す（印刷セット・採点セット・一括確定）", (
       { id: "3", subject: "国語", unitId: "u", label: "C", fmt: "計算", gen: null }];
     const p = m.genToPaper(items, () => u);
     assert.equal(p.questions.length, 4);
-    assert.ok(m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].sec === "" && m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].q.startsWith("q\n"), "1教科で単元が無ければ見出しなし");
+    assert.ok(m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].sec === "" && m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].q === "q", "1教科で単元が無ければ見出しなし。問題文に判定欄は付けない");
     assert.ok(p.questions[0].q === "q1" && p.questions[0].sec === "数学・正負の数" && p.questions[0].jb === true && p.questions[0].itemId === "1", "複数教科なら「教科・単元」の小見出し。問題には○×の欄");
     assert.equal(p.questions[1].q, "q2");
     assert.ok(p.questions[2].q === "説明：なぜ符号が変わるか" && p.questions[2].why === true && p.questions[2].jb === true && p.questions[2].a.includes("説明もできた"));
@@ -617,7 +617,8 @@ describe("×のタップ登録（座標だけ保存）", () => {
     const j = m.applyJudgment(i, "o"); assert.equal(j.level, 1);
     assert.equal(m.printSet({ ...m.blank(), items: [i] }).length, 1);
     const paper = m.genToPaper([{ ...i, gen: { problems: [{ q: "q", a: "a" }], why: "w" } }], () => null);
-    assert.equal(paper.questions.length, 2);
+    assert.equal(paper.questions.length, 1, "覚えたて（level 0）は説明の問いなし");
+    assert.equal(m.genToPaper([{ ...i, level: 2, gen: { problems: [{ q: "q", a: "a" }], why: "w" } }], () => null).questions.length, 2, "7日の段階から説明の問い");
     assert.equal(m.srcLabel(i.src), "ワーク p.1");
     assert.equal(m.srcLabel({ path: "p", kind: "ワーク", page: 2, q: "3" }), "ワーク p.2 「3」");
   });
