@@ -24,20 +24,27 @@ describe("applyJudgment（間隔反復の核）", () => {
     const r = m.applyJudgment(item({ level: 3 }), "o");
     assert.equal(r.level, 3); assert.equal(r.nextDue, day(14)); assert.equal(r.status, "active");
   });
-  test("「説明もできた」で level 4（30日）へ進み、安定になる", () => {
+  test("「説明もできた」で level 4（30日）へ進む。まだ安定ではない", () => {
     const r = m.applyJudgment(item({ level: 3 }), "oo");
+    assert.equal(r.level, 4); assert.equal(r.nextDue, day(30)); assert.equal(r.status, "active");
+  });
+  test("30日の段階で正解したら「安定」。level は 4 のまま", () => {
+    const r = m.applyJudgment(item({ level: 4 }), "oo");
     assert.equal(r.level, 4); assert.equal(r.nextDue, day(30)); assert.equal(r.status, "stable");
+    assert.equal(m.applyJudgment(item({ level: 4, fmt: "知識・用語" }), "o").status, "stable", "用語は ○ でも安定");
+    assert.equal(m.applyJudgment(item({ level: 4 }), "o").status, "active", "解けただけでは安定にならない（level 3 止まりの規則で 30日から動かない）");
   });
   test("用語は ○ だけで先へ進める", () => {
     const r = m.applyJudgment(item({ level: 3, fmt: "知識・用語" }), "o");
-    assert.equal(r.level, 4); assert.equal(r.status, "stable");
+    assert.equal(r.level, 4); assert.equal(r.status, "active");
   });
-  test("上限は 60日（level 5）で止まる", () => {
-    const r = m.applyJudgment(item({ level: 5, status: "stable" }), "oo");
-    assert.equal(r.level, 5); assert.equal(r.nextDue, day(60));
+  test("上限は 30日（level 4）で止まる。段階は 1・3・7・14・30 の5つ", () => {
+    assert.deepEqual(m.INT, [1, 3, 7, 14, 30]);
+    const r = m.applyJudgment(item({ level: 4, status: "stable" }), "oo");
+    assert.equal(r.level, 4); assert.equal(r.nextDue, day(30)); assert.equal(r.status, "stable");
   });
   test("安定していても × で 1日に戻り、項目は消えない", () => {
-    const r = m.applyJudgment(item({ level: 5, status: "stable", failCount: 0 }), "x");
+    const r = m.applyJudgment(item({ level: 4, status: "stable", failCount: 0 }), "x");
     assert.equal(r.status, "active"); assert.equal(r.level, 0); assert.equal(r.nextDue, day(1)); assert.equal(r.id, "x");
   });
   test("○ のとき類題は残る", () => {
@@ -1332,5 +1339,13 @@ describe("溢れた再出題を土曜のテストに混ぜる", () => {
     assert.deepEqual([a.level, a.nextDue, a.history[0].r, a.history[0].via], [2, day(7), "o", "週次"]);
     assert.deepEqual([b.level, b.failCount, b.nextDue, b.history[0].etype], [0, 2, day(1), "時間切れ・空欄"]);
     assert.equal(c.history.length, 0); assert.equal(r.items.length, 3);
+  });
+});
+
+describe("安定した項目は日々の再出題から外れ、累積テストにだけ混ざる", () => {
+  test("printSet は安定を含めない。migrate は旧の level 5 を 4 に", () => {
+    const d = { ...m.blank(), items: [item({ id: "s", status: "stable", level: 4, nextDue: day(-1), history: [] }), item({ id: "a", status: "active", nextDue: T, history: [] })] };
+    assert.deepEqual(m.printSet(d).map((i) => i.id), ["a"]);
+    assert.equal(m.migrate({ v: 3, units: [], items: [{ id: "x", level: 5 }] }).items[0].level, 4);
   });
 });

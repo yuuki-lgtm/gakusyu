@@ -32,8 +32,8 @@ const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
 const FORMATS = ["知識・用語", "計算", "図・作図・グラフ", "資料・地図の読み取り", "長文読解", "記述・作文", "リスニング", "英作文"];
 const ETYPES = ["知らなかった", "分かっていたが間違えた", "読み間違えた", "時間切れ・空欄"];
-const INT = [1, 3, 7, 14, 30, 60];
-const STABLE_LEVEL = 4;
+const INT = [1, 3, 7, 14, 30]; // 間隔の段階。level は 0〜4
+const STABLE_LEVEL = 4; // 30日の段階。ここで正解したら「安定」
 /* 教材（ワーク・教科書）のページ画像は Supabase Storage に置き、端末には索引だけ持つ */
 const MKINDS = ["ワーク", "教科書", "テスト"]; // 教材種別。テスト＝返却された定期テストの答案（枚をページとして扱う）
 const BOOK_KINDS = ["教科書", "ワーク"]; // 目次があり、単元とページ範囲を結びつけるもの
@@ -206,7 +206,7 @@ const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], 
 /* v2 → v3 移行。既存データを引き継ぐ */
 function migrate(d) {
   if (!d) return blank();
-  if (d.v === 3) return { ...blank(), ...d };
+  if (d.v === 3) return { ...blank(), ...d, items: (d.items || []).map((i) => ((i.level || 0) > INT.length - 1 ? { ...i, level: INT.length - 1 } : i)) };
   const items = (d.items || []).map((i) => {
     const level = i.status === "mastered" ? STABLE_LEVEL : Math.min(i.streak || 0, 3);
     return { ...i, level, status: level >= STABLE_LEVEL ? "stable" : "active", etype: i.etype || "", updatedAt: now(),
@@ -331,7 +331,9 @@ function applyJudgment(item, r) {
   else if (item.printedOrig && r === "o") { /* 元の問題をもう一度解いた回: 白紙再生ではないので「解けた」では据え置き */ }
   else if (r === "oo" || !needsWhy(item)) { level = Math.min(level + 1, INT.length - 1); }
   else { level = Math.min(level + 1, 3); }
-  return { ...item, level, failCount, nextDue: addDays(t, INT[level]), status: level >= STABLE_LEVEL ? "stable" : "active", gen: r === "x" ? null : item.gen, defer: null, printedOrig: null, updatedAt: now() };
+  // 30日の段階で「説明もできた」（説明不要の項目は「解けた」）なら安定。安定は落とすまで安定のまま
+  const passedTop = (item.level || 0) >= INT.length - 1 && r !== "x" && (r === "oo" || !needsWhy(item)) && !(item.printedOrig && r === "o");
+  return { ...item, level, failCount, nextDue: addDays(t, INT[level]), status: r === "x" ? "active" : passedTop || item.status === "stable" ? "stable" : "active", gen: r === "x" ? null : item.gen, defer: null, printedOrig: null, updatedAt: now() };
 }
 function retention(items) {
   let c = 0, t = 0;
@@ -397,7 +399,7 @@ const examRangeIds = (d) => new Set((upcomingExams(d)[0] || { unitIds: [] }).uni
 /* 明日までに期日が来る未印刷の項目（候補）。優先順: 定期テストの範囲内 → 落とした回数 → 期日が古い */
 function printSet(d) {
   const lim = addDays(today(), 1); const range = examRangeIds(d);
-  return d.items.filter((i) => !i.printedOn && i.nextDue <= lim && i.pending?.d !== today())
+  return d.items.filter((i) => i.status !== "stable" && !i.printedOn && i.nextDue <= lim && i.pending?.d !== today())
     .sort((a, b) => (range.has(b.unitId) - range.has(a.unitId)) || b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
 }
 /* 一度に多数を登録したとき（今日の登録が上限の2倍以上）、初回の期日を翌日から上限ずつ後ろにずらす。全部が翌日に集中しないように */
@@ -651,14 +653,14 @@ async function genPaper(d, subject, units, opts) {
   const carry = kind === "週次" ? pickDaily(d).rest.filter((i) => i.subject === subject) : [];
   const n = kind === "週次" ? Math.min(30, (parseInt(opts.n, 10) || 10) + carry.length) : opts.n || "10";
   const stuck = d.items.filter((i) => i.subject === subject && i.status === "active" && units.some((u) => u.id === i.unitId));
-  const stable = d.items.filter((i) => i.subject === subject && i.status === "stable").map((i) => i.label);
+  const stable = kind === "累積" ? d.items.filter((i) => i.subject === subject && i.status === "stable").map((i) => i.label) : [];
   // 単元に結びついた教材ページを共有先から読む。読めなくても作問は続ける
   const mats = materialsForUnits(d, subject, units); const matImgs = []; let matNote = "";
   for (let k = 0; k < mats.length; k++) { onStep(`${subject}（教材ページ ${k + 1}/${mats.length}）`); try { matImgs.push({ m: mats[k], b64: await stGet(mats[k].path) }); } catch (e) { matNote = `教材ページを読めなかったので添付なし（${e.message}）`; matImgs.length = 0; break; } }
   onStep(subject);
   const matDesc = matsLabel(matImgs.map((x) => x.m));
   const mock = kind === "模試";
-  const prompt = `教科: ${subject}\n種別: ${mock ? "定期テスト前の模試（本番と同じ形式）" : kind + "テスト"}\n出題範囲:\n${units.map((u) => `・${u.name}${unitPageLabel(u) ? "（" + unitPageLabel(u) + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}${carry.length ? `\n\n繰り越しの再出題（必ず1問ずつ。その項目そのものを白紙から解かせる問題にし、item にその id を入れる）:\n${carry.map((i) => `・${i.label}（id: ${i.id}${i.note ? "／" + i.note : ""}）`).join("\n")}` : ""}\n\n安定している項目（確認として少数混ぜてよい）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}\n\n${mock ? mockPromptFor(subject, images.length) : `${n}問作ってください。`}${matImgs.length ? `\n添付の図1〜図${matImgs.length}（${matDesc}）は、出題範囲のワーク・教科書の実物。用語・記号・表現・扱われ方と難易度をこれに合わせ、ワークがあればワークの問題に近い形式で出す。本文や設問をそのまま写さない。地形図・実験装置・グラフ・英語の本文など自分で描けないものを使う問題は、「図3の地図を見て」のように図番号で参照して出題してよい（参照した図は資料として問題用紙と一緒に印刷される。参照は必要な問題だけにし、fig にその番号を入れる）。` : ""}`;
+  const prompt = `教科: ${subject}\n種別: ${mock ? "定期テスト前の模試（本番と同じ形式）" : kind + "テスト"}\n出題範囲:\n${units.map((u) => `・${u.name}${unitPageLabel(u) ? "（" + unitPageLabel(u) + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}${carry.length ? `\n\n繰り越しの再出題（必ず1問ずつ。その項目そのものを白紙から解かせる問題にし、item にその id を入れる）:\n${carry.map((i) => `・${i.label}（id: ${i.id}${i.note ? "／" + i.note : ""}）`).join("\n")}` : ""}${kind === "累積" ? `\n\n安定している項目（月1の確認。必ず数問混ぜる）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}` : ""}\n\n${mock ? mockPromptFor(subject, images.length) : `${n}問作ってください。`}${matImgs.length ? `\n添付の図1〜図${matImgs.length}（${matDesc}）は、出題範囲のワーク・教科書の実物。用語・記号・表現・扱われ方と難易度をこれに合わせ、ワークがあればワークの問題に近い形式で出す。本文や設問をそのまま写さない。地形図・実験装置・グラフ・英語の本文など自分で描けないものを使う問題は、「図3の地図を見て」のように図番号で参照して出題してよい（参照した図は資料として問題用紙と一緒に印刷される。参照は必要な問題だけにし、fig にその番号を入れる）。` : ""}`;
   const system = `日本の中学1年生向けの、白紙から解かせる${kind === "累積" ? "累積（過去範囲を混ぜた）" : mock ? "定期テストの模試（本番と同じ形式）" : ""}テストを作る。厳守:
 - 中1範囲を超えない。指定範囲から逸脱しない
 - 未出題の単元があれば必ず数問出す
