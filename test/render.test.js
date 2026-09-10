@@ -243,7 +243,8 @@ for (const [state, make] of Object.entries(STATES)) for (let st = 0; st < 4; st+
   m.nightSave(st);
   try { const { html, errors } = render(m.NightFlow, { d: make(), save: noop, go: noop });
     assert.equal(errors.length, 0, errors.join(", "));
-    assert.ok(html.includes(`夜の作業 ${st + 1}/4`) && html.includes(st < 3 ? "次へ →" : "終わる"));
+    assert.ok(html.includes(`夜の作業 ${st + 1}/4`) && html.includes(st < 3 ? "次へ：" : "終わる"));
+    assert.equal(html.includes("に戻る"), st > 0);
     for (const bad of ["undefined", "NaN"]) assert.ok(!html.includes(bad));
   } finally { m.nightSave(null); }
 });
