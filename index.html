@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 07:23"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 07:31"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -2228,14 +2228,14 @@ const CSS = `
 .judge{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.j-who{font-size:10px;color:var(--ink3);margin:6px 0 4px;font-weight:700}.agree{font-style:normal;color:#2F6F5E;margin-left:6px}
 .j-btns{display:flex;gap:6px}.j-btns button{flex:1;padding:10px 4px;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink3)}
 .j-btns .ng.on{background:#A8443B;border-color:#A8443B;color:#fff}.j-btns .mid.on{background:#C08A3E;border-color:#C08A3E;color:#fff}.j-btns .okb.on{background:#2F6F5E;border-color:#2F6F5E;color:#fff}
-.j-et{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.et{padding:5px 9px;border:1px solid var(--line);background:var(--paper);border-radius:12px;font-size:11px;color:var(--ink2);cursor:pointer;font-family:inherit}.et.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.j-et{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.et{padding:5px 10px;border:1px solid var(--line);background:var(--paper);border-radius:999px;font-size:11px;color:var(--ink2);cursor:pointer;font-family:inherit}.et.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .btn-main{width:100%;padding:13px;background:var(--ink);color:#fff;border:none;border-radius:3px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px}.btn-main:disabled{opacity:.35}
 .btn-sm{padding:7px 12px;border:1px solid var(--line);background:var(--paper);border-radius:3px;font-size:12px;cursor:pointer;white-space:nowrap;font-family:inherit;color:var(--ink2)}.btn-sm:disabled{opacity:.5}.btn-sm.wide{width:100%;margin-top:7px;padding:11px}
 .btn-x{width:26px;height:26px;flex:0 0 26px;border:none;background:none;color:var(--ink3);font-size:15px;cursor:pointer}.wide-x{width:100%;font-size:11px;margin-top:8px;height:auto}
 .ok{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:22px 16px;text-align:center}.ok p{margin:0 0 6px;font-size:14px}.ok .sub{font-size:12px;color:var(--ink3);line-height:1.7;margin-bottom:12px}
 .alert{background:#FBF3F2;border:1px solid #E4C4C0;border-radius:4px;padding:13px;margin-bottom:12px}.alert strong{font-size:13px;color:#8E3830}.alert p{font-size:11px;color:#7A4640;line-height:1.75;margin:5px 0 0}.alert .plain{margin-top:8px}
 .rule{font-size:11px;color:var(--ink3);line-height:1.7;margin-top:14px}
-.chips{display:flex;flex-wrap:wrap;gap:5px}.chip{padding:6px 10px;border:1px solid var(--line);background:var(--paper);border-radius:14px;font-size:12px;color:var(--ink2);cursor:pointer;font-family:inherit}.chip.on{color:#fff;border-color:transparent;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:5px}.chip{padding:6px 12px;border:1px solid var(--line);background:var(--paper);border-radius:999px;font-size:12px;color:var(--ink2);cursor:pointer;font-family:inherit}.chip.on{color:#fff;border-color:transparent;font-weight:700}
 .nv{font-style:normal;background:#A8443B;color:#fff;font-size:9px;padding:0 3px;border-radius:2px;margin-left:4px}
 .det{margin:10px 0}.det summary{font-size:12px;color:var(--ink2);cursor:pointer}.det-s{margin-top:10px}.det-h{font-size:12px;font-weight:700;margin-bottom:5px}
 .ph-btn{display:block;text-align:center;padding:11px;border:1px dashed var(--line);border-radius:3px;background:var(--paper);font-size:12px;color:var(--ink2);cursor:pointer;margin-bottom:8px}.ph-note{font-size:11px;color:var(--ink3);line-height:1.6;margin:9px 0 6px}
