@@ -238,7 +238,7 @@ test("用紙の行: 模試の答案を撮る欄と、用紙の説明に「1回�
 });
 test("今日/採点: 「紙を撮る」があり、紙の順番が出る", () => {
   const html = render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade" }).html;
-  assert.ok(html.includes("紙を撮る（判定欄を読み取る") && html.includes("紙の1番目"));
+  assert.ok(html.includes("紙を撮る（○×の欄を読み取る") && html.includes("紙の1番目"));
 });
 for (const [state, make] of Object.entries(STATES)) for (let st = 0; st < 4; st++) test(`描画: 夜の作業 ${st + 1}/4（${state}）`, () => {
   m.nightSave(st);

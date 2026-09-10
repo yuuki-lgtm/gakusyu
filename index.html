@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 21:20"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 21:29"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -44,7 +44,8 @@ const READ_TYPES = ["指示語の内容", "接続語の選択", "理由の説明
 const RUBRIC = [["len", "字数を満たした"], ["structure", "段落の型に沿った"], ["surface", "助詞・送り仮名・脱字がない"]];
 /* 類題を印刷用の用紙に変換 */
 /* 類題を印刷用の用紙に変換。項目ごとに教科・単元の見出し、最後に説明の問いと「自分の判定」の欄 */
-const SELF_LINE = "自分の判定：□ できなかった　□ 解けた　□ 説明もできた　□ 問題が変";
+/* 類題の紙の判定: 各問題の右端の四角い欄に、子どもが解答を見て自分で ○ か × を書く（チェック欄の4択は 2026-09-10 に廃止。読み取りが確実で、子どもの手間が少ない） */
+const SELF_NOTE = "解いたら解答を見て、各問題の右の欄に自分で ○ か × を書く。「説明」の問いは、理由を自分の言葉で言えたら ○。";
 
 /* ---- 日付・文字列 ---- */
 /* 日付は端末のローカル日付で扱う（toISOString は UTC になり、日本では日付が1日ずれる） */
@@ -420,7 +421,7 @@ function gradeSet(d) {
   return d.items.filter((i) => i.printedOn).sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : (a.printedAs || 999) - (b.printedAs || 999) || b.failCount - a.failCount));
 }
 /* 紙の判定欄の読み取り。AI に渡す項目の一覧（紙の順、見出しと最初の問題で位置を示す） */
-const selfMarksText = (items, unitOf) => items.map((i, k) => { const u = unitOf(i.unitId); return `${k + 1}. 【${i.subject}${u ? "・" + u.name : ""}】${i.gen?.problems?.[0]?.q ? " 最初の問題: " + String(i.gen.problems[0].q).slice(0, 40) : ""}`; }).join("\n");
+const selfMarksText = (items, unitOf) => { const p = genToPaper(items, unitOf); return items.map((i, k) => { const u = unitOf(i.unitId); const qs = p.questions.filter((q) => q.itemId === i.id && q.jb); const nums = qs.filter((q) => !q.why).map((q) => q.n); const w = qs.find((q) => q.why); return `${k + 1}. 【${i.subject}${u ? "・" + u.name : ""}】 問${nums.join("・") || "—"}${w ? `（説明は問${w.n}）` : ""}`; }).join("\n"); };
 /* 読み取った印（{n: "x"|"o"|"oo"|""}）を採点画面の判定に。子どもの判定＝親の判定の初期値。× なら前回の誤答の種類 */
 function applySelfMarks(items, marks) {
   const out = {};
@@ -744,9 +745,9 @@ async function diagnose(i, u, ctx, model = OPUS) {
 /* 「今日の分」の紙を撮って、各項目の「自分の判定」の印（□ できなかった／□ 解けた／□ 説明もできた）を読む。戻り値は {n: "x"|"o"|"oo"|""} */
 async function readSelfMarks(files, items, unitOf, model = null) {
   const imgs = []; for (const f of files) imgs.push(imgBlock(await compressImage(f, 1600, 0.8)));
-  const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。項目ごとに「自分の判定：□ できなかった　□ 解けた　□ 説明もできた　□ 問題が変」の欄があり、子どもがどれかに印（✓・○・塗りつぶし）を付けています。次の項目の順に、印の付いた欄を読み取ってください。\n${selfMarksText(items, unitOf)}` }],
-    `印が無い・判読できない項目は "" にする。「問題が変」に印があれば "bad"。解答の正誤は判断しない（印だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|"bad"|""}]}`, 800, model);
-  const out = {}; (parseJSON(t).marks || []).forEach((mk) => { out[Number(mk.n)] = ["x", "o", "oo", "bad"].includes(mk.self) ? mk.self : ""; });
+  const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。各問題の右端に四角い欄があり、子どもが解答を見て自分で ○ か × を書いています。次の項目ごとに、その項目の問題の欄を読んでください。\n${selfMarksText(items, unitOf)}` }],
+    `項目ごとの判定: 説明の問いを除く問題の欄がすべて ○ なら "o"、1つでも × なら "x"、さらに説明の問いの欄も ○ なら "oo"。欄が空・判読できない項目は ""。解答の正誤は判断しない（欄の記号だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|""}]}`, 800, model);
+  const out = {}; (parseJSON(t).marks || []).forEach((mk) => { out[Number(mk.n)] = ["x", "o", "oo"].includes(mk.self) ? mk.self : ""; });
   return out;
 }
 
@@ -799,6 +800,7 @@ const SHEET_CSS = `
 .sw .cols{column-count:2;column-gap:9mm}
 .sw .aim{margin-top:7mm;padding-top:3.5mm;border-top:0.5pt dashed #888;font-size:9pt;line-height:1.7;color:#444}
 .sw .sech{font-size:11.5pt;font-weight:700;margin:5mm 0 2.5mm;padding-bottom:1mm;border-bottom:0.6pt solid #333}.sw .pts{font-size:9.5pt;color:#555;margin-left:2mm}
+.sw .jb{flex:0 0 11mm;height:11mm;border:0.6pt solid #333;border-radius:1mm;margin-top:.5mm}
 .sw .guide{margin:0 0 5mm;padding:3.5mm 4mm;border:0.6pt solid #666;background:#F5F5F5;page-break-inside:avoid;break-inside:avoid;font-size:10pt;line-height:1.75}.sw .g-h{font-weight:700;margin-bottom:1.5mm}.sw .g-p{font-weight:400;color:#555;font-size:9pt}.sw .g-t{white-space:normal}.sw .g-ex{margin-top:2.5mm;padding-top:2mm;border-top:0.4pt dashed #999}.sw .g-a{color:#333;margin-top:1mm;padding-left:3mm;border-left:1.5pt solid #999}
 .sw .ref{margin-bottom:8mm;page-break-inside:avoid}
 .sw .ref .cap{font-size:10pt;font-weight:600;margin-bottom:2mm}
@@ -843,11 +845,11 @@ function paperHTML(p, res = {}) {
   let lastSec = null;
   const qs = p.questions.map((q) => { const svg = safeSvg(q.svg); const head = q.sec && q.sec !== lastSec ? `<div class="sech">${escHTML(q.sec)}</div>` : ""; lastSec = q.sec || lastSec; const pts = q.pts ? `<span class="pts">（${q.pts}点）</span>` : "";
     if (q.guide) return `${head}<div class="guide"><div class="g-h">考え方（${escHTML(q.label)}）${q.pages ? `　<span class="g-p">${escHTML(q.pages)}</span>` : ""}</div><div class="g-t">${escHTML(q.q).replace(/\n/g, "<br>")}</div>${q.example ? `<div class="g-ex"><b>例題</b>　${escHTML(q.example.q).replace(/\n/g, "<br>")}<div class="g-a">${escHTML(q.example.a).replace(/\n/g, "<br>")}</div></div>` : ""}</div>`;
-    return `${head}<div class="p"><div class="pn">${q.n}.</div><div class="pt"><p class="pq">${escHTML(q.q)}${pts}</p>${svg ? `<div class="fig">${svg}</div>` : ""}${Array.from({ length: svg ? Math.max(2, nl - 1) : nl }, () => `<div class="rule"></div>`).join("")}</div></div>`; }).join("");
+    return `${head}<div class="p"><div class="pn">${q.n}.</div><div class="pt"><p class="pq">${escHTML(q.q)}${pts}</p>${svg ? `<div class="fig">${svg}</div>` : ""}${Array.from({ length: svg ? Math.max(2, nl - 1) : nl }, () => `<div class="rule"></div>`).join("")}</div>${q.jb ? `<div class="jb"></div>` : ""}</div>`; }).join("");
   const anyFig = false;
   const ans = `<div class="${anyFig ? "" : "cols"}">${p.questions.filter((q) => !q.guide).map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.a)}${q.pts ? ` <span class="pts">（${q.pts}点）</span>` : ""}</div></div>`).join("")}</div>`;
   const aim = `<div class="aim"><div style="font-weight:600;margin-bottom:2mm">出題のねらい</div>${p.questions.filter((q) => !q.guide).map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.label || q.aim)}${q.aim && q.aim !== q.label ? " — " + escHTML(q.aim) : ""}</div></div>`).join("")}</div>`;
-  return `${ref}<div class="sheet" data-part="q"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(paperTitle(p))}</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span>${p.minutes ? `<span>${p.minutes}分</span>` : ""}<span>点　　　／${p.maxScore || p.questions.filter((q) => !q.guide).length}</span></div>${passage}${qs}</div><div class="sheet" data-part="a"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
+  return `${ref}<div class="sheet" data-part="q"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(paperTitle(p))}</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span>${p.minutes ? `<span>${p.minutes}分</span>` : ""}<span>点　　　／${p.maxScore || p.questions.filter((q) => !q.guide).length}</span></div>${p.kind === "類題" ? `<p class="note">${escHTML(SELF_NOTE)}</p>` : ""}${passage}${qs}</div><div class="sheet" data-part="a"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
 }
 function fileHTML(p, res = {}) {
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHTML(p.subject)} ${escHTML(p.code)}</title><style>@page{size:A4;margin:17mm 16mm}html,body{margin:0;padding:0}${SHEET_CSS}.sw .sheet{page-break-after:always}.sw .sheet:last-child{page-break-after:auto}#pb{position:fixed;right:16px;bottom:16px;padding:15px 26px;background:#1E2321;color:#fff;border:none;border-radius:5px;font-size:15px;font-family:-apple-system,sans-serif;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35)}@media screen{body{background:#8A928C;padding:14px 0}.sw .sheet{width:210mm;min-height:297mm;margin:0 auto 16px;padding:17mm 16mm;box-sizing:border-box;box-shadow:0 2px 10px rgba(0,0,0,.35)}}@media print{#pb{display:none}}</style></head><body><div class="sw">${paperHTML(p, res)}</div><button id="pb" onclick="window.print()">印刷する</button></body></html>`;
@@ -867,14 +869,15 @@ function genToPaper(items, unitOf) {
     if ((!g || !g.problems || !g.problems.length) && i.printedOrig && hasPos(i.src)) { // 類題が作れなかった項目: 元の問題を資料に載せてもう一度解かせる
       const fig = refs.length + 1; refs.push(i.src.qpath ? { n: fig, kind: i.src.kind, page: i.src.page, path: i.src.qpath } : { n: fig, kind: i.src.kind, page: i.src.page, path: i.src.path, crop: { x: i.src.x, y: i.src.y } });
       qs.push(...guideOf(i, secOf(i, u)));
-      n++; qs.push({ n, sec: secOf(i, u), q: `元の問題（図${fig}）をもう一度解き、なぜそうなるかを説明する。\n${SELF_LINE}`, a: "（元の問題の解答はワークの解答で確認。この回は「説明もできた」でのみ先へ進む）", label: i.label, aim: "元の問題", fmt: i.fmt, svg: "", fig });
+      n++; qs.push({ n, sec: secOf(i, u), q: `元の問題（図${fig}）をもう一度解く。`, a: "（元の問題の解答はワークの解答で確認）", label: i.label, aim: "元の問題", fmt: i.fmt, svg: "", fig, jb: true, itemId: i.id });
+      n++; qs.push({ n, sec: secOf(i, u), q: "説明：なぜそうなるかを、自分の言葉で書く。", a: "（この回は「説明もできた」でのみ先へ進む。理由が言えていれば ○）", label: i.label, aim: "説明させる問い", fmt: i.fmt, svg: "", jb: true, why: true, itemId: i.id });
       return; }
     if (!g || !g.problems || !g.problems.length) return; const isTerm = !needsWhy(i);
     const head = g.passage ? g.passage + "\n" : ""; const sec = secOf(i, u);
     qs.push(...guideOf(i, sec));
-    const why = !isTerm && g.why ? g.why : "";
-    g.problems.forEach((p, k) => { n++; const last = k === g.problems.length - 1 && !why; qs.push({ n, sec, q: `${k === 0 ? head : ""}${p.q}${last ? "\n" + SELF_LINE : ""}`, a: p.a, label: i.label, aim: "", fmt: i.fmt, svg: "" }); });
-    if (why) { n++; qs.push({ n, sec, q: `説明：${why}\n${SELF_LINE}`, a: "（手順の理由が自分の言葉で言えていれば「説明もできた」）", label: i.label, aim: "説明させる問い", fmt: i.fmt, svg: "" }); } });
+    const why = !isTerm && g.why && (i.level || 0) >= 2 ? g.why : ""; // 説明の問いは 7 日の段階から（「解けた」だけでは先に進めない項目）。覚えたてには出さない
+    g.problems.forEach((p, k) => { n++; qs.push({ n, sec, q: `${k === 0 ? head : ""}${p.q}`, a: p.a, label: i.label, aim: "", fmt: i.fmt, svg: "", jb: true, itemId: i.id }); });
+    if (why) { n++; qs.push({ n, sec, q: `説明：${why}`, a: "（手順の理由が自分の言葉で言えていれば「説明もできた」）", label: i.label, aim: "説明させる問い", fmt: i.fmt, svg: "", jb: true, why: true, itemId: i.id }); } });
   const subj = items.length === 1 ? items[0].subject : "回収";
   return { subject: subj, code: today().slice(5).replace("-", "") + "回", kind: "類題", questions: qs, imgs: [], refs };
 }
@@ -894,7 +897,7 @@ async function buildPDF(papers, onStep) {
   document.body.appendChild(fr);
   const doc = fr.contentDocument;
   doc.open();
-  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=${W},initial-scale=1"><style>html,body{margin:0;padding:0;background:#fff;color:#111;-webkit-text-size-adjust:none;text-size-adjust:none}.sw,.sw *{-webkit-text-size-adjust:none;text-size-adjust:none}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw,.sw *{font-feature-settings:normal !important;font-kerning:none !important;font-variant-ligatures:none;letter-spacing:0 !important;text-rendering:optimizeSpeed}.sw{width:${W}px;background:#fff;font-size:12.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .ttl{font-size:16px;margin-bottom:6px}.sw .hdr{font-size:10.5px;margin-bottom:14px}.sw .hdr span{padding:6px 8px}.sw .p{margin-bottom:12px;gap:10px}.sw .pn{flex:0 0 24px}.sw .pq{font-size:12.5px;line-height:1.7;margin-bottom:5px}.sw .arow,.sw .at{font-size:12px}.sw .an{flex:0 0 22px}.sw .aim{font-size:11px}.sw .psg{font-size:12.5px;line-height:1.8}.sw .sech{font-size:14px;margin:12px 0 6px}.sw .pts{font-size:10.5px}.sw .rule{border-bottom-color:#B0B0B0;height:21px}.sw .note,.sw .aim{color:#444}.sw .ref .cap{font-size:10.5px}.sw .guide{font-size:12px;background:#F4F4F4}.sw .g-p{font-size:11px}</style></head><body><div class="sw">${list.map((p) => `<div class="pp">${paperHTML(p, res)}</div>`).join("")}</div></body></html>`);
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=${W},initial-scale=1"><style>html,body{margin:0;padding:0;background:#fff;color:#111;-webkit-text-size-adjust:none;text-size-adjust:none}.sw,.sw *{-webkit-text-size-adjust:none;text-size-adjust:none}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw,.sw *{font-feature-settings:normal !important;font-kerning:none !important;font-variant-ligatures:none;letter-spacing:0 !important;text-rendering:optimizeSpeed}.sw{width:${W}px;background:#fff;font-size:12.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .ttl{font-size:16px;margin-bottom:6px}.sw .hdr{font-size:10.5px;margin-bottom:14px}.sw .hdr span{padding:6px 8px}.sw .p{margin-bottom:12px;gap:10px}.sw .pn{flex:0 0 24px}.sw .pq{font-size:12.5px;line-height:1.7;margin-bottom:5px}.sw .arow,.sw .at{font-size:12px}.sw .an{flex:0 0 22px}.sw .aim{font-size:11px}.sw .psg{font-size:12.5px;line-height:1.8}.sw .sech{font-size:14px;margin:12px 0 6px}.sw .pts{font-size:10.5px}.sw .jb{flex:0 0 34px;height:34px}.sw .rule{border-bottom-color:#B0B0B0;height:21px}.sw .note,.sw .aim{color:#444}.sw .ref .cap{font-size:10.5px}.sw .guide{font-size:12px;background:#F4F4F4}.sw .g-p{font-size:11px}</style></head><body><div class="sw">${list.map((p) => `<div class="pp">${paperHTML(p, res)}</div>`).join("")}</div></body></html>`);
   doc.close();
   await new Promise((r) => setTimeout(r, 150));
   const host = doc.body;
@@ -1184,7 +1187,7 @@ function TodayGrade({ d, save }) {
     {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
       <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
       <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); setMsg(`${set.length}件を「印刷」に戻しました（判定なし）`); setTimeout(() => setMsg(""), 4000); }} disabled={busy}>全部を印刷に戻す（判定しない）</button></div>
-      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（判定欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
+      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（○×の欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
       {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, SONNET)}>もう一度読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (
         <div className={"grow" + (c.skip ? " skip" : c.r ? " done" : "")} key={i.id}>

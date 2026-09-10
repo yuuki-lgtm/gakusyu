@@ -538,23 +538,25 @@ describe("紙で回す（印刷セット・採点セット・一括確定）", (
     assert.equal(nd.log[T], true);
     assert.equal(m.judgeAll(d, {}).n, 0); assert.equal(m.judgeAll(d, {}).d.log[T], undefined);
   });
-  test("genToPaper: 項目ごとに見出し、説明の問いを最後に足し、自分の判定の欄を付ける。用語は説明なし", () => {
+  test("genToPaper: 項目ごとに見出し、7日の段階の項目には説明の問いを最後に足し、各問題に○×の欄を付ける。用語は説明なし", () => {
     const u = { id: "u", name: "正負の数" };
     const items = [
-      { id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", gen: { problems: [{ q: "q1", a: "a1" }, { q: "q2", a: "a2" }], why: "なぜ符号が変わるか" } },
+      { id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", level: 2, gen: { problems: [{ q: "q1", a: "a1" }, { q: "q2", a: "a2" }], why: "なぜ符号が変わるか" } },
       { id: "2", subject: "社会", unitId: "u", label: "B", fmt: "知識・用語", gen: { problems: [{ q: "t1", a: "b1" }], why: "無視される" } },
       { id: "3", subject: "国語", unitId: "u", label: "C", fmt: "計算", gen: null }];
     const p = m.genToPaper(items, () => u);
     assert.equal(p.questions.length, 4);
     assert.ok(m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].sec === "" && m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].q.startsWith("q\n"), "1教科で単元が無ければ見出しなし");
-    assert.ok(p.questions[0].q === "q1" && p.questions[0].sec === "数学・正負の数" && !p.questions[0].q.includes(m.SELF_LINE), "複数教科なら「教科・単元」の小見出し");
+    assert.ok(p.questions[0].q === "q1" && p.questions[0].sec === "数学・正負の数" && p.questions[0].jb === true && p.questions[0].itemId === "1", "複数教科なら「教科・単元」の小見出し。問題には○×の欄");
     assert.equal(p.questions[1].q, "q2");
-    assert.ok(p.questions[2].q.startsWith("説明：なぜ符号が変わるか") && p.questions[2].q.endsWith(m.SELF_LINE) && p.questions[2].a.includes("説明もできた"));
-    assert.ok(p.questions[3].q.startsWith("t1") && p.questions[3].sec === "社会・正負の数" && p.questions[3].q.endsWith(m.SELF_LINE), "用語は最後の問題に判定欄");
+    assert.ok(p.questions[2].q === "説明：なぜ符号が変わるか" && p.questions[2].why === true && p.questions[2].jb === true && p.questions[2].a.includes("説明もできた"));
+    assert.equal(m.genToPaper([{ ...items[0], level: 1 }], () => u).questions.length, 2, "7日の段階より前は説明の問いを出さない");
+    assert.ok(p.questions[3].q.startsWith("t1") && p.questions[3].sec === "社会・正負の数" && p.questions[3].jb === true && !p.questions[3].why, "用語も○×の欄、説明の問いは無し");
     assert.ok(m.paperHTML(p).includes('class="sech">数学・正負の数') && m.paperHTML(p).includes('class="sech">社会・正負の数'));
     const one = m.genToPaper([items[0]], () => u); assert.equal(one.questions[0].sec, "正負の数", "1教科なら単元だけ");
     assert.equal(p.questions[3].n, 4); assert.equal(p.subject, "回収");
-    assert.ok(m.paperHTML(p).includes("自分の判定"));
+    const h = m.paperHTML(p); assert.equal((h.match(/class="jb"/g) || []).length, 4); assert.ok(h.includes("自分で ○ か × を書く") && !h.includes("自分の判定"));
+    assert.ok(!m.paperHTML({ ...p, kind: "週次" }).includes("自分で ○ か × を書く"), "週次テストには注意書きを出さない");
   });
   test("ctxFor / itemContext", () => {
     const d = F.demo(); const i = d.items.find((x) => x.id === "i1");
@@ -1044,9 +1046,9 @@ describe("紙を撮って判定欄を読む", () => {
     const d = { ...m.blank(), items: [it({ id: "b", printedOn: T, printedAs: 2 }), it({ id: "a", printedOn: T, printedAs: 1 }), it({ id: "z", printedOn: T, failCount: 5 }), it({ id: "o", printedOn: day(-1), printedAs: 3 })] };
     assert.deepEqual(m.gradeSet(d).map((i) => i.id), ["o", "a", "b", "z"]);
   });
-  test("selfMarksText: 紙の順に見出しと最初の問題", () => {
+  test("selfMarksText: 紙の順に見出しと問題番号", () => {
     const d = F.demo(); const t = m.selfMarksText(m.gradeSet(d), (id) => m.unitById(d, id));
-    assert.ok(t.startsWith("1. 【数学・正負の数】 最初の問題: (−2)×(+5)"));
+    assert.ok(/^1\. 【数学・正負の数】 問1/.test(t), t);
   });
   test("applySelfMarks: 読めた項目だけ子ども＝親の初期値。× は前回の誤答の種類。用語の oo は o に。空は入れない", () => {
     const items = [it({ id: "a", etype: "読み間違えた" }), it({ id: "b", fmt: "知識・用語" }), it({ id: "c" }), it({ id: "d" })];
@@ -1100,8 +1102,9 @@ describe("類題が作れない項目は元の問題を印刷（A-1）", () => {
       { id: "2", subject: "数学", unitId: "u", label: "B", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }], why: "w" } },
       { id: "3", subject: "数学", unitId: "u", label: "C", fmt: "計算", gen: null, src }];
     const p = m.genToPaper(items, () => u);
-    assert.equal(p.questions.length, 3, "元の問題1＋類題1＋説明1。printedOrig が無い C は出ない");
-    assert.ok(p.questions[0].q.startsWith("元の問題（図1）をもう一度解き") && p.questions[0].sec === "正負の数" && p.questions[0].q.endsWith(m.SELF_LINE) && p.questions[0].fig === 1);
+    assert.equal(p.questions.length, 3, "元の問題（解く＋説明）2＋類題1。printedOrig が無い C は出ない");
+    assert.ok(p.questions[0].q.startsWith("元の問題（図1）をもう一度解く") && p.questions[0].sec === "正負の数" && p.questions[0].jb === true && p.questions[0].fig === 1);
+    assert.ok(p.questions[1].why === true && p.questions[1].itemId === p.questions[0].itemId, "元の問題の回は「解く」と「説明」の2問");
     assert.deepEqual(p.refs, [{ n: 1, kind: "ワーク", page: 11, path: "fam/math/wb/11.jpg", crop: { x: 0.3, y: 0.4 } }]);
     const h = m.paperHTML(p); assert.ok(h.includes("図1（ワーク p.11・元の問題）") && h.includes("class=\"sheet\" data-part=\"q\"") && h.includes("PDF生成時に教材のページを読み込みます"));
     const h2 = m.paperHTML(p, { "fam/math/wb/11.jpg#0.3,0.4": TINY_JPEG }); assert.ok(h2.includes("data:image/jpeg;base64,"));
@@ -1146,7 +1149,7 @@ describe("説明不要の印（B-1）", () => {
   test("類題の紙: noWhy の項目には説明の問いを付けない。採点の読み取りで oo は o に", () => {
     const u = { id: "u", name: "x" };
     const p = m.genToPaper([{ id: "1", subject: "英語", unitId: "u", label: "A", fmt: "英作文", noWhy: true, gen: { problems: [{ q: "q", a: "a" }], why: "w" } }], () => u);
-    assert.equal(p.questions.length, 1); assert.ok(p.questions[0].q.endsWith(m.SELF_LINE));
+    assert.equal(p.questions.length, 1); assert.ok(p.questions[0].jb === true);
     assert.equal(m.applySelfMarks([item({ id: "a", noWhy: true, history: [] })], { 1: "oo" }).a.r, "o");
   });
   test("名前付け: AI の rote で noWhy が付く。類題生成でも同じ", async () => {
@@ -1412,8 +1415,8 @@ describe("検算（数学・理科の計算、英語の文法・英作文）", (
 
 describe("問題が変", () => {
   const it = (o) => item({ history: [], ...o });
-  test("紙の判定欄に「問題が変」があり、読み取りと反映で bad になる", () => {
-    assert.ok(m.SELF_LINE.includes("□ 問題が変"));
+  test("紙に「問題が変」の欄は無い（親の画面のボタンだけ）。反映の値が bad なら判定せずに作り直し", () => {
+    assert.equal(m.SELF_LINE, undefined); assert.ok(!m.SELF_NOTE.includes("問題が変"));
     const r = m.applySelfMarks([it({ id: "a" }), it({ id: "b" })], { 1: "bad", 2: "o" });
     assert.deepEqual(r.a, { bad: true, self: null, r: null, skip: false }); assert.equal(r.b.r, "o");
   });
@@ -1499,5 +1502,21 @@ describe("夜の作業の段階の飛ばし", () => {
     const ts = { ...e, materials: [{ id: "m1", subject: "英語", kind: "テスト", page: 1, path: "x/ts/1.jpg", updatedAt: "" }] };
     assert.deepEqual(["items", "last"].map((k) => m.nightHas(ts, k)), [true, false], "テストの答案だけなら×登録はできるが最後のページは無い");
     assert.equal(m.nightNext(ts, -1), 1); assert.equal(m.nightNext(ts, 1), 3); assert.equal(m.nightPrev(ts, 3), 1);
+  });
+});
+
+describe("○×の欄の読み取り", () => {
+  test("selfMarksText: 項目ごとに問題番号と説明の問いの番号。読み取りは o/x/oo だけ受け付ける", async () => {
+    const u = { id: "u", name: "正負の数" }; const unitOf = () => u;
+    const items = [
+      { id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", level: 2, gen: { problems: [{ q: "q1", a: "a1" }, { q: "q2", a: "a2" }], why: "w" } },
+      { id: "2", subject: "数学", unitId: "u", label: "B", fmt: "計算", gen: { problems: [{ q: "q3", a: "a3" }], why: "w" } }];
+    const txt = m.selfMarksText(items, unitOf);
+    assert.equal(txt, "1. 【数学・正負の数】 問1・2（説明は問3）\n2. 【数学・正負の数】 問4");
+    const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk"); let sent = null;
+    globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"marks":[{"n":1,"self":"oo"},{"n":2,"self":"bad"}]}' }] }) }; };
+    try { const r = await m.readSelfMarks([], items, unitOf); assert.deepEqual(r, { 1: "oo", 2: "" }, "bad は紙からは来ない");
+      const body = JSON.stringify(sent); assert.ok(body.includes("○ か × を書いています") && body.includes("問1・2（説明は問3）") && !body.includes("問題が変")); }
+    finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
   });
 });
