@@ -1489,3 +1489,15 @@ describe("画面の状態を引き継ぐ", () => {
     assert.deepEqual(m.openScreen(o2, "week").week, { m: "cum", n: 1 }, "その後バーで戻っても作り直さない");
   });
 });
+
+describe("夜の作業の段階の飛ばし", () => {
+  test("nightHas/nightNext/nightPrev: 採点は採点待ちがあるとき、×登録は教材（テスト含む）があるとき、最後のページはワーク・教科書があるとき。明日の分は常に", () => {
+    const e = F.empty(); assert.deepEqual(["grade", "items", "last", "print"].map((k) => m.nightHas(e, k)), [false, false, false, true]);
+    assert.equal(m.nightNext(e, -1), 3); assert.equal(m.nightPrev(e, 3), -1);
+    const d = F.demo(); assert.deepEqual(["grade", "items", "last", "print"].map((k) => m.nightHas(d, k)), [true, true, true, true]);
+    assert.equal(m.nightNext(d, -1), 0); assert.equal(m.nightNext(d, 0), 1); assert.equal(m.nightPrev(d, 3), 2);
+    const ts = { ...e, materials: [{ id: "m1", subject: "英語", kind: "テスト", page: 1, path: "x/ts/1.jpg", updatedAt: "" }] };
+    assert.deepEqual(["items", "last"].map((k) => m.nightHas(ts, k)), [true, false], "テストの答案だけなら×登録はできるが最後のページは無い");
+    assert.equal(m.nightNext(ts, -1), 1); assert.equal(m.nightNext(ts, 1), 3); assert.equal(m.nightPrev(ts, 3), 1);
+  });
+});

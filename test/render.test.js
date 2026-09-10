@@ -245,7 +245,7 @@ for (const [state, make] of Object.entries(STATES)) for (let st = 0; st < 4; st+
   try { const { html, errors } = render(m.NightFlow, { d: make(), save: noop, go: noop });
     assert.equal(errors.length, 0, errors.join(", "));
     assert.ok(html.includes(`夜の作業 ${st + 1}/4`) && html.includes(st < 3 ? "次へ：" : "終わる"));
-    assert.equal(html.includes("に戻る"), st > 0);
+    assert.equal(html.includes("に戻る"), m.nightPrev(make(), st) >= 0, "戻る先はやることがある段階だけ");
     for (const bad of ["undefined", "NaN"]) assert.ok(!html.includes(bad));
   } finally { m.nightSave(null); }
 });
@@ -367,4 +367,17 @@ test("ホーム/1週間の流れ: 7行で、いまの画面の呼び名（週末
   for (const t of ["平日・子ども", "平日・親（夜5分）", "土曜", "日曜", "定期テスト前（14日前から）", "返却時", "週1"]) assert.ok(h.includes(`<b>${t}</b>`), t);
   assert.ok(h.includes("「週末→作る」") && h.includes("「週末→模試」") && h.includes("「その他→登録→教材」") && h.includes("「その他→依頼文」") && h.includes("「週末→定期」"));
   assert.ok(!h.includes("「定期」で実点") && !h.includes("「登録」で答案"));
+});
+test("夜の作業: やることが無い段階は飛ばす。空のデータなら最初から「明日の分」、次へは実際の行き先", () => {
+  m.nightSave(null);
+  const e = render(m.NightFlow, { d: F.empty(), save: noop, go: noop }).html;
+  assert.ok(e.includes("夜の作業 4/4") && e.includes("終わる") && !e.includes("に戻る"));
+  assert.equal((e.match(/<li class="skip">/g) || []).length, 3);
+  const d = F.demo(); const h = render(m.NightFlow, { d, save: noop, go: noop }).html;
+  assert.ok(h.includes("夜の作業 1/4") && h.includes("次へ：×の登録 →"));
+  const noMat = { ...d, materials: [] }; const h2 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html;
+  assert.ok(h2.includes("夜の作業 1/4") && h2.includes("次へ：明日の分 →") && (h2.match(/<li class="skip">/g) || []).length === 2);
+  m.nightSave(2);
+  try { const h3 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html; assert.ok(h3.includes("夜の作業 3/4") && h3.includes("← 採点に戻る"), "途中保存は尊重し、戻る先は飛ばした段階を越える"); }
+  finally { m.nightSave(null); }
 });
