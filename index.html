@@ -460,7 +460,7 @@ function tapsToItems(taps, subject, us, fallbackUnitId = "") {
   return taps.map((t) => {
     const u = unitForPage(us, t.kind, t.page);
     const k = (perPage[t.path] = (perPage[t.path] || 0) + 1);
-    return newItem({ subject, unitId: u ? u.id : fallbackUnitId || "", label: `${t.kind} p.${t.page} の×（${k}）`, named: false, etype: ETYPES[0], src: { path: t.path, kind: t.kind, page: t.page, x: t.x, y: t.y, ...(t.qpath ? { qpath: t.qpath } : {}) } });
+    return newItem({ subject, unitId: u ? u.id : fallbackUnitId || "", label: `${t.kind} p.${t.page} の×（${k}）`, named: false, etype: ETYPES.includes(t.etype) ? t.etype : ETYPES[0], src: { path: t.path, kind: t.kind, page: t.page, x: t.x, y: t.y, ...(t.qpath ? { qpath: t.qpath } : {}) } });
   });
 }
 const hasPos = (s) => !!(s && s.path && typeof s.x === "number" && typeof s.y === "number");
@@ -1614,6 +1614,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const [img, setImg] = useState(null); const [imgErr, setImgErr] = useState("");
   const [taps, setTaps] = useState([]); // 未登録の印（ページをまたいで持つ）
   const [sel, setSel] = useState(null); // 登録済みの印をタップしたときの項目 id
+  const [selTap, setSelTap] = useState(null); // 登録前の印をタップしたときの印（taps の要素）
   const [msg, setMsg] = useState(""); const [naming, setNaming] = useState(false);
   const [zoom, setZoom] = useState(1);
   const cur = ms.find((m) => m.page === page) || null;
@@ -1621,7 +1622,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const here = taps.filter((t) => cur && t.path === cur.path);
   const old = cur ? marksOn(d, cur.path) : [];
   const selItem = sel ? d.items.find((i) => i.id === sel) : null;
-  useEffect(() => { setKind(kinds[0] || MKINDS[0]); setTaps([]); setSel(null); }, [subject]);
+  useEffect(() => { setKind(kinds[0] || MKINDS[0]); setTaps([]); setSel(null); setSelTap(null); }, [subject]);
   useEffect(() => { if (pages.length && !pages.includes(page)) setPage(pages[0]); }, [kind, subject]);
   useEffect(() => { let alive = true; setImg(null); setImgErr(""); setSel(null); if (!cur) return;
     stGet(cur.path).then((b64) => { if (alive) setImg(`data:image/jpeg;base64,${b64}`); }).catch((e) => { if (alive) setImgErr(e.message || "画像を読めません"); });
@@ -1632,11 +1633,12 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     const r = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
     const hn = tapHit(here, x, y, r.width, r.height);
-    if (hn >= 0) { const t = here[hn]; setTaps((ts) => ts.filter((z) => z !== t)); setSel(null); return; } // もう一度タップで取り消し
+    if (hn >= 0) { const t = here[hn]; setSel(null); setSelTap(selTap === t ? null : t); return; } // 登録前の印: 誤答の種類を選ぶ（消すのはポップアップから）
     const ho = tapHit(old.map((i) => i.src), x, y, r.width, r.height);
-    if (ho >= 0) { setSel(old[ho].id === sel ? null : old[ho].id); return; }
+    if (ho >= 0) { setSelTap(null); setSel(old[ho].id === sel ? null : old[ho].id); return; }
     const pair = pairSheet(d, cur);
-    setSel(null); setTaps((ts) => [...ts, { path: cur.path, kind, page, x, y, ...(pair ? { qpath: pair.path } : {}) }]);
+    const t = { path: cur.path, kind, page, x, y, etype: ETYPES[0], ...(pair ? { qpath: pair.path } : {}) };
+    setSel(null); setTaps((ts) => [...ts, t]); setSelTap(t);
   };
   const commit = () => {
     if (!taps.length) return;
@@ -1669,9 +1671,12 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     <div className="zoom-row"><span>拡大</span>{[1, 2, 3].map((z) => (<button key={z} className={"btn-sm" + (zoom === z ? " on" : "")} onClick={() => setZoom(z)}>{z}倍</button>))}{zoom > 1 && <em className="pg">枠の中を指でずらして、×をタップ</em>}</div>
     {cur ? (img ? (<div className={"mscroll" + (zoom > 1 ? " z" : "")}><div className="mwrap" onClick={onTap} style={{ width: `${zoom * 100}%` }}><img src={img} alt={`${kind} p.${page}`} draggable="false" />
         {old.map((i) => (<span key={i.id} className={"mk-old" + (i.status === "stable" ? " stable" : "") + (i.id === sel ? " sel" : "")} style={{ left: `${i.src.x * 100}%`, top: `${i.src.y * 100}%` }} />))}
-        {here.map((t, k) => (<span key={k} className="mk-new" style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }} />))}
+        {here.map((t, k) => (<span key={k} className={"mk-new" + (t === selTap ? " sel" : "")} style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }} />))}
       </div></div>) : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
-    <p className="ph-note">×だった問題をタップ。もう一度タップで取り消し。薄い印は登録済みで、タップすると状態が見えます。</p>
+    <p className="ph-note">×だった問題をタップすると印が付き、誤答の種類を選べます（初期値は「知らなかった」）。薄い印は登録済みで、タップすると状態と誤答の種類が見えます。</p>
+    {selTap && here.includes(selTap) && (<div className="mpop"><div className="c-label">この印の誤答の種類</div>
+      <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selTap.etype === e ? " on" : "")} onClick={() => { const nt = { ...selTap, etype: e }; setTaps((ts) => ts.map((z) => (z === selTap ? nt : z))); setSelTap(nt); }}>{e}</button>))}</div>
+      <div className="q-btns"><button className="btn-sm" onClick={() => { setTaps((ts) => ts.filter((z) => z !== selTap)); setSelTap(null); }}>この印を消す</button><button className="btn-sm" onClick={() => setSelTap(null)}>閉じる</button></div></div>)}
     {selItem && (<div className="mpop"><div className="c-label">{selItem.label}</div>
       <div className="ir-meta">{selItem.status === "stable" ? "安定" : "未定着"} · {selItem.failCount}回 · 間隔{INT[selItem.level || 0]}日 · 次回 {selItem.nextDue.slice(5)}{selItem.printedOn ? " · 印刷済み" : ""}</div>
       <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selItem.etype === e ? " on" : "")} onClick={() => setEtype(selItem, e)}>{e}</button>))}</div>
@@ -2003,7 +2008,7 @@ const CSS = `
 .mat-pre{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;font-size:12px;line-height:1.6}.mat-files{margin:6px 0 0;padding-left:18px;font-size:11px;color:var(--ink3)}
 .mscroll{overflow:auto;-webkit-overflow-scrolling:touch;border-radius:3px}.mscroll.z{max-height:72vh;border:1px solid var(--line)}.zoom-row{display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:11px;color:var(--ink3)}.zoom-row .btn-sm{padding:4px 9px;font-size:11px}.zoom-row .btn-sm.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .mwrap{position:relative;display:block;user-select:none;-webkit-user-select:none;cursor:crosshair}.mwrap img{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff;-webkit-touch-callout:none}
-.mk-new,.mk-old{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel{box-shadow:0 0 0 3px #C08A3E}
+.mk-new,.mk-old{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel,.mk-new.sel{box-shadow:0 0 0 3px #C08A3E}
 .lastp{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--ink2)}.lastp .btn-sm{margin-left:auto;white-space:nowrap}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}

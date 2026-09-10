@@ -1468,3 +1468,11 @@ describe("診断の手順を項目として登録", () => {
     assert.ok(m.printSet({ ...d, items: [...d.items, ni] }).some((x) => x.id === ni.id), "翌日の候補に入る");
   });
 });
+
+describe("印ごとの誤答の種類", () => {
+  test("tapsToItems: 印に付けた誤答の種類を項目に。無ければ「知らなかった」、不正な値も「知らなかった」", () => {
+    const its = m.tapsToItems([{ path: "p", kind: "ワーク", page: 1, x: 0.1, y: 0.1, etype: "読み間違えた" }, { path: "p", kind: "ワーク", page: 1, x: 0.5, y: 0.5 }, { path: "p", kind: "ワーク", page: 1, x: 0.9, y: 0.9, etype: "?" }], "数学", [], "u");
+    assert.deepEqual(its.map((i) => i.etype), ["読み間違えた", "知らなかった", "知らなかった"]);
+    assert.deepEqual(its.map((i) => i.history[0].etype), ["読み間違えた", "知らなかった", "知らなかった"]);
+  });
+});
