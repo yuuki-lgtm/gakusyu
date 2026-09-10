@@ -434,11 +434,12 @@ test("ホーム: 「いまやること」と「そのあと」はカード全体
   assert.ok(h.includes('<button class="hero press">') && h.includes('<button class="nxt press">') && (h.match(/class="chev"/g) || []).length >= 2);
   assert.ok(!h.includes("開く →"));
 });
-test("ホーム: 定期テストが無いときの未定着の行に、教科ごとの内訳（件数のある教科だけ、色の丸つき）。安定は出さない", () => {
+test("ホーム: 定期テストが無いときは未定着の件数の下に教科の色で分けた横幅100%のバーと凡例。安定は出さない。0件ならバー無し", () => {
   const d = F.demo(); d.exams = [];
   const h = render(m.HomeTab, { d, go: noop }).html;
   const act = d.items.filter((i) => i.status === "active"); const subs = [...new Set(act.map((i) => i.subject))];
-  assert.ok(h.includes('class="ex-n bysub"') && !h.includes("安定"));
-  for (const sb of subs) assert.ok(h.includes(`${sb} ${act.filter((i) => i.subject === sb).length}</span>`), sb);
-  assert.equal((h.match(/class="dot"/g) || []).length, subs.length);
+  assert.ok(h.includes('class="st-bar"') && h.includes('class="st-leg"') && !h.includes("安定"));
+  assert.equal((h.match(/class="st-bar"><span/g) || []).length, 1);
+  for (const sb of subs) { const n = act.filter((i) => i.subject === sb).length; assert.ok(h.includes(`${sb} ${n}</span>`), sb); assert.ok(h.includes(`width:${(n / act.length) * 100}%`), sb + " の幅"); }
+  const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(e.includes(">未定着<") && !e.includes("st-bar"));
 });

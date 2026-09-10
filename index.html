@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 08:53"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 08:55"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1122,8 +1122,10 @@ function HomeTab({ d, go }) {
     <MorningPrint d={d} />
     {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt press" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span><span className="chev">›</span></button>))}</div>)}
     {nx ? (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>あと{left}日</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)
-      : (<button className="blk exam-line" onClick={() => go("reg", "list")}><span className="hm-k">未定着</span><strong>{d.items.filter((i) => i.status === "active").length}件</strong>
-          <span className="ex-n bysub">{SUBJECTS.map((sb) => ({ sb, n: d.items.filter((i) => i.status === "active" && i.subject === sb).length })).filter((x) => x.n).map((x) => (<span key={x.sb}><Dot s={x.sb} />{x.sb} {x.n}</span>))}</span></button>)}
+      : (() => { const act = d.items.filter((i) => i.status === "active"); const by = SUBJECTS.map((sb) => ({ sb, n: act.filter((i) => i.subject === sb).length })).filter((x) => x.n);
+        return (<button className="blk exam-line stack" onClick={() => go("reg", "list")}><div className="st-top"><span className="hm-k">未定着</span><strong>{act.length}件</strong></div>
+          {act.length > 0 && (<><div className="st-bar">{by.map((x) => (<span key={x.sb} style={{ width: `${(x.n / act.length) * 100}%`, background: HUE[x.sb] }} title={`${x.sb} ${x.n}`} />))}</div>
+          <div className="st-leg">{by.map((x) => (<span key={x.sb}><Dot s={x.sb} />{x.sb} {x.n}</span>))}</div></>)}</button>); })()}
     <p className="guide-row"><button className="btn-sm" onClick={() => go("guide")}>使い方を見る</button></p>
   </div>);
 }
@@ -2229,7 +2231,9 @@ const CSS = `
 .hero-b{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px}.hero-b>span:first-child{opacity:.85}.hero .chev{position:static;transform:none;width:auto;font-size:26px;color:#fff;opacity:.9;padding:0 2px 0 12px}.nxt.press{position:relative;padding-right:52px;color:var(--ink);background:var(--card);box-shadow:0 2px 8px rgba(30,35,33,.10);border-color:var(--line);-webkit-tap-highlight-color:transparent}.nxt.press:active{background:var(--paper)}
 .nxt{display:block;width:100%;text-align:left;padding:10px;margin-bottom:6px;border:1px solid var(--line);background:var(--paper);border-radius:3px;cursor:pointer;font-family:inherit}
 .nxt-t{display:block;font-size:13px;font-weight:700;color:var(--ink)}.nxt-w{display:block;font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
-.exam-line{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink2)}.exam-line strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}.exam-line strong.near{color:#8E3830}.exam-line .ex-n{flex:1}.exam-line .bysub{display:flex;flex-wrap:wrap;gap:4px 10px;font-variant-numeric:tabular-nums}.exam-line .bysub .dot{margin-right:3px}.hm-k{font-size:10px;color:var(--ink3)}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
+.exam-line{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink2)}.exam-line strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}.exam-line strong.near{color:#8E3830}.exam-line .ex-n{flex:1}
+.exam-line.stack{display:block}.st-top{display:flex;align-items:baseline;gap:10px}.st-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:9px 0 7px;background:var(--line)}.st-bar span{display:block;height:100%}.st-bar span+span{border-left:1px solid #fff}
+.st-leg{display:flex;flex-wrap:wrap;gap:3px 12px;font-size:11px;color:var(--ink2);font-variant-numeric:tabular-nums}.st-leg .dot{margin-right:3px}.hm-k{font-size:10px;color:var(--ink3)}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
 
 .guide-row{text-align:center;margin:10px 0 4px}
 .guide .g-p{font-size:13px;line-height:1.8;margin:0}.g-ol,.g-ul{margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--ink2)}.g-ol li,.g-ul li{margin-bottom:6px}.g-ol b,.g-ul b{color:var(--ink)}.flow b{color:var(--ink)}
