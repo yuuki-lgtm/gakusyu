@@ -67,10 +67,10 @@ const AKEY = "anthropic_api_key", SB_URL = "sb_url", SB_KEY = "sb_key", SB_ROOM 
 const LS = (k) => localStorage.getItem(k) || "";
 const hasKey = () => !!LS(AKEY);
 const syncOn = () => !!(LS(SB_URL) && LS(SB_KEY) && LS(SB_ROOM));
-/* 設定（同期3つ＋任意でAPIキー）を1本のリンクにして別端末へ渡す。#cfg=… を開くか、設定タブに貼ると取り込まれる */
+/* 設定（同期の3つとAPIキー、入っているもの全部）を1本のリンクにして別端末へ渡す。#cfg=… を開くか、設定タブに貼ると取り込まれる */
 const CFG_KEYS = [SB_URL, SB_KEY, SB_ROOM, AKEY];
 const b64u = (s) => btoa(unescape(encodeURIComponent(s))), b64d = (s) => decodeURIComponent(escape(atob(s)));
-function cfgLink(base, withKey) { const o = {}; CFG_KEYS.forEach((k) => { if (LS(k) && (withKey || k !== AKEY)) o[k] = LS(k); }); return `${base.split("#")[0]}#cfg=${b64u(JSON.stringify(o))}`; }
+function cfgLink(base) { const o = {}; CFG_KEYS.forEach((k) => { if (LS(k)) o[k] = LS(k); }); return `${base.split("#")[0]}#cfg=${b64u(JSON.stringify(o))}`; }
 function importCfg(text) {
   const m = /cfg=([A-Za-z0-9+/=]+)/.exec(String(text || "").trim());
   try { const o = JSON.parse(b64d(m ? m[1] : String(text || "").trim())); let n = 0; CFG_KEYS.forEach((k) => { if (typeof o[k] === "string" && o[k]) { localStorage.setItem(k, o[k]); n++; } }); return n; }
@@ -1396,13 +1396,13 @@ function Settings({ d, save, setSync }) {
   const testSync = async () => { setBusy("sync"); saveSync(); try { const remote = await pullRemote(); const merged = remote ? mergeData(d, migrate(remote.data)) : d; await pushRemote(merged); save(merged); setSync("ok"); say("同期できました。サーバーの内容と統合しました。"); } catch (e) { setSync("err"); say("失敗: " + e.message); } setBusy(""); };
   const backup = () => { const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `gakushu_${today()}.json`; document.body.appendChild(a); a.click(); a.remove(); };
   const restore = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const p = JSON.parse(r.result); if (!p.items || !p.units) throw new Error(); save(mergeData(d, migrate(p))); say("統合しました"); } catch { say("読み込めませんでした"); } }; r.readAsText(f); };
-  const [withKey, setWithKey] = useState(false); const [paste, setPaste] = useState("");
-  const copyLink = async () => { saveSync(); const link = cfgLink(window.location.href, withKey); try { await navigator.clipboard.writeText(link); say("リンクをコピーしました。LINE やメールで自分に送ってください"); } catch { const ta = document.createElement("textarea"); ta.value = link; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); say("リンクをコピーしました"); } catch { say("コピーできませんでした"); } ta.remove(); } };
+  const [paste, setPaste] = useState("");
+  const copyLink = async () => { saveSync(); localStorage.setItem(AKEY, key.trim()); const link = cfgLink(window.location.href); try { await navigator.clipboard.writeText(link); say("リンクをコピーしました。LINE やメールで自分に送ってください"); } catch { const ta = document.createElement("textarea"); ta.value = link; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); say("リンクをコピーしました"); } catch { say("コピーできませんでした"); } ta.remove(); } };
   const doImport = () => { const n = importCfg(paste); if (!n) { say("読み取れませんでした。リンク全体を貼ってください"); return; } setUrl(LS(SB_URL)); setAnon(LS(SB_KEY)); setRoom(LS(SB_ROOM)); setKey(LS(AKEY)); setPaste(""); say(`${n}件を取り込みました。「接続して同期」を押してください`); };
   return (<div className="pane">
     <section className="sec"><h3 className="s-h">設定を別の端末に渡す</h3>
-      <p className="lead">設定済みの端末で「リンクをコピー」し、LINE やメールで自分に送る。もう一方の端末でそのリンクを開くか、下の欄に貼って「取り込む」。ホーム画面のアプリは Safari と保存場所が別なので、アプリ側では貼り付けを使ってください。</p>
-      <div className="q-btns"><button className="btn-sm" onClick={copyLink} disabled={!url || !anon || !room}>リンクをコピー</button><label className="btn-sm ctr"><input type="checkbox" checked={withKey} onChange={(e) => setWithKey(e.target.checked)} style={{ width: "auto", marginRight: 6 }} />APIキーも含める</label></div>
+      <p className="lead">設定済みの端末で「リンクをコピー」すると、プロジェクトURL・anon キー・共有ID・APIキーの入っているもの全部が1本のリンクになります。LINE やメールで自分に送る。もう一方の端末でそのリンクを開くか、下の欄に貼って「取り込む」。ホーム画面のアプリは Safari と保存場所が別なので、アプリ側では貼り付けを使ってください。</p>
+      <button className="btn-sm" onClick={copyLink} disabled={!url && !anon && !room && !key}>リンクをコピー</button>
       <Fld label="受け取ったリンクを貼る"><input value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="https://…#cfg=…" autoComplete="off" /></Fld>
       <button className="btn-sm" onClick={doImport} disabled={!paste.trim()}>取り込む</button>
       <p className="q-warn">リンクには共有IDとキーが入っています。パスワードと同じ扱いで、送ったメッセージは消してください。</p></section>
