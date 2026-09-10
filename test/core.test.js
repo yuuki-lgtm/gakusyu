@@ -628,8 +628,8 @@ describe("印の位置を AI に渡す（項目名・類題）", () => {
   const src = { path: "fam/math/wb/11.jpg", kind: "ワーク", page: 11, x: 0.3, y: 0.4 };
   test("hasPos / markDesc", () => {
     assert.equal(m.hasPos(src), true); assert.equal(m.hasPos({ path: "p", q: "3" }), false); assert.equal(m.hasPos(null), false);
-    assert.equal(m.markDesc(src), "赤い点の印の位置にある問題（ワーク p.11）");
-    assert.equal(m.markDesc(src, "②"), "赤い点の印（右横に番号②）の位置にある問題（ワーク p.11）");
+    assert.equal(m.markDesc(src), "青い点の印の位置にある問題（ワーク p.11）");
+    assert.equal(m.markDesc(src, "②"), "青い点の印（右横に番号②）の位置にある問題（ワーク p.11）");
     assert.equal(m.markDesc({ path: "p", kind: "ワーク", page: 2, q: "3" }), "ワーク p.2 「3」");
   });
   test("annotateB64 は canvas が無ければそのまま返す。印が無ければそのまま", async () => {
@@ -638,7 +638,7 @@ describe("印の位置を AI に渡す（項目名・類題）", () => {
   });
   test("genContent: 座標つきなら印の位置を指し、名前が仮なら label/fmt も求める", () => {
     const c = m.genContent({ src, named: false }, "IMG", "本文");
-    assert.ok(c[0].text.includes("赤い点の印の位置にある問題（ワーク p.11）") && c[0].text.includes("label に"));
+    assert.ok(c[0].text.includes("青い点の印の位置にある問題（ワーク p.11）") && c[0].text.includes("label に"));
     const c2 = m.genContent({ src, named: true }, "IMG", "本文");
     assert.ok(!c2[0].text.includes("label に"));
   });
