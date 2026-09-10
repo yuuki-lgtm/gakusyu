@@ -1041,7 +1041,7 @@ async function pdfToJpegs(file, onPage, maxW = 1500) {
 }
 
 /* 用紙（1枚または複数）を1つのPDFに。各用紙の「資料＋問題」を先に並べ、用紙ごとにページ数が奇数なら白紙を足して偶数にする。
-   解答は全用紙ぶんを最後にまとめる。両面印刷1回で、解答が必ず別の紙になる */
+   解答は全用紙ぶんを最後に、教科で改ページせず1つの流れで詰める。両面印刷1回で、解答が必ず別の紙になる */
 async function buildPDF(papers, onStep) {
   const list = Array.isArray(papers) ? papers : [papers];
   const res = {}; for (const p of list) Object.assign(res, await resolveRefs(p, onStep)); // 教材ページは用紙に持たず、ここで読む
@@ -1062,10 +1062,10 @@ async function buildPDF(papers, onStep) {
     const pdf = new jsPDF({ unit: "px", format: [W, H], hotfixes: ["px_scaling"] });
     let firstPage = true, n = 0;
     const pages = () => (firstPage ? 0 : pdf.internal.getNumberOfPages());
-    const draw = async (sh) => {
+    const blocksOf = (sh) => [...sh.children].flatMap((el) => (el.classList.contains("cols") || el.classList.contains("aim") ? [...el.children] : [el]));
+    const draw = async (blocks) => {
       if (!firstPage) pdf.addPage(); firstPage = false;
       let y = PT;
-      const blocks = [...sh.children].flatMap((el) => (el.classList.contains("cols") || el.classList.contains("aim") ? [...el.children] : [el]));
       for (const el of blocks) {
         n++; onStep && onStep(n);
         const mb = parseFloat(getComputedStyle(el).marginBottom) || 0;
@@ -1091,11 +1091,12 @@ async function buildPDF(papers, onStep) {
     // 問題（資料を含む）を用紙ごとに。奇数ページなら白紙を1枚足す
     for (const pp of host.querySelectorAll(".pp")) {
       const before = pages();
-      for (const sh of pp.querySelectorAll('.sheet[data-part="q"]')) await draw(sh);
+      for (const sh of pp.querySelectorAll('.sheet[data-part="q"]')) await draw(blocksOf(sh));
       if (needBlank(pages() - before)) pdf.addPage();
     }
-    // 解答は最後にまとめて
-    for (const sh of host.querySelectorAll('.sheet[data-part="a"]')) await draw(sh);
+    // 解答は最後に。教科ごとに改ページせず、1つの流れで詰める
+    const ans = [...host.querySelectorAll('.sheet[data-part="a"]')].flatMap(blocksOf);
+    if (ans.length) await draw(ans);
     return pdf;
   } finally { fr.remove(); }
 }
