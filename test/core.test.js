@@ -1517,7 +1517,7 @@ describe("○×の欄の読み取り", () => {
     const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk"); let sent = null;
     globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"marks":[{"n":1,"self":"oo"},{"n":2,"self":"bad"}]}' }] }) }; };
     try { const r = await m.readSelfMarks([], items, unitOf); assert.deepEqual(r, { 1: "oo", 2: "" }, "bad は紙からは来ない");
-      const body = JSON.stringify(sent); assert.ok(body.includes("○ か × を書いています") && body.includes("問1・2（説明は問3）") && !body.includes("問題が変")); }
+      const body = JSON.stringify(sent); assert.ok(body.includes("○ でない印") && body.includes("✓・／・△") && body.includes("問1・2（説明は問3）") && !body.includes("問題が変"), "× 以外の印も不正解として読ませる"); }
     finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
   });
 });

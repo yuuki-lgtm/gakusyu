@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 21:30"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 21:34"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -45,7 +45,7 @@ const RUBRIC = [["len", "字数を満たした"], ["structure", "段落の型に
 /* 類題を印刷用の用紙に変換 */
 /* 類題を印刷用の用紙に変換。項目ごとに教科・単元の見出し、最後に説明の問いと「自分の判定」の欄 */
 /* 類題の紙の判定: 各問題の右端の四角い欄に、子どもが解答を見て自分で ○ か × を書く（チェック欄の4択は 2026-09-10 に廃止。読み取りが確実で、子どもの手間が少ない） */
-const SELF_NOTE = "解いたら解答を見て、各問題の右の欄に自分で ○ か × を書く。「説明」の問いは、理由を自分の言葉で言えたら ○。";
+const SELF_NOTE = "解いたら解答を見て、各問題の右の欄に自分で ○ か × を書く（× は ✓ や ／ でもよい）。「説明」の問いは、理由を自分の言葉で言えたら ○。";
 
 /* ---- 日付・文字列 ---- */
 /* 日付は端末のローカル日付で扱う（toISOString は UTC になり、日本では日付が1日ずれる） */
@@ -745,8 +745,8 @@ async function diagnose(i, u, ctx, model = OPUS) {
 /* 「今日の分」の紙を撮って、各項目の「自分の判定」の印（□ できなかった／□ 解けた／□ 説明もできた）を読む。戻り値は {n: "x"|"o"|"oo"|""} */
 async function readSelfMarks(files, items, unitOf, model = null) {
   const imgs = []; for (const f of files) imgs.push(imgBlock(await compressImage(f, 1600, 0.8)));
-  const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。各問題の右端に四角い欄があり、子どもが解答を見て自分で ○ か × を書いています。次の項目ごとに、その項目の問題の欄を読んでください。\n${selfMarksText(items, unitOf)}` }],
-    `項目ごとの判定: 説明の問いを除く問題の欄がすべて ○ なら "o"、1つでも × なら "x"、さらに説明の問いの欄も ○ なら "oo"。欄が空・判読できない項目は ""。解答の正誤は判断しない（欄の記号だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|""}]}`, 800, model);
+  const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。各問題の右端に四角い欄があり、子どもが解答を見て自分で印を書いています。○（◎や少し崩れた丸も含む）は正解、× のほか ✓・／・△・塗りつぶしなど「○ でない印」はすべて不正解として読んでください。次の項目ごとに、その項目の問題の欄を読んでください。\n${selfMarksText(items, unitOf)}` }],
+    `項目ごとの判定: 説明の問いを除く問題の欄がすべて ○ なら "o"、1つでも ○ でない印（×・✓・／・△など）があれば "x"、さらに説明の問いの欄も ○ なら "oo"。欄が空の項目は ""。印があるのに ○ か判断できないときは "x"。解答の正誤は判断しない（欄の印だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|""}]}`, 800, model);
   const out = {}; (parseJSON(t).marks || []).forEach((mk) => { out[Number(mk.n)] = ["x", "o", "oo"].includes(mk.self) ? mk.self : ""; });
   return out;
 }
@@ -800,7 +800,7 @@ const SHEET_CSS = `
 .sw .cols{column-count:2;column-gap:9mm}
 .sw .aim{margin-top:7mm;padding-top:3.5mm;border-top:0.5pt dashed #888;font-size:9pt;line-height:1.7;color:#444}
 .sw .sech{font-size:11.5pt;font-weight:700;margin:5mm 0 2.5mm;padding-bottom:1mm;border-bottom:0.6pt solid #333}.sw .pts{font-size:9.5pt;color:#555;margin-left:2mm}
-.sw .jb{flex:0 0 11mm;height:11mm;border:0.6pt solid #333;border-radius:1mm;margin-top:.5mm}
+.sw .jb{flex:0 0 15mm;height:15mm;border:0.6pt solid #333;border-radius:1mm;margin-top:.5mm}
 .sw .guide{margin:0 0 5mm;padding:3.5mm 4mm;border:0.6pt solid #666;background:#F5F5F5;page-break-inside:avoid;break-inside:avoid;font-size:10pt;line-height:1.75}.sw .g-h{font-weight:700;margin-bottom:1.5mm}.sw .g-p{font-weight:400;color:#555;font-size:9pt}.sw .g-t{white-space:normal}.sw .g-ex{margin-top:2.5mm;padding-top:2mm;border-top:0.4pt dashed #999}.sw .g-a{color:#333;margin-top:1mm;padding-left:3mm;border-left:1.5pt solid #999}
 .sw .ref{margin-bottom:8mm;page-break-inside:avoid}
 .sw .ref .cap{font-size:10pt;font-weight:600;margin-bottom:2mm}
@@ -897,7 +897,7 @@ async function buildPDF(papers, onStep) {
   document.body.appendChild(fr);
   const doc = fr.contentDocument;
   doc.open();
-  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=${W},initial-scale=1"><style>html,body{margin:0;padding:0;background:#fff;color:#111;-webkit-text-size-adjust:none;text-size-adjust:none}.sw,.sw *{-webkit-text-size-adjust:none;text-size-adjust:none}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw,.sw *{font-feature-settings:normal !important;font-kerning:none !important;font-variant-ligatures:none;letter-spacing:0 !important;text-rendering:optimizeSpeed}.sw{width:${W}px;background:#fff;font-size:12.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .ttl{font-size:16px;margin-bottom:6px}.sw .hdr{font-size:10.5px;margin-bottom:14px}.sw .hdr span{padding:6px 8px}.sw .p{margin-bottom:12px;gap:10px}.sw .pn{flex:0 0 24px}.sw .pq{font-size:12.5px;line-height:1.7;margin-bottom:5px}.sw .arow,.sw .at{font-size:12px}.sw .an{flex:0 0 22px}.sw .aim{font-size:11px}.sw .psg{font-size:12.5px;line-height:1.8}.sw .sech{font-size:14px;margin:12px 0 6px}.sw .pts{font-size:10.5px}.sw .jb{flex:0 0 34px;height:34px}.sw .rule{border-bottom-color:#B0B0B0;height:21px}.sw .note,.sw .aim{color:#444}.sw .ref .cap{font-size:10.5px}.sw .guide{font-size:12px;background:#F4F4F4}.sw .g-p{font-size:11px}</style></head><body><div class="sw">${list.map((p) => `<div class="pp">${paperHTML(p, res)}</div>`).join("")}</div></body></html>`);
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=${W},initial-scale=1"><style>html,body{margin:0;padding:0;background:#fff;color:#111;-webkit-text-size-adjust:none;text-size-adjust:none}.sw,.sw *{-webkit-text-size-adjust:none;text-size-adjust:none}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw,.sw *{font-feature-settings:normal !important;font-kerning:none !important;font-variant-ligatures:none;letter-spacing:0 !important;text-rendering:optimizeSpeed}.sw{width:${W}px;background:#fff;font-size:12.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .ttl{font-size:16px;margin-bottom:6px}.sw .hdr{font-size:10.5px;margin-bottom:14px}.sw .hdr span{padding:6px 8px}.sw .p{margin-bottom:12px;gap:10px}.sw .pn{flex:0 0 24px}.sw .pq{font-size:12.5px;line-height:1.7;margin-bottom:5px}.sw .arow,.sw .at{font-size:12px}.sw .an{flex:0 0 22px}.sw .aim{font-size:11px}.sw .psg{font-size:12.5px;line-height:1.8}.sw .sech{font-size:14px;margin:12px 0 6px}.sw .pts{font-size:10.5px}.sw .jb{flex:0 0 46px;height:46px}.sw .rule{border-bottom-color:#B0B0B0;height:21px}.sw .note,.sw .aim{color:#444}.sw .ref .cap{font-size:10.5px}.sw .guide{font-size:12px;background:#F4F4F4}.sw .g-p{font-size:11px}</style></head><body><div class="sw">${list.map((p) => `<div class="pp">${paperHTML(p, res)}</div>`).join("")}</div></body></html>`);
   doc.close();
   await new Promise((r) => setTimeout(r, 150));
   const host = doc.body;
