@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 23:15"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 23:22"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -610,6 +610,14 @@ function parseJSON(text) {
   return JSON.parse(t.slice(s, e + 1));
 }
 const imgBlock = (b64) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } });
+/* 画面下（メニューバーの上）の通知（スナックバー）。ok・warn は 4.5 秒で消える。err は × を押すまで残る（見落とさない）。
+   どの画面からも notify(text, kind) で出せる。App が snackFn を登録する */
+let snackFn = null;
+const notify = (text, kind = "ok") => { if (snackFn) snackFn(String(text), kind); };
+function Snacks({ list, onClose }) {
+  if (!list.length) return null;
+  return (<div className="snacks">{list.map((sn) => (<div key={sn.id} className={"snack " + sn.kind}><span>{sn.text}</span>{sn.kind === "err" && <button onClick={() => onClose(sn.id)} aria-label="閉じる">×</button>}</div>))}</div>);
+}
 /* 名前付けの応答を読む。JSON が途中で切れていたり前後に文が付いていても、完成している {"n":…} だけ拾う */
 function parseItemsLoose(text) {
   try { const o = parseJSON(text); if (o && Array.isArray(o.items)) return o; } catch {}
@@ -997,11 +1005,10 @@ function App() {
   useEffect(() => { try { window.scrollTo(0, scrollPos.current[tab] || 0); } catch {} }, [tab]);
 
   const [sync, setSync] = useState("");
-  const [toast, setToast] = useState("");
   const pushTimer = useRef(null);
   useEffect(() => { (async () => {
     // 別の端末からの設定リンク（#cfg=…）で開かれたら、先に取り込む
-    try { if (/#cfg=/.test(window.location.hash) && importCfg(window.location.hash)) { window.history.replaceState(null, "", window.location.pathname + window.location.search); setToast("設定を取り込みました"); setTimeout(() => setToast(""), 5000); } } catch {}
+    try { if (/#cfg=/.test(window.location.hash) && importCfg(window.location.hash)) { window.history.replaceState(null, "", window.location.pathname + window.location.search); notify("設定を取り込みました"); } } catch {}
     let cur = null;
     try { const l = localStorage.getItem(KEY) || localStorage.getItem("gakushu_loop_v2"); cur = migrate(l ? JSON.parse(l) : null); } catch { cur = blank(); }
     if (syncOn()) { try { const remote = await pullRemote(); if (remote) { cur = mergeData(cur, migrate(remote.data)); localStorage.setItem(KEY, JSON.stringify(cur)); } setSync("ok"); } catch { setSync("err"); } }
@@ -1016,6 +1023,8 @@ function App() {
       try { const remote = await pullRemote(); const merged = remote ? mergeData(n, migrate(remote.data)) : n; await pushRemote(merged); if (remote) { dRef.current = merged; setD(merged); localStorage.setItem(KEY, JSON.stringify(merged)); } setSync("ok"); } catch { setSync("err"); } }, 1500); }
   };
 
+  const [snacks, setSnacks] = useState([]);
+  useEffect(() => { snackFn = (text, kind) => { const id = uid(); setSnacks((l) => [...l.filter((x) => x.kind === "err"), { id, text, kind }]); if (kind !== "err") setTimeout(() => setSnacks((l) => l.filter((x) => x.id !== id)), 4500); }; return () => { snackFn = null; }; }, []);
   // 登録直後の名前付けに失敗して「仮」のままの項目を、開いたときに裏で付け直す（同じ項目は1回の起動で1回だけ。ボタンを押す手間を無くす）
   const triedRef = useRef(new Set());
   useEffect(() => { if (!d || !hasKey()) return;
@@ -1024,7 +1033,7 @@ function App() {
     (async () => { let named = 0;
       for (const sub of SUBJECTS) { const add = tent.filter((i) => i.subject === sub); if (!add.length) continue;
         try { const msg = await nameAndApply(dRef.current, add, sub, (id) => unitById(dRef.current, id), save); const mm = msg.match(/^(\d+)件に項目名/); if (mm) named += Number(mm[1]); } catch {} }
-      if (named) { setToast(`仮の項目 ${named} 件に名前を付けました`); setTimeout(() => setToast(""), 5000); } })();
+      if (named) notify(`仮の項目 ${named} 件に名前を付けました`); })();
   }, [d && d.items.filter((i) => i.named === false).length]);
 
   if (!d) return <div style={{ padding: 40, color: "#888" }}>読み込み中…</div>;
@@ -1054,7 +1063,7 @@ function App() {
           {k === "more" && <MoreTab d={d} go={go} />}
           {k === "export" && <ExportTab d={d} />}
           {k === "set" && <Settings d={d} save={save} setSync={setSync} />}</div>); })}
-        {toast && <p className="msg fixed">{toast}</p>}
+        <Snacks list={snacks} onClose={(id) => setSnacks((l) => l.filter((x) => x.id !== id))} />
       </main></div>
   );
 }
@@ -1065,9 +1074,9 @@ function MorningPrint({ d }) {
   const items = gradeSet(d).filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src)));
   const [busy, setBusy] = useState(""); const [err, setErr] = useState("");
   if (!items.length) return null;
-  const go = async () => { setErr(""); setBusy("開始"); try { await exportPDF(genToPaper(items, (id) => unitById(d, id)), (n) => setBusy(String(n))); } catch (e) { setErr(e.message || "PDFを作れませんでした"); } setBusy(""); };
+  const go = async () => { setErr(""); setBusy("開始"); try { await exportPDF(genToPaper(items, (id) => unitById(d, id)), (n) => setBusy(String(n))); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
   return (<div className="blk morning"><button className="btn-main" onClick={go} disabled={!!busy}>{busy ? `PDFを作成中… ${busy}` : `今日の分を印刷する（${items.length}件・PDFだけ）`}</button>
-    <p className="blk-s">判定はしません。夜に作った類題をそのまま出します。子どもが朝に押してもよい。</p>{err && <div className="errbox"><p>{err}</p></div>}</div>);
+    <p className="blk-s">判定はしません。夜に作った類題をそのまま出します。子どもが朝に押してもよい。</p></div>);
 }
 function HomeTab({ d, go }) {
   const { A, left, nx } = nextActions(d);
@@ -1113,7 +1122,7 @@ function TodayMake({ d, save }) {
   const fresh = (i) => !redo.has(i.id) && !!(i.gen && i.gen.problems && i.genOn === today() && i.gen.problems.length === (i.fmt === "長文読解" ? Math.min(2, problemCount(i)) : problemCount(i)));
   const make = async () => {
     setErr(""); setLog([]);
-    if (!hasKey()) { setErr("APIキーが未設定です。「設定」タブで登録してください。"); return; }
+    if (!hasKey()) { notify("APIキーが未設定です。「その他→設定」で登録してください。", "err"); return; }
     let items = d.items.slice(); const ok = []; const bad = []; const orig = []; const unverified = []; let genN = 0;
     for (let k = 0; k < set.length; k++) {
       setBusy(`類題を作成 ${k + 1}/${set.length}`);
@@ -1140,17 +1149,17 @@ function TodayMake({ d, save }) {
       }
       ok.push(cur);
     }
-    if (!ok.length) { if (genN) save({ ...d, items, genCount: (d.genCount || 0) + genN }); setErr(bad.length ? `作れませんでした。${bad[0]}` : unverified.length ? `検算で不一致が続いたので、今日は作れませんでした（${unverified.join("、")}）。明日もう一度。` : "対象がありません"); setBusy(""); return; }
+    if (!ok.length) { if (genN) save({ ...d, items, genCount: (d.genCount || 0) + genN }); notify(bad.length ? `作れませんでした。${bad[0]}` : unverified.length ? `検算で不一致が続いたので、今日は作れませんでした（${unverified.join("、")}）。明日もう一度。` : "対象がありません", "err"); setBusy(""); return; }
     try {
       setBusy("PDFを作成");
       await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`));
       const pos = new Map(ok.map((i, k) => [i.id, k + 1]));
       save({ ...d, items: items.map((x) => (pos.has(x.id) ? { ...x, printedOn: today(), printedAs: pos.get(x.id), updatedAt: now() } : x)), genCount: (d.genCount || 0) + genN, log: { ...d.log, [today()]: true } });
       setLog([`${ok.length}件を1枚にまとめました。印刷して明日の机に。`, ...unverified.map((b) => `検算で2回とも不一致で、元の問題も無いので翌日に回します: ${b}`), ...orig.map((b) => `類題を作れなかったので元の問題を載せました（この回は「説明もできた」でのみ進みます）: ${b}`), ...bad.map((b) => `作れなかった項目（次回に回します）: ${b}`)]);
-    } catch (e) { setErr(e.message || "PDFを作れませんでした"); }
+    } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); }
     setBusy("");
   };
-  const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { setErr(e.message || "PDFを作れませんでした"); } setBusy(""); };
+  const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
   return (<>
     <section className="sec">
       <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
@@ -1159,7 +1168,6 @@ function TodayMake({ d, save }) {
           {cands.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? <> · 類題あり <button className="lnk" onClick={(e) => { e.preventDefault(); setRedo((r) => new Set([...r, i.id])); }}>作り直す</button></> : redo.has(i.id) ? " · 作り直す" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}</div>))}
           <p className="ph-note">チェック {set.length} 件（{set.reduce((a, i) => a + problemCount(i), 0)} 問）、繰り越し {cands.length - set.length} 件。</p>
           <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `この内容で作る（${set.length}件 → PDF）`}</button></>)}
-      {err && <div className="errbox"><p>{err}</p></div>}
       {log.length > 0 && <div className="loglist">{log.map((l, k) => (<div key={k}>{l}</div>))}</div>}
     </section>
     {printed.length > 0 && <section className="sec"><h3 className="s-h">採点待ち <span className="cnt">{printed.length}件</span></h3><p className="lead">紙をなくしたときは、同じ内容をもう一度PDFにできます（類題は作り直しません）。</p><button className="btn-sm wide" onClick={reprint} disabled={!!busy}>採点待ちの分をもう一度PDFにする</button></section>}
@@ -1197,7 +1205,7 @@ function TodayGrade({ d, save }) {
   const shoot = async (files, model = null) => {
     if (!files.length) return; setBusy(true); setErr(""); setLastFiles(files);
     try { const marks = await readSelfMarks(files, set, unitOf, model); const patch = applySelfMarks(set, marks); const n = Object.keys(patch).length;
-      setDc((x) => ({ ...x, ...patch })); setMsg(n ? `${n}件の判定を読み取りました。違う行だけ直して「まとめて確定」。` : "印を読み取れませんでした。手で押してください。"); setTimeout(() => setMsg(""), 6000); }
+      setDc((x) => ({ ...x, ...patch })); notify(n ? `${n}件の判定を読み取りました。違う行だけ直して「まとめて確定」。` : "印を読み取れませんでした。手で押してください。", n ? "ok" : "warn"); }
     catch (e) { setErr(e.message || "読み取れませんでした"); }
     setBusy(false);
   };
@@ -1206,11 +1214,11 @@ function TodayGrade({ d, save }) {
   const decided = set.filter((i) => dc[i.id]?.r || dc[i.id]?.skip || dc[i.id]?.bad);
   const judged = decided.filter((i) => dc[i.id]?.r);
   const missingE = set.filter((i) => dc[i.id]?.r === "x" && !dc[i.id]?.etype);
-  const commit = () => { const { d: nd, n, bad } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; setMsg(`${n}件を確定しました。${bad ? `「問題が変」${bad} 件は明日作り直します。` : ""}${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); setTimeout(() => setMsg(""), 4000); };
+  const commit = () => { const { d: nd, n, bad } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; notify(`${n}件を確定しました。${bad ? `「問題が変」${bad} 件は明日作り直します。` : ""}${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); };
   return (<section className="sec">
     {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
       <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
-      <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); setMsg(`${set.length}件を「印刷」に戻しました（判定なし）`); setTimeout(() => setMsg(""), 4000); }} disabled={busy}>全部を印刷に戻す（判定しない）</button></div>
+      <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); notify(`${set.length}件を「印刷」に戻しました（判定なし）`); }} disabled={busy}>全部を印刷に戻す（判定しない）</button></div>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（○×の欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
       {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, SONNET)}>もう一度読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (
@@ -1228,7 +1236,6 @@ function TodayGrade({ d, save }) {
       <button className="btn-main" onClick={commit} disabled={!decided.length || missingE.length > 0}>まとめて確定（{judged.length}件{decided.filter((i) => dc[i.id]?.bad).length ? `＋問題が変 ${decided.filter((i) => dc[i.id]?.bad).length}` : ""}）</button>
       {missingE.length > 0 && <p className="warn-t">「できなかった」には誤答の種類を選んでください（{missingE.length}件）。</p>}
       {set.length - decided.length > 0 && <p className="ph-note">押していない {set.length - decided.length} 件は採点待ちのまま残ります。「やっていない」を押すと次の印刷に入ります。</p>}
-      {msg && <p className="msg">{msg}</p>}
       <p className="rule">用語は「解けた」で次へ進みます。それ以外は「説明もできた」でないと7日から先へ進みません。落とすと1日に戻り、項目は消えません。</p>
     </>)}
   </section>);
@@ -1265,12 +1272,11 @@ function LastPageStep({ d, save }) {
   const [pg, setPg] = useState({}); const [msg, setMsg] = useState("");
   const lastDone = (x) => (x.ms.filter((mt) => mt.doneOn).slice(-1)[0] || {}).page;
   const val = (x) => pg[x.s + x.k] ?? String(lastDone(x) || x.ms[0].page);
-  const mark = (x) => { const page = parseInt(val(x), 10); if (!page) return; const n = x.ms.filter((mt) => mt.page <= page && !mt.doneOn).length; save(applyAutoProgress(markDoneUpTo({ ...d, log: { ...d.log, [today()]: true } }, x.s, x.k, page))); setMsg(n ? `${x.s}の${x.k} p.${page} までの ${n} ページを「やった」にしました` : `${x.s}の${x.k} p.${page} までは「やった」になっています`); setTimeout(() => setMsg(""), 3000); };
+  const mark = (x) => { const page = parseInt(val(x), 10); if (!page) return; const n = x.ms.filter((mt) => mt.page <= page && !mt.doneOn).length; save(applyAutoProgress(markDoneUpTo({ ...d, log: { ...d.log, [today()]: true } }, x.s, x.k, page))); notify(n ? `${x.s}の${x.k} p.${page} までの ${n} ページを「やった」にしました` : `${x.s}の${x.k} p.${page} までは「やった」になっています`); };
   return (<section className="sec">
     <p className="lead">今日やった最後のページ番号を入れて「ここまで」。そのページまでが「やった」になり、進度も進みます。×を登録したページは済んでいます。やっていない教科は飛ばして「次へ」。</p>
     {rows.length === 0 && <p className="empty">ワーク・教科書を取り込んだ教科がありません。「次へ」。</p>}
     {rows.map((x) => (<div className="lp-row" key={x.s + x.k}><Dot s={x.s} /><span className="lp-n">{x.s}の{x.k}</span><span className="lp-d">済 {x.ms.filter((mt) => mt.doneOn).length}/{x.ms.length}{lastDone(x) ? `（p.${lastDone(x)} まで）` : ""}</span><input className="num" type="number" inputMode="numeric" value={val(x)} onChange={(e) => setPg((p) => ({ ...p, [x.s + x.k]: e.target.value }))} /><button className="btn-sm" onClick={() => mark(x)}>ここまで</button></div>))}
-    {msg && <p className="msg">{msg}</p>}
   </section>);
 }
 
@@ -1327,7 +1333,7 @@ function MakePapers({ d, save, initialKind = "週次" }) {
   const papers = [...d.papers].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 12);
   const todays = d.papers.filter((p) => p.date === today() && p.kind !== "読解" && p.kind !== "模試").sort((a, b) => SUBJECTS.indexOf(a.subject) - SUBJECTS.indexOf(b.subject));
   const [pdfBusy, setPdfBusy] = useState(""); const [pdfErr, setPdfErr] = useState("");
-  const pdfAll = async () => { setPdfErr(""); setPdfBusy("開始"); try { await exportPDF(todays, (x) => setPdfBusy(String(x))); } catch (e) { setPdfErr(e.message || "PDFを作れませんでした"); } setPdfBusy(""); };
+  const pdfAll = async () => { setPdfErr(""); setPdfBusy("開始"); try { await exportPDF(todays, (x) => setPdfBusy(String(x))); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setPdfBusy(""); };
 
   return (<>
     <section className="sec">
@@ -1345,7 +1351,6 @@ function MakePapers({ d, save, initialKind = "週次" }) {
       {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}
       {todays.length > 0 && <button className="btn-sm wide" onClick={pdfAll} disabled={!!busy || !!pdfBusy}>{pdfBusy ? `PDFを作成中… ${pdfBusy}` : `今日作った ${todays.length} 教科を1つのPDFに（${todays.map((p) => p.subject).join("・")}）`}</button>}
       {todays.length > 0 && <p className="ph-note">教科ごとに問題を偶数ページにそろえて並べ、最後に全教科の解答をまとめます。両面印刷1回で、解答は別の紙になります。</p>}
-      {pdfErr && <div className="errbox"><p>{pdfErr}</p></div>}
     </section>
     {papers.length > 0 && (<section className="sec"><h3 className="s-h">作ったテスト</h3>
       {papers.map((p) => (<PaperRow key={p.id} p={p} d={d} save={save} />))}</section>)}
@@ -1377,7 +1382,7 @@ function MockMaker({ d, save, preset }) {
     setBusy("");
     if (made.length) save({ ...d, papers: [...d.papers, ...made] });
   };
-  const pdfAll = async () => { setPdfErr(""); setPdfBusy("開始"); try { await exportPDF(todays, (x) => setPdfBusy(String(x))); } catch (e) { setPdfErr(e.message || "PDFを作れませんでした"); } setPdfBusy(""); };
+  const pdfAll = async () => { setPdfErr(""); setPdfBusy("開始"); try { await exportPDF(todays, (x) => setPdfBusy(String(x))); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setPdfBusy(""); };
   if (!exams.length) return <section className="sec"><p className="empty">範囲を選んだ定期テストがありません。「定期」でテストを登録し、出題範囲を選んでください。</p></section>;
   return (<>
     <section className="sec">
@@ -1388,7 +1393,6 @@ function MockMaker({ d, save, preset }) {
       <button className="btn-main" onClick={make} disabled={!!busy || !sel.length || !ex}>{busy ? `${busy} を作成中… ${sec}秒` : `模試を作る（${sel.map((s) => s).join("・") || "教科を選ぶ"}）`}</button>
       {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}
       {todays.length > 0 && <button className="btn-sm wide" onClick={pdfAll} disabled={!!busy || !!pdfBusy}>{pdfBusy ? `PDFを作成中… ${pdfBusy}` : `今日作った模試 ${todays.length} 教科を1つのPDFに（${todays.map((p) => p.subject).join("・")}）`}</button>}
-      {pdfErr && <div className="errbox"><p>{pdfErr}</p></div>}
     </section>
     {mocks.length > 0 && (<section className="sec"><h3 className="s-h">この定期テストの模試 <span className="cnt">{mocks.length}枚</span></h3>
       {mocks.map((p) => (<PaperRow key={p.id} p={p} d={d} save={save} />))}</section>)}
@@ -1407,7 +1411,7 @@ function PaperRow({ p, d, save }) {
 function PrintSheet({ paper: p }) {
   const [pdfBusy, setPdfBusy] = useState(0);
   const [pdfErr, setPdfErr] = useState("");
-  const makePdf = async () => { setPdfErr(""); setPdfBusy(1); try { await exportPDF(p, (n) => setPdfBusy(n)); } catch (e) { setPdfErr(e.message || "PDFを作れませんでした"); } setPdfBusy(0); };
+  const makePdf = async () => { setPdfErr(""); setPdfBusy(1); try { await exportPDF(p, (n) => setPdfBusy(n)); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setPdfBusy(0); };
   const [state, setState] = useState("");
   const body = useMemo(() => paperHTML(p), [p]);
   const share = async () => { setState(""); let res = {}; try { res = await resolveRefs(p); } catch {} const blob = new Blob([fileHTML(p, res)], { type: "text/html" }); const name = `${p.subject}_${p.code}.html`;
@@ -1416,7 +1420,6 @@ function PrintSheet({ paper: p }) {
   const copyText = async () => { setState((await copyToClipboard(paperText(p))) ? "copied" : "failed"); };
   return (<>
     <button className="btn-main" onClick={makePdf} disabled={!!pdfBusy}>{pdfBusy ? `PDFを作成中… ${pdfBusy}` : "PDFにする"}</button>
-    {pdfErr && <div className="errbox"><p>{pdfErr}</p></div>}
     <button className="btn-sm wide" onClick={share}>HTMLで保存（PDFが作れないとき）</button>
     <button className="btn-sm wide" onClick={copyText}>テキストをコピー（メモアプリ経由）</button>
     {state === "copied" && <p className="msg">コピーしました。メモアプリに貼り付け、共有から「プリント」。</p>}
@@ -1502,7 +1505,7 @@ function ReadingMaker({ d, save }) {
       const qs = (p.questions || []).map((x, i) => ({ n: i + 1, q: x.q || "", a: x.a || "", unitId: units[0]?.id || "", fmt: "長文読解", aim: x.type || "", label: x.label || x.type || "", svg: "" }));
       if (!p.passage || !qs.length) throw new Error("生成できませんでした");
       save({ ...d, papers: [...d.papers, { id: uid(), code: `${today().slice(5).replace("-", "")}読`, subject, date: today(), kind: "読解", title: p.title || "", passage: p.passage, unitIds: units[0] ? [units[0].id] : [], questions: qs, imgs: [], status: "printed", model: usedLabel(), updatedAt: now() }] });
-    } catch (e) { setErr(e.message || "失敗"); }
+    } catch (e) { notify(e.message || "失敗", "err"); }
     setBusy(false); };
   const papers = d.papers.filter((p) => p.kind === "読解").sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
   return (<>
@@ -1512,7 +1515,7 @@ function ReadingMaker({ d, save }) {
       <Fld label={subject === "国語" ? "本文の字数" : "本文の語数"}><input type="number" value={len} onChange={(e) => setLen(e.target.value)} /></Fld>
       {weak.length > 0 && <p className="ph-note">重点：{weak.join("、")}</p>}
       <button className="btn-main" onClick={gen} disabled={busy}>{busy ? `作成中… ${sec}秒` : "読解問題を作る"}</button>
-      {err && <div className="errbox"><p>{err}</p></div>}</section>
+      </section>
     {papers.length > 0 && <section className="sec"><h3 className="s-h">作った読解問題</h3>{papers.map((p) => (<PaperRow key={p.id} p={p} d={d} save={save} />))}</section>}
   </>);
 }
@@ -1533,7 +1536,7 @@ function WritingFlow({ d, save }) {
         ? `中学1年生（英語1年目）向けの英作文の課題を1つ作る。語彙・文法は中1前半に限定。JSONのみ: {"prompt":"課題（日本語）","conditions":["3文以上","can を使う"],"model":"模範解答（英語）","points":["採点の観点を2〜3個"]}`
         : `中学1年生向けの記述・作文の課題を1つ作る。教科は${subject}。定期テストで出る形式（${subject === "国語" ? "意見文・体験文・要約" : "資料を見て理由を説明・用語を使って説明"}）に寄せる。JSONのみ: {"prompt":"課題","conditions":["100字以上120字以内","2段落構成","『たとえば』を使う"],"model":"模範解答","points":["採点の観点を2〜3個"]}`;
       const t = await callAI(`直近の記述の弱点: ${weakSurface >= 2 ? "表面の誤り（助詞・脱字）が続いている" : "特になし"}。${recent.length ? "過去の課題と被らないように。" : ""}`, sys, 1500);
-      setTask(parseJSON(t)); } catch (e) { setErr(e.message || "失敗"); } setBusy(""); };
+      setTask(parseJSON(t)); } catch (e) { notify(e.message || "失敗", "err"); } setBusy(""); };
 
   const review = async (f) => { if (!task) return; setBusy("rev"); setErr(""); setRev(null);
     try { const b64 = await compressImage(f, 1600, 0.8);
@@ -1541,7 +1544,7 @@ function WritingFlow({ d, save }) {
         `判読できない箇所は推測せず「？」にする。\nlen: 字数（語数）条件を満たしているか 0〜2\nstructure: 指定された構成に沿っているか 0〜2\nsurface: 助詞の脱落・送り仮名・脱字・スペル・文法の誤りがないか 0〜2（誤り3つ以上=0、1〜2=1、なし=2）\nerrors: 表面の誤りを1つずつ {"where":"該当箇所","fix":"正しい形","kind":"助詞／脱字／送り仮名／スペル／語形／その他"}\ncontent: 内容についての一言（良い点を先に、直す点は1つだけ。子どもに読ませる前提で平易に）\nJSONのみ: {"transcript":"読み取った全文","len":0,"structure":0,"surface":0,"count":文字数or語数,"errors":[],"content":""}`, 2500);
       const r = parseJSON(t); setRev(r); setSc({ len: r.len ?? 2, structure: r.structure ?? 2, surface: r.surface ?? 2 });
       const ai = {}; (r.errors || []).forEach((e, i) => { ai[i] = ["助詞", "脱字", "送り仮名", "スペル", "語形"].includes(e.kind); }); setAddItems(ai);
-    } catch (e) { setErr(e.message || "読み取れませんでした"); } setBusy(""); };
+    } catch (e) { notify(e.message || "読み取れませんでした", "err"); } setBusy(""); };
 
   const commit = () => {
     const unit = d.units.find((u) => u.subject === subject);
@@ -1558,7 +1561,6 @@ function WritingFlow({ d, save }) {
       <p className="lead">課題を作る → 紙に書かせる → 書いたあと子ども自身に3項目でチェックさせる → 答案を撮る。表面の誤りは項目として未定着に入り、繰り返す種類が見えます。</p>
       <div className="seg sm">{["国語", "社会", "理科", "英語"].map((k) => (<button key={k} className={subject === k ? "on" : ""} onClick={() => { setSubject(k); setTask(null); setRev(null); }}>{k}</button>))}</div>
       {!task && <button className="btn-main" onClick={genTask} disabled={!!busy}>{busy === "task" ? `作成中… ${sec}秒` : "課題を作る"}</button>}
-      {err && <div className="errbox"><p>{err}</p></div>}
       {task && (<div className="taskbox"><div className="tk-p">{task.prompt}</div><ul className="plain">{(task.conditions || []).map((c, i) => (<li key={i}>・{c}</li>))}</ul>
         <p className="ph-note">書いたあと、子どもに「字数」「段落」「一文字ずつ読み返す」の3つを自分で確認させてから提出。</p>
         <button className="btn-sm" onClick={genTask} disabled={!!busy}>別の課題</button></div>)}
@@ -1589,11 +1591,11 @@ function ManualTest({ d, save }) {
   const upd = (id, k, v) => setRows((r) => r.map((x) => (x.id === id ? { ...x, [k]: v } : x)));
   const clean = rows.filter((r) => r.total !== "" && r.correct !== "").map((r) => ({ fmt: r.fmt, total: Number(r.total), correct: Number(r.correct) }));
   const submit = () => {
-    if (!clean.length || clean.some((r) => r.correct > r.total)) { setMsg("出題数と正答数を確認してください"); return; }
-    if (!sel.length) { setMsg("出題した単元を選んでください"); return; }
+    if (!clean.length || clean.some((r) => r.correct > r.total)) { notify("出題数と正答数を確認してください", "warn"); return; }
+    if (!sel.length) { notify("出題した単元を選んでください", "warn"); return; }
     const total = clean.reduce((p, c) => p + c.total, 0), correct = clean.reduce((p, c) => p + c.correct, 0);
     save({ ...d, tests: [...d.tests, { id: uid(), subject, date, kind, source: source.trim(), rows: clean, total, correct, unitIds: sel, updatedAt: now() }], units: d.units.map((u) => (sel.includes(u.id) ? { ...u, lastTestedOn: date, updatedAt: now() } : u)), log: { ...d.log, [today()]: true } });
-    setRows([{ id: uid(), fmt: FORMATS[0], total: "", correct: "" }]); setSource(""); setSel([]); setMsg("記録しました。落とした項目は「登録」から追加してください。"); setTimeout(() => setMsg(""), 3000);
+    setRows([{ id: uid(), fmt: FORMATS[0], total: "", correct: "" }]); setSource(""); setSel([]); notify("記録しました。落とした項目は「その他→登録」から追加してください。");
   };
   return (<section className="sec">
     <p className="lead">学校のワークや問題集を使ったときはここに。形式ごとに分けて入れると、図や資料、記述の弱点が見えます。すべて初見が前提です。</p>
@@ -1603,7 +1605,7 @@ function ManualTest({ d, save }) {
     <Fld label="形式ごとの成績">{rows.map((r) => (<div className="fmtrow" key={r.id}><select value={r.fmt} onChange={(e) => upd(r.id, "fmt", e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select><input type="number" className="num" placeholder="出題" value={r.total} onChange={(e) => upd(r.id, "total", e.target.value)} /><input type="number" className="num" placeholder="正答" value={r.correct} onChange={(e) => upd(r.id, "correct", e.target.value)} />{rows.length > 1 && <button className="btn-x" onClick={() => setRows((x) => x.filter((y) => y.id !== r.id))}>×</button>}</div>))}
       <button className="btn-sm" onClick={() => setRows((r) => [...r, { id: uid(), fmt: FORMATS[0], total: "", correct: "" }])}>形式を追加</button></Fld>
     <Fld label="出題した単元"><div className="chips">{subjUnits.length === 0 && <span className="empty">単元が未登録です。</span>}{subjUnits.map((u) => (<button key={u.id} className={"chip" + (sel.includes(u.id) ? " on" : "")} style={sel.includes(u.id) ? { background: HUE[subject] } : {}} onClick={() => setSel((s) => (s.includes(u.id) ? s.filter((x) => x !== u.id) : [...s, u.id]))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>))}</div></Fld>
-    <button className="btn-main" onClick={submit}>記録する</button>{msg && <p className="msg">{msg}</p>}
+    <button className="btn-main" onClick={submit}>記録する</button>
   </section>);
 }
 
@@ -1637,7 +1639,7 @@ function UnitReg({ d, save }) {
       const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年${subject}の${tocKind}の目次です。単元（章・節）を上から順に、ページ範囲つきで書き出してください。${us.length ? `\n登録済みの単元: ${us.map((u) => u.name).join("／")}\n各項目が登録済みのどれに当たるかを match に入れてください（表記が違っても同じ内容なら対応づける。該当がなければ空文字）。` : ""}` }],
         `JSONのみ: {"units":[{"name":"単元名","pages":"p.12-25","match":"登録済みの単元名か空文字"}]}。粒度は「章」ではなく「節」（テストの範囲指定に使える細かさ）。pagesは${tocKind}のページ番号。`, 2400, model);
       const u = parseJSON(t).units || []; setCands(u); const c = {}; u.forEach((x, i) => { const ex = matchOf(x); c[i] = !(ex && ex[field]); }); setCk(c);
-    } catch (e) { setErr(e.message || "読み取れませんでした"); } setBusy(false); };
+    } catch (e) { notify(e.message || "読み取れませんでした", "err"); } setBusy(false); };
   const commit = () => { const sel = (cands || []).filter((_, i) => ck[i]); if (sel.length) save({ ...d, units: applyTOC(d.units, subject, tocKind, sel) }); setCands(null); };
   const saveEdit = () => { if (!edit) return; save({ ...d, units: d.units.map((x) => (x.id === edit.id ? { ...x, pages: edit.pages.trim(), wbPages: edit.wbPages.trim(), updatedAt: now() } : x)) }); setEdit(null); };
   return (<>
@@ -1645,7 +1647,6 @@ function UnitReg({ d, save }) {
       <p className="lead">学期の初めに教科書の目次を撮って一括登録すれば、以後の登録は不要です。ワークの目次も撮っておくと、単元ごとにワークのページが結びつき、作問と×の登録で教材のページを自動で使えます。</p>
       <div className="seg sm">{BOOK_KINDS.map((k) => (<button key={k} className={tocKind === k ? "on" : ""} onClick={() => { setTocKind(k); setCands(null); }}>{k}の目次</button>))}</div>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : `${tocKind}の目次を撮る`}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) readTOC(f); }} /></label>
-      {err && <div className="errbox"><p>{err}</p></div>}
       {cands && (<><p className="ph-note">{tocKind === "ワーク" ? "登録済みの単元に当たるものは「→ 単元名」と出ます。チェックしたものにワークのページを結びつけ、該当がなければ新しい単元として登録します。" : "登録する単元にチェック。既にページが入っているものは外してあります。"}</p>
         {cands.map((x, i) => { const ex = matchOf(x); return (<label className={"cand2" + (ck[i] ? " on" : "")} key={i}><input type="checkbox" checked={!!ck[i]} onChange={(e) => setCk((c) => ({ ...c, [i]: e.target.checked }))} /><span>{x.name} <em className="pg">{x.pages}</em>{ex ? <em className="pg"> → {ex.name}{ex[field] ? `（${tocKind} ${ex[field]} あり）` : ""}</em> : <em className="nv">新規</em>}</span></label>); })}
         <button className="btn-main" onClick={commit}>チェックした {Object.values(ck).filter(Boolean).length} 件を反映</button></>)}
@@ -1734,12 +1735,11 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     const add = spreadDue(tapsToItems(taps, subject, us, fallbackUnitId), d);
     save(applyAutoProgress(markDone({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }, taps.map((t) => t.path))));
     const spread = add.filter((i) => i.nextDue !== addDays(today(), 1)).length;
-    setTaps([]); setMsg(`${add.length}件を登録しました。${spread ? `多いので ${spread} 件は明後日以降に分散しました。` : "明日の「今日」に出ます"}${hasKey() ? "。項目名をAIが付けています…" : ""}`);
-    if (hasKey()) { setNaming(true); nameAndApply(d, add, subject, (id) => us.find((u) => u.id === id), save).then((m) => { setMsg(m); setNaming(false); setTimeout(() => setMsg(""), 7000); }); }
-    else setTimeout(() => setMsg(""), 4000);
+    setTaps([]); notify(`${add.length}件を登録しました。${spread ? `多いので ${spread} 件は明後日以降に分散しました。` : "明日の「今日」に出ます"}`);
+    if (hasKey()) { setNaming(true); nameAndApply(d, add, subject, (id) => us.find((u) => u.id === id), save).then((m) => { notify(m, /付けられ|失敗/.test(m) ? "err" : "ok"); setNaming(false); }); }
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
-  const upTo = () => { if (!cur) return; const n = matsOf(d, subject, kind).filter((mt) => mt.page <= page && !mt.doneOn).length; save(applyAutoProgress(markDoneUpTo({ ...d, log: { ...d.log, [today()]: true } }, subject, kind, page))); setMsg(n ? `p.${page} までの ${n} ページを「やった」にしました` : `p.${page} までは「やった」になっています`); setTimeout(() => setMsg(""), 3000); };
+  const upTo = () => { if (!cur) return; const n = matsOf(d, subject, kind).filter((mt) => mt.page <= page && !mt.doneOn).length; save(applyAutoProgress(markDoneUpTo({ ...d, log: { ...d.log, [today()]: true } }, subject, kind, page))); notify(n ? `p.${page} までの ${n} ページを「やった」にしました` : `p.${page} までは「やった」になっています`); };
   // 裏で問題番号の索引を作る（テスト前の「手つかず」検出用。無くても登録と類題には影響しない）。1ページ1回だけ。失敗したページはこのセッションでは再試行しない
   useEffect(() => { if (!cur || cur.idx || !hasKey() || _idxTried.has(cur.path)) return; const path = cur.path; _idxTried.add(path);
     buildIndex(cur).then((idx) => save((c) => ({ ...c, materials: (c.materials || []).map((mt) => (mt.path === path ? { ...mt, idx, updatedAt: now() } : mt)) }))).catch(() => {});
@@ -1768,7 +1768,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
       <button className="btn-main" onClick={commit}>まとめて登録（{taps.length}件）</button></>)}
     {kind !== "テスト" && cur && (<div className="lastp"><span>今日やった最後のページを開いて</span><button className="btn-sm" onClick={upTo} disabled={!!taps.length}>p.{page} までやった</button></div>)}
     {kind !== "テスト" && cur && taps.length > 0 && <p className="ph-note">先に「まとめて登録」を押してから。</p>}
-    {msg && <p className={"msg" + (naming ? " naming" : "")}>{msg}</p>}
+    {naming && <p className="msg naming">項目名をAIが付けています…</p>}
   </div>);
 }
 function ItemReg({ d, save }) {
@@ -1779,9 +1779,9 @@ function ItemReg({ d, save }) {
   const hasMat = MKINDS.some((k) => matsOf(d, subject, k).length);
   const us = d.units.filter((u) => u.subject === subject);
   useEffect(() => { setUnitId(us.length ? us[us.length - 1].id : ""); }, [subject, d.units.length]);
-  const add = () => { if (!label.trim() || !unitId) { setMsg("単元と項目を入れてください"); return; }
+  const add = () => { if (!label.trim() || !unitId) { notify("単元と項目を入れてください", "warn"); return; }
     save({ ...d, items: [...d.items, newItem({ subject, unitId, label: label.trim(), note: note.trim(), fmt, etype })], log: { ...d.log, [today()]: true } });
-    setLabel(""); setNote(""); setMsg("追加しました。明日の「今日」に出ます"); setTimeout(() => setMsg(""), 2000); };
+    setLabel(""); setNote(""); notify("追加しました。明日の「今日」に出ます"); };
   return (<section className="sec">
     <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて×だった問題をタップし、最後に「まとめて登録」。項目名はAIがあとで付けます。翌日の「今日」に出ます。返却されたテストは「テスト」を選んで同じように。" : "その日のワークの×を、その夜に登録します。「登録→教材」でワークを取り込んでおくと、ページを開いて×をタップするだけで登録できます。取り込むまでは下の手入力で。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
     <SubjRow value={subject} onChange={setSubject} />
@@ -1792,7 +1792,6 @@ function ItemReg({ d, save }) {
       <Fld label="どう間違えたか（任意）"><input value={note} onChange={(e) => setNote(e.target.value)} /></Fld>
       <div className="grid2"><Fld label="形式"><select value={fmt} onChange={(e) => setFmt(e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select></Fld><Fld label="誤答の種類"><select value={etype} onChange={(e) => setEtype(e.target.value)}>{ETYPES.map((f) => (<option key={f}>{f}</option>))}</select></Fld></div>
       <button className="btn-main" onClick={add}>未定着リストに追加</button></details>
-    {msg && <p className="msg">{msg}</p>}
   </section>);
 }
 function ItemList({ d, save }) {
@@ -1800,14 +1799,13 @@ function ItemList({ d, save }) {
   const [naming, setNaming] = useState(false); const [msg, setMsg] = useState("");
   // 仮の名前のまま（タップ登録で AI の名前付けに失敗した）項目を、教科ごとにまとめて付け直す。ボタンは1つ
   const tent = d.items.filter((i) => i.status === "active" && i.named === false && hasPos(i.src));
-  const renameAll = async () => { if (!hasKey()) { setMsg("APIキーが未設定です（その他→設定）"); return; } setNaming(true); setMsg("");
+  const renameAll = async () => { if (!hasKey()) { notify("APIキーが未設定です（その他→設定）", "err"); return; } setNaming(true);
     const out = [];
     for (const sub of SUBJECTS) { const add = tent.filter((i) => i.subject === sub); if (!add.length) continue;
       try { out.push(`${sub}: ${await nameAndApply(d, add, sub, unitOf, save)}`); } catch (e) { out.push(`${sub}: 付けられませんでした（${e.message || e}）`); } }
-    setMsg(out.join(" ／ ")); setNaming(false); setTimeout(() => setMsg(""), 9000); };
+    const txt = out.join(" ／ "); notify(txt, /付けられ|失敗/.test(txt) ? "err" : "ok"); setNaming(false); };
   return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
     {tent.length > 0 && <button className="btn-main rename-all" disabled={naming} onClick={renameAll}>{naming ? "AI が名前を付けています…" : `仮の項目 ${tent.length} 件に名前を付ける（AI）`}</button>}
-    {msg && <p className="msg">{msg}</p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
         {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}{i.noWhy && <em className="tag">説明不要</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
@@ -1836,9 +1834,9 @@ function MaterialReg({ d, save }) {
     setShapes(sh); };
 
   const upload = async () => {
-    if (!syncOn()) { setErr("先に「設定」で共有（Supabase）を設定してください。教材画像は共有先にだけ保存します。"); return; }
+    if (!syncOn()) { notify("先に「その他→設定」で共有（Supabase）を設定してください。教材画像は共有先にだけ保存します。", "err"); return; }
     const s0 = parseInt(start, 10);
-    if (!(s0 >= 1)) { setErr("最初のページ番号を入れてください。"); return; }
+    if (!(s0 >= 1)) { notify("最初のページ番号を入れてください。", "warn"); return; }
     setErr(""); setMsg(""); setBusy("準備中");
     const recs = [];
     const putPage = async (page, b64) => {
@@ -1861,10 +1859,10 @@ function MaterialReg({ d, save }) {
       const ids = new Set(recs.map((r) => r.id));
       save({ ...d, materials: [...(d.materials || []).filter((m) => !ids.has(m.id)), ...recs] });
       setFiles([]);
-      setMsg(`${recs.length}ページを保存しました（p.${s0}〜${s0 + recs.length - 1}）`);
+      notify(`${recs.length}ページを保存しました（p.${s0}〜${s0 + recs.length - 1}）`);
     } catch (e) {
       if (recs.length) save({ ...d, materials: [...(d.materials || []).filter((m) => !recs.some((r) => r.id === m.id)), ...recs] });
-      setErr(`${e.message || "保存できませんでした"}${recs.length ? `。p.${s0}〜${s0 + recs.length - 1} までは保存済み` : ""}`);
+      notify(`${e.message || "保存できませんでした"}${recs.length ? `。p.${s0}〜${s0 + recs.length - 1} までは保存済み` : ""}`, "err");
     }
     setBusy("");
   };
@@ -1872,8 +1870,8 @@ function MaterialReg({ d, save }) {
   const delTargets = delPages.trim() ? (() => { const ps = new Set(parsePages(delPages)); return mine.filter((m) => ps.has(m.page)); })() : mine;
   const remove = async (targets) => {
     setBusy("削除中"); setErr(""); setMsg("");
-    try { await stRemove(targets.map((m) => m.path)); save(removeRec(d, "materials", targets.map((m) => m.id))); setMsg(`${targets.length}ページを削除しました`); setDelPages(""); }
-    catch (e) { setErr(e.message || "削除できませんでした"); }
+    try { await stRemove(targets.map((m) => m.path)); save(removeRec(d, "materials", targets.map((m) => m.id))); notify(`${targets.length}ページを削除しました`); setDelPages(""); }
+    catch (e) { notify(e.message || "削除できませんでした", "err"); }
     setBusy("");
   };
 
@@ -1894,8 +1892,6 @@ function MaterialReg({ d, save }) {
         {!isPdf && ps && <ol className="mat-files">{files.slice(0, 6).map((f, k) => (<li key={k}>p.{ps[k].join("・")}　{f.name}</li>))}{files.length > 6 && <li>…ほか {files.length - 6} 枚</li>}</ol>}</>); })()}
         <p className="ph-note">ページ番号が違うときは、上の番号を直してから保存。同じページを入れ直すと上書きされます。</p>
         <button className="btn-main" onClick={upload}>この内容で保存する</button></div>)}
-      {err && <div className="errbox"><p>{err}</p></div>}
-      {msg && <p className="msg">{msg}</p>}
     </section>
     {mine.length > 0 && (<section className="sec"><h3 className="s-h">{subject}の{kind} <span className="cnt">{mine.length}ページ</span></h3>
       <p className="lead">p.{pagesToRanges(mine.map((m) => m.page))}。ページ番号を間違えたときは、同じ番号で入れ直すと上書きされます。余分なページは下で消せます。</p>
@@ -2057,7 +2053,7 @@ function Settings({ d, save, setSync }) {
   const [dmax, setDmax] = useState(String(dailyMax())); const [opusAll, setOpusAll] = useState(allOpus());
   const [key, setKey] = useState(LS(AKEY)); const [url, setUrl] = useState(LS(SB_URL)); const [anon, setAnon] = useState(LS(SB_KEY)); const [room, setRoom] = useState(LS(SB_ROOM));
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
-  const say = (t) => { setMsg(t); setTimeout(() => setMsg(""), 4000); };
+  const say = (t) => notify(t);
   const saveKey = () => { localStorage.setItem(AKEY, key.trim()); say(key.trim() ? "APIキーを保存しました" : "削除しました"); };
   const testKey = async () => { setBusy("key"); localStorage.setItem(AKEY, key.trim()); try { await callAI("1+1は？数字だけ。", "簡潔に。", 30); say(`接続できました（${usedLabel()}）`); } catch (e) { say("失敗: " + e.message); } setBusy(""); };
   const saveSync = () => { localStorage.setItem(SB_URL, url.trim()); localStorage.setItem(SB_KEY, anon.trim()); localStorage.setItem(SB_ROOM, room.trim()); say("同期設定を保存しました"); };
@@ -2093,7 +2089,6 @@ function Settings({ d, save, setSync }) {
       <div className="q-btns"><button className="btn-sm" onClick={backup}>書き出す</button><label className="btn-sm ctr">読み込む<input type="file" accept="application/json" onChange={restore} hidden /></label></div>
       <p className="q-warn">未定着 {d.items.filter((i) => i.status === "active").length} ／ 安定 {d.items.filter((i) => i.status === "stable").length} ／ 記録 {d.tests.length} ／ 単元 {d.units.length}</p></section>
     <section className="sec"><h3 className="s-h">ホーム画面に追加</h3><p className="lead">Safariで開き、共有ボタン →「ホーム画面に追加」。印刷もSafariの共有から行えます。</p></section>
-    {msg && <p className="msg fixed">{msg}</p>}
   </div>);
 }
 
@@ -2127,7 +2122,11 @@ const CSS = `
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}
 .mpop.pop{position:absolute;z-index:5;margin:0;width:240px;max-width:92%;background:var(--card);box-shadow:0 4px 16px rgba(30,35,33,.18);cursor:default}
 .mpop.pop .q-btns{margin-top:8px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
-.msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
+.msg.naming{color:#C08A3E}
+.snacks{position:fixed;left:10px;right:10px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:30;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.snack{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:4px;font-size:12px;line-height:1.55;background:#1E2321;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.22)}
+.snack span{flex:1}.snack.err{background:#7A2D26}.snack.warn{background:#8A5A1E}
+.snack button{background:none;border:none;color:#fff;font-size:18px;line-height:1;padding:0 2px;cursor:pointer;font-family:inherit}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
 .et.bad.on{background:#A8443B;border-color:#A8443B;color:#fff}.et.why{margin-top:4px;margin-left:4px}.et.why.on{background:#C08A3E;border-color:#C08A3E}
 .chk{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--ink2);line-height:1.6;margin:6px 0 10px}.chk input{width:auto;height:auto;margin-top:3px}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}

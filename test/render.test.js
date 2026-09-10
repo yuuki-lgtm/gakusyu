@@ -411,3 +411,9 @@ test("ホーム: 数字カード（連続・未定着・安定・マス目）は
   assert.ok(/class="blk exam-line"/.test(h) && /あと\d+日/.test(h) && !/D-\d+/.test(h) && h.includes("範囲の未定着 "));
   const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(e.includes("exam-line") && e.includes(">未定着<") && e.includes("0件"), "定期テストが無ければ未定着の件数");
 });
+test("スナックバー: ok は文だけ、err は × 付き。空なら何も出さない", () => {
+  const h = render(m.Snacks, { list: [{ id: "1", text: "保存しました", kind: "ok" }, { id: "2", text: "失敗", kind: "err" }], onClose: noop }).html;
+  assert.ok(h.includes('class="snack ok"') && h.includes('class="snack err"') && (h.match(/aria-label="閉じる"/g) || []).length === 1);
+  assert.equal(render(m.Snacks, { list: [], onClose: noop }).html, "");
+  assert.doesNotThrow(() => m.notify("x", "err"), "App が無いときは何もしない");
+});
