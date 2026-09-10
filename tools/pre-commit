@@ -1,0 +1,5 @@
+#!/bin/sh
+# index.html の VERSION をコミット日時で刻む。 tools/install-hooks.sh で .git/hooks に入れる
+v=$(date +"%Y-%m-%d %H:%M")
+sed -i "s/^const VERSION = \"[^\"]*\";/const VERSION = \"$v\";/" index.html
+git add index.html

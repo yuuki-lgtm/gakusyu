@@ -9,7 +9,7 @@ const React = require("react");
 const OPEN = '<script type="text/babel" data-presets="react">';
 const EXPORTS = [
   // 定数
-  "KEY", "SUBJECTS", "HUE", "FORMATS", "ETYPES", "INT", "STABLE_LEVEL", "MKINDS", "SUBJ_CODE", "KIND_CODE",
+  "VERSION", "KEY", "SUBJECTS", "HUE", "FORMATS", "ETYPES", "INT", "STABLE_LEVEL", "MKINDS", "SUBJ_CODE", "KIND_CODE",
   // 日付など
   "today", "addDays", "diffDays", "pct", "blank",
   // 中核ロジック

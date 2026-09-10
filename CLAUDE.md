@@ -74,6 +74,9 @@
 - 既知の問題: html2canvas は oklab/oklch を読めない。対策として独立 iframe 内で描画している。Claude.ai のアーティファクト内ではまだ再現する可能性あり。**実ブラウザで確認すること。**
 - iOS Safari では `navigator.share` でPDFを共有シートへ。
 
+## バージョン
+`index.html` の `VERSION`（ヘッダー右端と設定タブに表示）は、git の pre-commit フック `tools/pre-commit` がコミット日時で自動更新する。別の環境で作業するときは一度 `sh tools/install-hooks.sh` を実行する。
+
 ## テスト
 `npm test` で全部走る（`npm install` を一度だけ。node の組み込みテストランナー、追加の枠組みなし）。**修正したら必ず通す。**
 - `test/load.js` — index.html の `<script type="text/babel">` を取り出し、Babel で JSX を変換して node で評価する。localStorage / document / window / navigator は最小のスタブ。関数やコンポーネントを足したら `EXPORTS` に名前を追加する。

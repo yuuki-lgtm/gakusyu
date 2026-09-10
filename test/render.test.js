@@ -194,3 +194,7 @@ test("デモ: 登録/項目 のページに「済」と「×なし（やった�
   const html = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html;
   assert.ok(html.includes("済"), "p.10 はやった");
 });
+test("設定にバージョンが出る。形式は日時", () => {
+  assert.match(m.VERSION, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("v" + m.VERSION));
+});
