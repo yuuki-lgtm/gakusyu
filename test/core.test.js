@@ -1282,3 +1282,28 @@ describe("類題の問題数（段階）", () => {
     } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
   });
 });
+
+describe("同じ技能の統合（積み上がり防止）", () => {
+  const it = (o) => item({ history: [], ...o });
+  test("mergeSameSkill: same のある新規は消し、既存の回数を増やして期日を翌日に。level は0、印刷は解除", () => {
+    const d = { ...m.blank(), items: [it({ id: "ex", label: "負の数のかけ算", level: 3, failCount: 1, nextDue: day(10), printedOn: day(-1), etype: "読み間違えた" }), it({ id: "n1", label: "仮" }), it({ id: "n2", label: "仮2" })] };
+    const { d: nd, merged } = m.mergeSameSkill(d, ["n1", "n2"], { n1: { same: "ex" }, n2: { label: "別" } });
+    assert.equal(merged, 1);
+    assert.deepEqual(nd.items.map((x) => x.id), ["ex", "n2"]); assert.deepEqual(nd.deleted, ["n1"]);
+    const ex = nd.items[0]; assert.deepEqual([ex.failCount, ex.level, ex.nextDue, ex.printedOn, ex.status], [2, 0, day(1), null, "active"]);
+    assert.deepEqual(ex.history[0], { d: T, r: "x", etype: "読み間違えた", merged: true });
+    assert.equal(m.mergeSameSkill(d, ["n1"], { n1: { same: "nope" } }).merged, 0, "存在しない id は無視");
+    assert.equal(m.mergeSameSkill(d, ["n1"], {}).merged, 0);
+  });
+  test("nameItems: 既存の一覧を渡し、same の番号を id に変換する", async () => {
+    const orig = globalThis.fetch; let sent = null;
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => (url.includes("/storage/") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer } : (sent = JSON.parse(opts.body), { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"items":[{"n":1,"label":"負の数のかけ算","fmt":"計算","same":2},{"n":2,"label":"新規","fmt":"計算","same":0}]}' }] }) }));
+    try {
+      const src = { path: "p.jpg", kind: "ワーク", page: 1, x: 0.2, y: 0.2 };
+      const r = await m.nameItems([{ id: "a", subject: "数学", unitId: "u", named: false, src }, { id: "b", subject: "数学", unitId: "u", named: false, src: { ...src, x: 0.8 } }], () => null, null, {}, [{ id: "e1", label: "絶対値" }, { id: "e2", label: "負の数のかけ算" }]);
+      assert.equal(r.a.same, "e2"); assert.equal(r.b.same, undefined);
+      assert.ok(JSON.stringify(sent).includes("既存の未定着項目") && JSON.stringify(sent).includes("2) 負の数のかけ算"));
+    } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+});

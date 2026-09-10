@@ -461,6 +461,14 @@ function splitListening(items, patch, listening = []) {
     return { id: uid(), subject: s0.subject, date: today(), kind: "定期", source: `返却テスト（${s0.src.kind} ${s0.src.page}${s0.src.kind === "テスト" ? "枚目" : "ページ"}）リスニング`, rows: [{ fmt: "リスニング", total, correct: total - g.length }], total, correct: total - g.length, unitIds: [], updatedAt: now() }; });
   return { ids, tests };
 }
+/* 既存の未定着項目と同じ技能と判定された新しい項目は作らず、既存の項目の落とした回数を増やして期日を翌日にする（積み上がり防止） */
+function mergeSameSkill(d, newIds, patch) {
+  const t = today(); const drop = []; const bump = {};
+  newIds.forEach((id) => { const sm = patch[id] && patch[id].same; if (sm && d.items.some((x) => x.id === sm && x.id !== id)) { drop.push(id); bump[sm] = (bump[sm] || 0) + 1; } });
+  if (!drop.length) return { d, merged: 0 };
+  const items = d.items.filter((x) => !drop.includes(x.id)).map((x) => (bump[x.id] ? { ...x, failCount: (x.failCount || 0) + bump[x.id], level: 0, nextDue: addDays(t, 1), status: "active", printedOn: null, gen: null, history: [...(x.history || []), { d: t, r: "x", etype: x.etype || ETYPES[0], merged: true }], updatedAt: now() } : x));
+  return { d: { ...d, items, deleted: [...d.deleted, ...drop] }, merged: drop.length };
+}
 /* 類題の生成結果を項目に反映する。名前が仮のままなら、AI が返した label / fmt も採用 */
 function applyGen(item, g) {
   const patch = { gen: g, genOn: today() };
@@ -596,8 +604,9 @@ async function genForItem(i, u, ctx, prev = "なし", model = null) {
   return parseJSON(t);
 }
 /* 座標つきで登録された項目に、AI が名前と形式を付ける。ページごとに1回。失敗したページは仮の名前のまま。戻り値は {id: {label, fmt, note, named}} */
-async function nameItems(items, unitOf, model = null, meta = {}) {
+async function nameItems(items, unitOf, model = null, meta = {}, existing = []) {
   const out = {}; meta.listening = [];
+  const exList = existing.slice(0, 40); const exText = exList.length ? `\n既存の未定着項目:\n${exList.map((e, k) => `${k + 1}) ${e.label}`).join("\n")}\n印の問題が既存の項目と同じ技能（後日その一点を聞き直せば同時に確かめられる）なら same にその番号を入れる。迷えば 0。` : "";
   const byPath = {}; items.filter((i) => hasPos(i.src) && !i.named).forEach((i) => { (byPath[i.src.path] = byPath[i.src.path] || []).push(i); });
   for (const path of Object.keys(byPath)) {
     const group = byPath[path]; const s0 = group[0];
@@ -605,11 +614,11 @@ async function nameItems(items, unitOf, model = null, meta = {}) {
     try {
       const b64 = await annotateB64(await stGet(path), group.map((i) => ({ x: i.src.x, y: i.src.y })));
       const qb64 = s0.src.qpath ? await stGet(s0.src.qpath) : null;
-      const t = await callAI([imgBlock(b64), ...(qb64 ? [{ type: "text", text: "【問題用紙】上の答案に対応する問題用紙" }, imgBlock(qb64)] : []), { type: "text", text: `${qb64 ? `1枚目は中学1年${s0.subject}の定期テストの答案（${s0.src.page}枚目）、2枚目はその問題用紙。答案の赤い印の位置にある答えに対応する問題を、問題用紙から探して読んでください。` : `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。`}${u ? `単元は「${u.name}」。` : ""}赤い印（${group.length > 1 ? `①〜${group.length}の番号つき` : "1つ"}）の位置にある問題を子どもが間違えました。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。` }],
-        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。音声を聞いて答えるリスニングの問題は fmt を「リスニング」にし、listening_total にこの紙のリスニングの問題数（小問ごと）を入れる（無ければ 0）。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false}],"listening_total":0}`, 1200, model);
+      const t = await callAI([imgBlock(b64), ...(qb64 ? [{ type: "text", text: "【問題用紙】上の答案に対応する問題用紙" }, imgBlock(qb64)] : []), { type: "text", text: `${qb64 ? `1枚目は中学1年${s0.subject}の定期テストの答案（${s0.src.page}枚目）、2枚目はその問題用紙。答案の赤い印の位置にある答えに対応する問題を、問題用紙から探して読んでください。` : `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。`}${u ? `単元は「${u.name}」。` : ""}赤い印（${group.length > 1 ? `①〜${group.length}の番号つき` : "1つ"}）の位置にある問題を子どもが間違えました。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。${exText}` }],
+        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。音声を聞いて答えるリスニングの問題は fmt を「リスニング」にし、listening_total にこの紙のリスニングの問題数（小問ごと）を入れる（無ければ 0）。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false,"same":0}],"listening_total":0}`, 1400, model);
       const parsed = parseJSON(t); const rs = parsed.items || [];
       meta.listening.push({ path, subject: s0.subject, kind: s0.src.kind, page: s0.src.page, total: Number(parsed.listening_total) || 0 });
-      group.forEach((i, k) => { const r = rs.find((x) => Number(x.n) === k + 1) || rs[k]; if (r && r.label) out[i.id] = { label: r.label, fmt: FORMATS.includes(r.fmt) ? r.fmt : "", note: r.summary || "", named: true, noWhy: r.rote === true }; });
+      group.forEach((i, k) => { const r = rs.find((x) => Number(x.n) === k + 1) || rs[k]; if (r && r.label) { const sm = Number(r.same) > 0 && exList[Number(r.same) - 1] ? exList[Number(r.same) - 1].id : null; out[i.id] = { label: r.label, fmt: FORMATS.includes(r.fmt) ? r.fmt : "", note: r.summary || "", named: true, noWhy: r.rote === true, ...(sm ? { same: sm } : {}) }; } });
     } catch (e) { /* 仮の名前のまま。類題生成のときにもう一度試す */ }
   }
   return out;
@@ -1555,11 +1564,13 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     save(applyAutoProgress(markDone({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }, taps.map((t) => t.path))));
     const spread = add.filter((i) => i.nextDue !== addDays(today(), 1)).length;
     setTaps([]); setMsg(`${add.length}件を登録しました。${spread ? `多いので ${spread} 件は明後日以降に分散しました。` : "明日の「今日」に出ます"}${hasKey() ? "。項目名をAIが付けています…" : ""}`);
-    if (hasKey()) { setNaming(true); const meta = {}; nameItems(add, (id) => us.find((u) => u.id === id), null, meta).then((patch) => {
+    if (hasKey()) { setNaming(true); const meta = {}; const existing = d.items.filter((x) => x.subject === subject && x.status === "active" && x.named !== false).map((x) => ({ id: x.id, label: x.label }));
+      nameItems(add, (id) => us.find((u) => u.id === id), null, meta, existing).then((patch) => {
       const n = Object.keys(patch).length;
       const { ids: lis, tests: lisTests } = splitListening(add, patch, meta.listening);
-      if (n) save((cur) => ({ ...cur, items: cur.items.filter((x) => !lis.includes(x.id)).map((x) => (patch[x.id] ? { ...x, ...patch[x.id], updatedAt: now() } : x)), tests: [...cur.tests, ...lisTests], deleted: [...cur.deleted, ...lis] }));
-      setMsg(n ? `${n - lis.length}件に項目名を付けました${lis.length ? `。リスニング ${lis.length}問は紙で反復できないので、未定着には入れず形式の成績（分析）に記録しました` : ""}` : "項目名を付けられませんでした。類題を作るときにもう一度試します"); setNaming(false); setTimeout(() => setMsg(""), 7000); }); }
+      let merged = 0;
+      if (n) save((cur) => { const withNames = { ...cur, items: cur.items.filter((x) => !lis.includes(x.id)).map((x) => (patch[x.id] ? { ...x, ...patch[x.id], same: undefined, updatedAt: now() } : x)), tests: [...cur.tests, ...lisTests], deleted: [...cur.deleted, ...lis] }; const r = mergeSameSkill(withNames, add.map((i) => i.id).filter((id) => !lis.includes(id)), patch); merged = r.merged; return r.d; });
+      setMsg(n ? `${n - lis.length - merged}件に項目名を付けました${merged ? `。既存の項目と同じ技能 ${merged} 件は統合（回数を増やして明日に）` : ""}${lis.length ? `。リスニング ${lis.length}問は紙で反復できないので、未定着には入れず形式の成績（分析）に記録しました` : ""}` : "項目名を付けられませんでした。類題を作るときにもう一度試します"); setNaming(false); setTimeout(() => setMsg(""), 7000); }); }
     else setTimeout(() => setMsg(""), 4000);
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
