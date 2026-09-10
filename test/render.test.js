@@ -150,25 +150,29 @@ test("デモ: テスト/作る に自動で添付される教材が出る。空�
   assert.ok(html.includes("添付される教材：数学 ワーク p.10–12、教科書 p.12 ／ 英語 教科書 p.8 ／ 社会 なし"), html.match(/添付される教材：[^<]*/)?.[0]);
   assert.ok(!render(m.WeekTab, { d: F.empty(), save: noop, initial: "make" }).html.includes("添付される教材"));
 });
-test("デモ: 登録/項目 は教材から選ぶ画面が既定。ページの単元が出る。空データは写真だけ", () => {
+test("デモ: 登録/項目 はページで×をタップする画面が既定。ページの単元が出る。空データは写真だけ", () => {
   const { html } = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" });
-  assert.ok(html.includes("教材から選ぶ") && html.includes("答案の写真から"));
+  assert.ok(html.includes("ページで×をタップ") && html.includes("答案の写真から"));
   assert.ok(html.includes("正負の数"), "p.10 はワーク p.4-11 の単元");
-  assert.ok(html.includes("問題番号"));
-  assert.ok(!html.includes("答案の写真から候補を出す"), "教材モードでは写真ボタンを出さない");
+  assert.ok(html.includes("×だった問題をタップ"));
+  assert.ok(!html.includes("答案の写真から候補を出す"), "タップの画面では写真ボタンを出さない");
   const e = render(m.RegTab, { d: F.empty(), save: noop, initial: "item" }).html;
-  assert.ok(!e.includes("教材から選ぶ") && e.includes("答案の写真から候補を出す"));
+  assert.ok(!e.includes("ページで×をタップ") && e.includes("答案の写真から候補を出す"));
 });
-test("MatPicker: 単元と対応しないページはその旨を出す。教材が無ければ何も出さない", () => {
+test("TapReg: 単元と対応しないページはその旨を出す。教材が無ければ何も出さない", () => {
   const d = F.demo(); d.units = d.units.map((u) => ({ ...u, wbPages: "" }));
-  const { html, errors } = render(m.MatPicker, { d, subject: "数学", us: d.units.filter((u) => u.subject === "数学"), onResult: noop });
+  const { html, errors } = render(m.TapReg, { d, subject: "数学", us: d.units.filter((u) => u.subject === "数学"), save: noop, fallbackUnitId: "" });
   assert.equal(errors.length, 0, errors.join(", "));
   assert.ok(html.includes("単元と未対応"));
-  assert.equal(render(m.MatPicker, { d, subject: "社会", us: [], onResult: noop }).html, "");
+  assert.equal(render(m.TapReg, { d, subject: "社会", us: [], save: noop }).html, "");
+});
+test("デモ: 未定着一覧で誤答の種類を変えられる", () => {
+  const { html } = render(m.RegTab, { d: F.demo(), save: noop, initial: "list" });
+  assert.ok(html.includes("et-sel") && html.includes("ワーク p.11"));
 });
 test("デモ: 今日のカードに元の問題（教材のページと番号）が出る", () => {
   const { html } = render(m.TodayTab, { d: F.demo(), save: noop, initial: "cards" });
-  assert.ok(html.includes("元 ワーク p.11 「3」"));
+  assert.ok(html.includes("元 ワーク p.11"));
 });
 test("デモ: 用紙のプレビューは教材ページの枠を出し、画像は持たない", () => {
   const p = F.demo().papers.find((x) => x.id === "p1");

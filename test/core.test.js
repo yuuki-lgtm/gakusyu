@@ -571,3 +571,42 @@ describe("PDF の組み方（問題を先に、解答は最後、両面印刷で
     assert.equal(m.pdfName([{ subject: "数学" }, { subject: "英語" }]), `確認テスト_${T}_2教科.pdf`);
   });
 });
+
+describe("×のタップ登録（座標だけ保存）", () => {
+  test("tapHit: 表示上 22px 以内で最も近い印。無ければ -1", () => {
+    const marks = [{ x: 0.5, y: 0.5 }, { x: 0.52, y: 0.5 }];
+    assert.equal(m.tapHit(marks, 0.5, 0.5, 400, 600), 0);
+    assert.equal(m.tapHit(marks, 0.525, 0.5, 400, 600), 1);
+    assert.equal(m.tapHit(marks, 0.5, 0.55, 400, 600), -1, "縦 30px 離れている");
+    assert.equal(m.tapHit([], 0.5, 0.5, 400, 600), -1);
+  });
+  test("marksOn: そのページに登録済みで座標のある項目だけ", () => {
+    const d = F.demo();
+    assert.deepEqual(m.marksOn(d, "fam-demo/math/wb/11.jpg").map((i) => i.id), ["i1"]);
+    assert.deepEqual(m.marksOn(d, "fam-demo/math/wb/10.jpg"), []);
+    assert.deepEqual(m.marksOn({ items: [{ src: { path: "p", q: "3" } }] }, "p"), [], "番号だけの旧データは印にしない");
+  });
+  test("tapsToItems: 仮の名前・「知らなかった」・翌日・座標つき src。単元はページから、無ければ指定の単元", () => {
+    const d = F.demo(); const us = d.units.filter((u) => u.subject === "数学");
+    const taps = [{ path: "fam-demo/math/wb/10.jpg", kind: "ワーク", page: 10, x: 0.2, y: 0.3 }, { path: "fam-demo/math/wb/10.jpg", kind: "ワーク", page: 10, x: 0.6, y: 0.3 }, { path: "fam-demo/math/wb/99.jpg", kind: "ワーク", page: 99, x: 0.1, y: 0.1 }];
+    const its = m.tapsToItems(taps, "数学", us, "u3");
+    assert.equal(its.length, 3);
+    assert.deepEqual(its.map((i) => i.label), ["ワーク p.10 の×（1）", "ワーク p.10 の×（2）", "ワーク p.99 の×（1）"]);
+    assert.deepEqual(its.map((i) => i.unitId), ["u1", "u1", "u3"]);
+    const i = its[0];
+    assert.deepEqual([i.subject, i.etype, i.named, i.fmt, i.level, i.failCount, i.status, i.nextDue], ["数学", "知らなかった", false, "", 0, 1, "active", day(1)]);
+    assert.deepEqual(i.src, { path: "fam-demo/math/wb/10.jpg", kind: "ワーク", page: 10, x: 0.2, y: 0.3 });
+    assert.deepEqual(i.history, [{ d: T, r: "x", etype: "知らなかった" }]);
+    assert.ok(i.id && i.updatedAt && i.createdOn === T);
+    assert.ok(m.tapsToItems([], "数学", us).length === 0);
+  });
+  test("座標つき src の項目は applyJudgment・printSet・genToPaper を通る", () => {
+    const [i] = m.tapsToItems([{ path: "p", kind: "ワーク", page: 1, x: 0.5, y: 0.5 }], "数学", []);
+    const j = m.applyJudgment(i, "o"); assert.equal(j.level, 1);
+    assert.equal(m.printSet({ ...m.blank(), items: [i] }).length, 1);
+    const paper = m.genToPaper([{ ...i, gen: { problems: [{ q: "q", a: "a" }], why: "w" } }], () => null);
+    assert.equal(paper.questions.length, 2);
+    assert.equal(m.srcLabel(i.src), "ワーク p.1");
+    assert.equal(m.srcLabel({ path: "p", kind: "ワーク", page: 2, q: "3" }), "ワーク p.2 「3」");
+  });
+});

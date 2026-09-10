@@ -501,7 +501,7 @@ function TodayCards({ d, save }) {
 const JUDGE = [["x", "できなかった", "ng"], ["o", "解けた", "mid"], ["oo", "説明もできた", "okb"]];
 
 /* 類題生成の入力。元の問題（教材ページ）があれば画像を先に付ける */
-const srcLabel = (s) => (s && s.path ? `${s.kind} p.${s.page} 「${s.q}」` : "");
+const srcLabel = (s) => (s && s.path ? `${s.kind} p.${s.page}${s.q ? ` 「${s.q}」` : ""}` : "");
 function genContent(item, b64, text) {
   if (!b64 || !item.src) return text;
   return [{ type: "text", text: `【元の問題】${srcLabel(item.src)} — 子どもが落とした問題。同じ考え方・同じ形式を問い、数値や設定は変える。問題文をそのまま写さない。` }, imgBlock(b64), { type: "text", text }];
@@ -1213,49 +1213,83 @@ function UnitReg({ d, save }) {
   </>);
 }
 
-/* 教材のページを見ながら問題番号を指定し、AI に読ませて項目にする */
-function MatPicker({ d, subject, us, onResult }) {
+/* ---- ×の登録：教材のページを見て、×だった問題をタップで印を付け、まとめて登録する ---- */
+/* 印の当たり判定。表示上の距離（px）が近い印の添字、無ければ -1 */
+function tapHit(marks, x, y, w, h, r = 22) {
+  let best = -1, bd = r;
+  marks.forEach((m, k) => { const dx = (m.x - x) * w, dy = (m.y - y) * h; const dd = Math.sqrt(dx * dx + dy * dy); if (dd < bd) { bd = dd; best = k; } });
+  return best;
+}
+/* そのページに登録済みの項目（座標つき） */
+const marksOn = (d, path) => (d.items || []).filter((i) => i.src && i.src.path === path && typeof i.src.x === "number");
+/* タップ位置を未定着項目にする。名前は仮（AIが後で付ける）。誤答の種類は「知らなかった」 */
+function tapsToItems(taps, subject, us, fallbackUnitId = "") {
+  const perPage = {};
+  return taps.map((t) => {
+    const u = unitForPage(us, t.kind, t.page);
+    const k = (perPage[t.path] = (perPage[t.path] || 0) + 1);
+    return { id: uid(), subject, unitId: u ? u.id : fallbackUnitId || "", label: `${t.kind} p.${t.page} の×（${k}）`, named: false, note: "", fmt: "", etype: ETYPES[0], createdOn: today(),
+      history: [{ d: today(), r: "x", etype: ETYPES[0] }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", src: { path: t.path, kind: t.kind, page: t.page, x: t.x, y: t.y }, updatedAt: now() };
+  });
+}
+
+function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const kinds = MKINDS.filter((k) => matsOf(d, subject, k).length);
   const [kind, setKind] = useState(kinds[0] || MKINDS[0]);
   const ms = matsOf(d, subject, kinds.includes(kind) ? kind : kinds[0]);
   const pages = ms.map((m) => m.page);
   const [page, setPage] = useState(pages[0] || 1);
-  const [qn, setQn] = useState("");
   const [img, setImg] = useState(null); const [imgErr, setImgErr] = useState("");
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
-  const sec = useElapsed(busy);
+  const [taps, setTaps] = useState([]); // 未登録の印（ページをまたいで持つ）
+  const [sel, setSel] = useState(null); // 登録済みの印をタップしたときの項目 id
+  const [msg, setMsg] = useState("");
   const cur = ms.find((m) => m.page === page) || null;
   const unit = unitForPage(us, kind, page);
-  useEffect(() => { setKind(kinds[0] || MKINDS[0]); }, [subject]);
+  const here = taps.filter((t) => cur && t.path === cur.path);
+  const old = cur ? marksOn(d, cur.path) : [];
+  const selItem = sel ? d.items.find((i) => i.id === sel) : null;
+  useEffect(() => { setKind(kinds[0] || MKINDS[0]); setTaps([]); setSel(null); }, [subject]);
   useEffect(() => { if (pages.length && !pages.includes(page)) setPage(pages[0]); }, [kind, subject]);
-  useEffect(() => { let alive = true; setImg(null); setImgErr(""); if (!cur) return;
+  useEffect(() => { let alive = true; setImg(null); setImgErr(""); setSel(null); if (!cur) return;
     stGet(cur.path).then((b64) => { if (alive) setImg(`data:image/jpeg;base64,${b64}`); }).catch((e) => { if (alive) setImgErr(e.message || "画像を読めません"); });
     return () => { alive = false; }; }, [cur && cur.path]);
   const step = (dir) => { const i = pages.indexOf(page); const n = pages[i + dir]; if (n !== undefined) setPage(n); };
-  const read = async (model = null) => {
-    if (!cur) { setErr("このページは取り込まれていません"); return; }
-    if (!qn.trim()) { setErr("問題番号を入れてください"); return; }
-    setBusy(true); setErr("");
-    try {
-      const b64 = await stGet(cur.path);
-      const t = await callAI([imgBlock(b64), { type: "text", text: `添付は中学1年${subject}の${kind} p.${page}です。${unit ? `単元は「${unit.name}」。` : ""}このページの「${qn.trim()}」の問題を読み取り、この問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。` }],
-        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。該当の問題が見つからなければ found を false に。JSONのみ: {"found":true,"label":"","summary":"","fmt":""}`, 800, model);
-      const r = parseJSON(t);
-      if (r.found === false || !r.label) throw new Error(`p.${page} に「${qn.trim()}」が見つかりません。番号の書き方を変えてみてください`);
-      onResult({ label: r.label, summary: r.summary || "", fmt: FORMATS.includes(r.fmt) ? r.fmt : FORMATS[0], unitId: unit ? unit.id : "", src: { path: cur.path, kind, page, q: qn.trim() } });
-      setQn("");
-    } catch (e) { setErr(e.message || "読み取れませんでした"); }
-    setBusy(false);
+  const onTap = (e) => {
+    if (!cur) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    const hn = tapHit(here, x, y, r.width, r.height);
+    if (hn >= 0) { const t = here[hn]; setTaps((ts) => ts.filter((z) => z !== t)); setSel(null); return; } // もう一度タップで取り消し
+    const ho = tapHit(old.map((i) => i.src), x, y, r.width, r.height);
+    if (ho >= 0) { setSel(old[ho].id === sel ? null : old[ho].id); return; }
+    setSel(null); setTaps((ts) => [...ts, { path: cur.path, kind, page, x, y }]);
   };
+  const commit = () => {
+    if (!taps.length) return;
+    const add = tapsToItems(taps, subject, us, fallbackUnitId);
+    save({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } });
+    setTaps([]); setMsg(`${add.length}件を登録しました。明日の「今日」に出ます`); setTimeout(() => setMsg(""), 4000);
+    onRegistered && onRegistered(add);
+  };
+  const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
   if (!kinds.length) return null;
+  const byPage = {}; taps.forEach((t) => { byPage[`${t.kind} p.${t.page}`] = (byPage[`${t.kind} p.${t.page}`] || 0) + 1; });
   return (<div className="matpick">
     <div className="seg sm">{kinds.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
     <div className="pnav"><button className="btn-sm" onClick={() => step(-1)} disabled={pages.indexOf(page) <= 0}>←</button>
       <span className="pcur">p.<input className="pnum" type="number" inputMode="numeric" value={page} onChange={(e) => setPage(parseInt(e.target.value, 10) || 0)} /> {unit ? unit.name : <em className="nv">単元と未対応</em>}</span>
       <button className="btn-sm" onClick={() => step(1)} disabled={pages.indexOf(page) < 0 || pages.indexOf(page) >= pages.length - 1}>→</button></div>
-    {cur ? (img ? <img className="mimg" src={img} alt={`${kind} p.${page}`} /> : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
-    <div className="qn-row"><input value={qn} onChange={(e) => setQn(e.target.value)} placeholder="問題番号（例: 3、(2)、大問2の(1)）" onKeyDown={(e) => { if (e.key === "Enter") read(); }} /><button className="btn-sm" onClick={() => read()} disabled={busy || !cur}>{busy ? `${sec}秒` : "読む"}</button></div>
-    {err && <div className="errbox"><p>{err}</p><button className="btn-sm" onClick={() => read(FALLBACK)}>Sonnet 4.6 で読む</button></div>}
+    {cur ? (img ? (<div className="mwrap" onClick={onTap}><img src={img} alt={`${kind} p.${page}`} draggable="false" />
+        {old.map((i) => (<span key={i.id} className={"mk-old" + (i.status === "stable" ? " stable" : "") + (i.id === sel ? " sel" : "")} style={{ left: `${i.src.x * 100}%`, top: `${i.src.y * 100}%` }} />))}
+        {here.map((t, k) => (<span key={k} className="mk-new" style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }} />))}
+      </div>) : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
+    <p className="ph-note">×だった問題をタップ。もう一度タップで取り消し。薄い印は登録済みで、タップすると状態が見えます。</p>
+    {selItem && (<div className="mpop"><div className="c-label">{selItem.label}</div>
+      <div className="ir-meta">{selItem.status === "stable" ? "安定" : "未定着"} · {selItem.failCount}回 · 間隔{INT[selItem.level || 0]}日 · 次回 {selItem.nextDue.slice(5)}{selItem.printedOn ? " · 印刷済み" : ""}</div>
+      <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selItem.etype === e ? " on" : "")} onClick={() => setEtype(selItem, e)}>{e}</button>))}</div></div>)}
+    {taps.length > 0 && (<><p className="tap-sum">印 {taps.length}（{Object.entries(byPage).map(([k, n]) => `${k}: ${n}`).join("、")}）</p>
+      <button className="btn-main" onClick={commit}>まとめて登録（{taps.length}件）</button></>)}
+    {msg && <p className="msg">{msg}</p>}
   </div>);
 }
 
@@ -1265,34 +1299,31 @@ function ItemReg({ d, save }) {
   const [fmt, setFmt] = useState(FORMATS[0]); const [etype, setEtype] = useState(ETYPES[0]);
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false); const [cands, setCands] = useState(null); const [err, setErr] = useState("");
   const [ck, setCk] = useState({}); const [cet, setCet] = useState({});
-  const [src, setSrc] = useState(null); // 教材から選んだ問題 {path, kind, page, q}
   const hasMat = MKINDS.some((k) => matsOf(d, subject, k).length);
   const [from, setFrom] = useState(hasMat ? "mat" : "photo");
-  useEffect(() => { setFrom(hasMat ? "mat" : "photo"); setSrc(null); }, [subject, hasMat]);
+  useEffect(() => { setFrom(hasMat ? "mat" : "photo"); }, [subject, hasMat]);
   const sec = useElapsed(busy);
   const us = d.units.filter((u) => u.subject === subject);
-  const fromMat = ({ label: l, summary, fmt: f, unitId: u, src: s }) => { setLabel(l); setNote(summary); setFmt(f); if (u) setUnitId(u); setSrc(s); setMsg("下の項目を確認し、誤答の種類を選んで追加"); setTimeout(() => setMsg(""), 4000); };
   const commitAll = () => { if (!unitId) { setMsg("単元を選んでください"); return; }
     const add = (cands || []).filter((_, i) => ck[i]).map((c, i) => ({ id: uid(), subject, unitId, label: c.label, note: c.note || "", fmt: FORMATS.includes(c.fmt) ? c.fmt : FORMATS[0], etype: cet[i] || (ETYPES.includes(c.etype) ? c.etype : ETYPES[0]), createdOn: today(), history: [{ d: today(), r: "x", etype: cet[i] || c.etype || ETYPES[0] }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }));
     if (!add.length) return; save({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }); setCands(null); setMsg(`${add.length}件を追加しました。明日の「今日」に出ます`); setTimeout(() => setMsg(""), 3000); };
   useEffect(() => { setUnitId(us.length ? us[us.length - 1].id : ""); }, [subject, d.units.length]);
   const add = () => { if (!label.trim() || !unitId) { setMsg("単元と項目を入れてください"); return; }
-    save({ ...d, items: [...d.items, { id: uid(), subject, unitId, label: label.trim(), note: note.trim(), fmt, etype, createdOn: today(), history: [{ d: today(), r: "x", etype }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", src: src || undefined, updatedAt: now() }], log: { ...d.log, [today()]: true } });
-    setLabel(""); setNote(""); setSrc(null); setMsg("追加しました。明日の「今日」に出ます"); setTimeout(() => setMsg(""), 2000); };
+    save({ ...d, items: [...d.items, { id: uid(), subject, unitId, label: label.trim(), note: note.trim(), fmt, etype, createdOn: today(), history: [{ d: today(), r: "x", etype }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }], log: { ...d.log, [today()]: true } });
+    setLabel(""); setNote(""); setMsg("追加しました。明日の「今日」に出ます"); setTimeout(() => setMsg(""), 2000); };
   const extract = async (f) => { setBusy(true); setErr(""); setCands(null);
     try { const b64 = await compressImage(f, 1400); const un = us.find((u) => u.id === unitId)?.name;
       const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年生の${subject}の答案です。${un ? "単元は「" + un + "」。" : ""}間違っている設問と空欄の設問について「何が身についていないか」を項目として書き出してください。` }],
         `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。noteは答案から読める誤り方。fmtは ${FORMATS.join("／")} から。etypeは ${ETYPES.join("／")} から（空欄なら時間切れ・空欄）。判読できない設問は除外。最大10件。JSONのみ: {"items":[{"label":"","note":"","fmt":"","etype":""}]}`, 2400);
       const cs = parseJSON(t).items || []; setCands(cs); const c = {}, e = {}; cs.forEach((x, i) => { c[i] = true; e[i] = ETYPES.includes(x.etype) ? x.etype : ETYPES[0]; }); setCk(c); setCet(e); } catch (e) { setErr(e.message || "読み取れませんでした"); } setBusy(false); };
   return (<section className="sec">
-    <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて問題番号を入れれば、AIが問題を読んで項目にします。翌日の「今日」に出ます。" : "その日のワークの×を、その夜に撮って登録します。翌日の「今日」に出すためです。「登録→教材」でワークを取り込んでおくと、写真を撮らずにページと番号で登録できます。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
+    <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて×だった問題をタップし、最後に「まとめて登録」。項目名はAIがあとで付けます。翌日の「今日」に出ます。" : "その日のワークの×を、その夜に登録します。翌日の「今日」に出すためです。「登録→教材」でワークを取り込んでおくと、ページを開いて×をタップするだけで登録できます。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
     <SubjRow value={subject} onChange={setSubject} />
-    {hasMat && <div className="seg sm"><button className={from === "mat" ? "on" : ""} onClick={() => setFrom("mat")}>教材から選ぶ</button><button className={from === "photo" ? "on" : ""} onClick={() => setFrom("photo")}>答案の写真から</button></div>}
-    {from === "mat" && hasMat && <MatPicker d={d} subject={subject} us={us} onResult={fromMat} />}
-    <Fld label="単元"><select value={unitId} onChange={(e) => setUnitId(e.target.value)}><option value="">—</option>{us.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</select></Fld>
+    {hasMat && <div className="seg sm"><button className={from === "mat" ? "on" : ""} onClick={() => setFrom("mat")}>ページで×をタップ</button><button className={from === "photo" ? "on" : ""} onClick={() => setFrom("photo")}>答案の写真から</button></div>}
+    {from === "mat" && hasMat && <TapReg d={d} save={save} subject={subject} us={us} fallbackUnitId={unitId} />}
+    <Fld label={from === "mat" && hasMat ? "単元（ページが単元と対応していないときに使う）" : "単元"}><select value={unitId} onChange={(e) => setUnitId(e.target.value)}><option value="">—</option>{us.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</select></Fld>
     {from === "photo" && <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "答案の写真から候補を出す"}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) extract(f); }} /></label>}
     {err && <div className="errbox"><p>{err}</p></div>}
-    {src && <p className="src-n">元の問題：{src.kind} p.{src.page} 「{src.q}」<button className="btn-x" onClick={() => setSrc(null)}>×</button></p>}
     {cands && (<>
       <p className="ph-note">読み取った候補。内容を確認し、誤答の種類を選んで、まとめて登録。手順1で解けたなら「分かっていたが間違えた」、解答を見て再現できた・できなかったなら「知らなかった」。</p>
       {cands.length === 0 && <p className="empty">候補なし。</p>}
@@ -1303,7 +1334,7 @@ function ItemReg({ d, save }) {
       <details className="det"><summary>候補を1つ選んで手で直す</summary>{cands.map((c, i) => (<button className="cand" key={i} onClick={() => { setLabel(c.label); setNote(c.note || ""); if (FORMATS.includes(c.fmt)) setFmt(c.fmt); if (ETYPES.includes(c.etype)) setEtype(c.etype); }}><span className="cd-l">{c.label}</span></button>))}</details>
     </>)}
     <Fld label="項目"><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="例：係数が分数の一次方程式" /></Fld>
-    <Fld label={src ? "問題の要約・どう間違えたか（任意）" : "どう間違えたか（任意）"}><input value={note} onChange={(e) => setNote(e.target.value)} /></Fld>
+    <Fld label="どう間違えたか（任意）"><input value={note} onChange={(e) => setNote(e.target.value)} /></Fld>
     <div className="grid2"><Fld label="形式"><select value={fmt} onChange={(e) => setFmt(e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select></Fld><Fld label="誤答の種類"><select value={etype} onChange={(e) => setEtype(e.target.value)}>{ETYPES.map((f) => (<option key={f}>{f}</option>))}</select></Fld></div>
     <button className="btn-main" onClick={add}>未定着リストに追加</button>{msg && <p className="msg">{msg}</p>}
   </section>);
@@ -1314,7 +1345,8 @@ function ItemList({ d, save }) {
   return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
-        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{i.etype ? ` · ${i.etype}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div></div><button className="btn-x" onClick={() => save({ ...d, items: d.items.filter((x) => x.id !== i.id), deleted: [...d.deleted, i.id] })}>×</button></div>); })}</div>); })}</>);
+        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
+          <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select></div><button className="btn-x" onClick={() => save({ ...d, items: d.items.filter((x) => x.id !== i.id), deleted: [...d.deleted, i.id] })}>×</button></div>); })}</div>); })}</>);
 }
 
 /* ---- 教材（ワーク・教科書）の取り込み ---- */
@@ -1584,6 +1616,10 @@ const CSS = `
 .mat-sum{font-size:12px;color:var(--ink2);line-height:1.8;margin:-4px 0 10px}.mat-sum b{color:var(--ink);margin-right:4px}
 .del-ask{background:#FBF3F2;border:1px solid #E4C4C0;border-radius:3px;padding:10px}.del-ask p{font-size:12px;color:#8E3830;margin:0 0 8px;line-height:1.6}.btn-sm.danger{background:#A8443B;border-color:#A8443B;color:#fff;font-weight:700}
 .mat-pre{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;font-size:12px;line-height:1.6}.mat-files{margin:6px 0 0;padding-left:18px;font-size:11px;color:var(--ink3)}
+.mwrap{position:relative;display:block;user-select:none;-webkit-user-select:none;cursor:crosshair}.mwrap img{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff;-webkit-touch-callout:none}
+.mk-new,.mk-old{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel{box-shadow:0 0 0 3px #C08A3E}
+.mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
+.root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}
 .matpick{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}.matpick .seg{margin-bottom:8px}.qn-row{display:flex;gap:6px;margin-top:8px}.qn-row input{flex:1}
 .src-n{font-size:11px;color:var(--ink2);display:flex;align-items:center;gap:4px;margin:0 0 8px;padding:6px 8px;background:#EEF3F6;border-left:2px solid #3D6B8E}.src-n .btn-x{margin-left:auto}
 .mimg{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff}.pnav{display:flex;align-items:center;gap:6px;margin:6px 0 8px}.pnav .btn-sm{flex:0 0 auto}.pnav .pcur{flex:1;text-align:center;font-size:12px;color:var(--ink2)}.root input.pnum{width:72px;text-align:center}
