@@ -320,3 +320,8 @@ test("設定: 「最新版に更新（再読み込み）」がある", () => {
 test("今日/採点: 「全部を印刷に戻す」がある", () => {
   assert.ok(render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade" }).html.includes("全部を印刷に戻す（判定しない）"));
 });
+test("今日/印刷: 今日作った類題がある項目に「作り直す」が出る", () => {
+  const d = F.demo(); d.items = d.items.map((i) => (i.id === "i5" ? { ...i, gen: { problems: [{ q: "q", a: "a" }, { q: "q", a: "a" }], why: "w" }, genOn: F.T } : i));
+  const html = render(m.TodayTab, { d, save: noop, initial: "print" }).html;
+  assert.ok(html.includes("類題あり") && html.includes(">作り直す</button>"));
+});

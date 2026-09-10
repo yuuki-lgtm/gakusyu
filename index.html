@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 14:22"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 14:27"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1040,7 +1040,8 @@ function TodayMake({ d, save }) {
   const toggleSel = (id) => setSel((x) => { const n = new Set(x); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [log, setLog] = useState([]);
   const sec = useElapsed(busy);
-  const fresh = (i) => !!(i.gen && i.gen.problems && i.genOn === today() && i.gen.problems.length === (i.fmt === "長文読解" ? Math.min(2, problemCount(i)) : problemCount(i)));
+  const [redo, setRedo] = useState(() => new Set()); // 「作り直す」を押した項目
+  const fresh = (i) => !redo.has(i.id) && !!(i.gen && i.gen.problems && i.genOn === today() && i.gen.problems.length === (i.fmt === "長文読解" ? Math.min(2, problemCount(i)) : problemCount(i)));
   const make = async () => {
     setErr(""); setLog([]);
     if (!hasKey()) { setErr("APIキーが未設定です。「設定」タブで登録してください。"); return; }
@@ -1080,7 +1081,7 @@ function TodayMake({ d, save }) {
     <section className="sec">
       <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
       {cands.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "明日の分はありません。"}</p>
-        : (<>{cands.map((i, k) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? " · 類題あり" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}
+        : (<>{cands.map((i, k) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? <> · 類題あり <button className="lnk" onClick={(e) => { e.preventDefault(); setRedo((r) => new Set([...r, i.id])); }}>作り直す</button></> : redo.has(i.id) ? " · 作り直す" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}
           <p className="ph-note">チェック {set.length} 件（{set.reduce((a, i) => a + problemCount(i), 0)} 問）、繰り越し {cands.length - set.length} 件。</p>
           <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `この内容で作る（${set.length}件 → PDF）`}</button></>)}
       {err && <div className="errbox"><p>{err}</p></div>}
