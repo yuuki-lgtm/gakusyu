@@ -1382,3 +1382,28 @@ describe("モデルの使い分け", () => {
     } finally { globalThis.fetch = orig; ["anthropic_api_key", "sb_url", "sb_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
   });
 });
+
+describe("検算（数学・理科の計算、英語の文法・英作文）", () => {
+  test("needsCheck の対象", () => {
+    assert.equal(m.needsCheck({ subject: "数学", fmt: "計算" }), true); assert.equal(m.needsCheck({ subject: "理科", fmt: "計算" }), true);
+    assert.equal(m.needsCheck({ subject: "英語", fmt: "英作文" }), true); assert.equal(m.needsCheck({ subject: "英語", fmt: "知識・用語" }), true);
+    assert.equal(m.needsCheck({ subject: "理科", fmt: "知識・用語" }), false); assert.equal(m.needsCheck({ subject: "社会", fmt: "計算" }), false); assert.equal(m.needsCheck({ subject: "国語", fmt: "記述・作文" }), false);
+    assert.equal(m.needsCheck({ subject: "数学", fmt: "図・作図・グラフ" }), false);
+  });
+  test("verifyGen: 自力で解かせて一致を見る。一致しない問番号を返す", async () => {
+    const orig = globalThis.fetch; let sent = null; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"results":[{"n":1,"ok":true},{"n":2,"ok":false,"answer":"−16"}]}' }] }) }; };
+    try {
+      const r = await m.verifyGen({ subject: "数学", fmt: "計算" }, { problems: [{ q: "3×4", a: "12" }, { q: "(−2)×8", a: "16" }, { q: "1+1", a: "2" }] });
+      assert.deepEqual(r, { ok: false, bad: [2, 3] }, "返ってこない問3も不一致扱い");
+      assert.ok(JSON.stringify(sent).includes("問2: (−2)×8") && sent.model === m.SONNET);
+      assert.deepEqual(await m.verifyGen({ subject: "数学" }, { problems: [] }), { ok: false, bad: [] });
+    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+  test("blank/mergeData に genCount・badCount（大きい方を採用）", () => {
+    assert.equal(m.blank().genCount, 0); assert.equal(m.blank().badCount, 0);
+    const r = m.mergeData({ ...m.blank(), genCount: 5, badCount: 1 }, { ...m.blank(), genCount: 3, badCount: 2 });
+    assert.equal(r.genCount, 5); assert.equal(r.badCount, 2);
+    assert.equal(m.mergeData({ v: 3 }, { v: 3 }).genCount, 0);
+  });
+});

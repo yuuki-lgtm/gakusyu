@@ -202,7 +202,7 @@ const Dot = ({ s }) => <span className="dot" style={{ background: HUE[s] }} />;
 /* ---- 空データと移行 ---- */
 /* レコードを消して墓標（deleted）に残す。同期で他の端末からも消えるように */
 const removeRec = (d, key, ids) => { const set = new Set([].concat(ids)); return { ...d, [key]: d[key].filter((x) => !set.has(x.id)), deleted: [...d.deleted, ...set] }; };
-const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], papers: [], log: {}, exams: [], writing: [], materials: [], backupOn: null, deleted: [] });
+const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], papers: [], log: {}, exams: [], writing: [], materials: [], backupOn: null, genCount: 0, badCount: 0, deleted: [] });
 /* v2 → v3 移行。既存データを引き継ぐ */
 function migrate(d) {
   if (!d) return blank();
@@ -229,7 +229,7 @@ async function pushRemote(data) { await sbFetch("state", { method: "POST", heade
 function mergeData(a, b) {
   const del = new Set([...(a.deleted || []), ...(b.deleted || [])]);
   const byId = (xs, ys) => { const m = new Map(); [...(xs || []), ...(ys || [])].forEach((r) => { if (del.has(r.id)) return; const p = m.get(r.id); if (!p || (r.updatedAt || "") > (p.updatedAt || "")) m.set(r.id, r); }); return [...m.values()]; };
-  return { v: 3, updatedAt: now(), units: byId(a.units, b.units), items: byId(a.items, b.items), tests: byId(a.tests, b.tests), papers: byId(a.papers, b.papers), exams: byId(a.exams, b.exams), writing: byId(a.writing, b.writing), materials: byId(a.materials, b.materials), log: { ...(a.log || {}), ...(b.log || {}) }, backupOn: [a.backupOn, b.backupOn].filter(Boolean).sort().pop() || null, deleted: [...del] };
+  return { v: 3, updatedAt: now(), units: byId(a.units, b.units), items: byId(a.items, b.items), tests: byId(a.tests, b.tests), papers: byId(a.papers, b.papers), exams: byId(a.exams, b.exams), writing: byId(a.writing, b.writing), materials: byId(a.materials, b.materials), log: { ...(a.log || {}), ...(b.log || {}) }, backupOn: [a.backupOn, b.backupOn].filter(Boolean).sort().pop() || null, genCount: Math.max(a.genCount || 0, b.genCount || 0), badCount: Math.max(a.badCount || 0, b.badCount || 0), deleted: [...del] };
 }
 
 /* ---- 教材画像（Supabase Storage） ---- */
@@ -711,6 +711,17 @@ function normalizePts(qs, total = 100) {
   return qs;
 }
 
+/* 検算の対象: 数学・理科の計算、英語の文法・英作文（用語・国語・社会は検算しない） */
+const needsCheck = (i) => ((i.subject === "数学" || i.subject === "理科") && i.fmt === "計算") || (i.subject === "英語" && (i.fmt === "英作文" || i.fmt === "知識・用語" || i.fmt === "計算"));
+/* 生成した類題を別の呼び出しで解かせ、解答と一致するか確かめる。戻り値 {ok, bad:[問番号]} */
+async function verifyGen(i, g, model = null) {
+  const probs = (g.problems || []); if (!probs.length) return { ok: false, bad: [] };
+  const t = await callAI(`中学1年${i.subject}の問題です。各問を自分で解いてから、示された「解答」と一致するか判定してください。\n${probs.map((p, k) => `問${k + 1}: ${p.q}\n解答: ${p.a}`).join("\n\n")}`,
+    `まず自力で解き、そのあと「解答」と比べる。表記の違い（分数と小数、順序、冠詞の有無など）は同じ答えなら一致とする。解答が誤り・問題が成立しない・答えが一つに決まらない場合は不一致。JSONのみ: {"results":[{"n":1,"ok":true,"answer":"自分の答え"}]}`, 1200, model);
+  const rs = parseJSON(t).results || [];
+  const bad = probs.map((_, k) => k + 1).filter((n) => { const r = rs.find((x) => Number(x.n) === n); return !r || r.ok !== true; });
+  return { ok: bad.length === 0, bad };
+}
 /* 3回以上落ちた項目の診断。抜けている前提と、戻って積み上げ直す手順 */
 async function diagnose(i, u, ctx, model = OPUS) {
   const t = await callAI(`${itemContext(i, u, ctx)}\n\n同じ項目を${i.failCount}回落としています。反復では解決しないと判断しました。抜けている前提を特定し、そこまで戻って積み上げ直す手順を。`,
@@ -1032,23 +1043,31 @@ function TodayMake({ d, save }) {
   const make = async () => {
     setErr(""); setLog([]);
     if (!hasKey()) { setErr("APIキーが未設定です。「設定」タブで登録してください。"); return; }
-    let items = d.items.slice(); const ok = []; const bad = []; const orig = [];
+    let items = d.items.slice(); const ok = []; const bad = []; const orig = []; const unverified = []; let genN = 0;
     for (let k = 0; k < set.length; k++) {
       setBusy(`類題を作成 ${k + 1}/${set.length}`);
       let cur = items.find((x) => x.id === set[k].id);
       if (!fresh(cur)) {
-        try { const g = await genForItem(cur, unitOf(cur.unitId), ctxFor(d, cur), cur.gen?.problems?.map((p) => p.q).join(" / ") || "なし"); cur = { ...cur, ...applyGen(cur, g), updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x)); save({ ...d, items }); }
+        try {
+          let g = await genForItem(cur, unitOf(cur.unitId), ctxFor(d, cur), cur.gen?.problems?.map((p) => p.q).join(" / ") || "なし"); genN++;
+          if (needsCheck(cur)) { // 検算: 別の呼び出しで解かせ、不一致なら作り直す（最大2回）
+            setBusy(`検算 ${k + 1}/${set.length}`); let v = await verifyGen(cur, g);
+            if (!v.ok) { setBusy(`作り直し ${k + 1}/${set.length}`); g = await genForItem(cur, unitOf(cur.unitId), ctxFor(d, cur), `${g.problems.map((p) => p.q).join(" / ")}（前回は検算で問${v.bad.join("・")}が不一致。解答を必ず確かめる）`); genN++; v = await verifyGen(cur, g); }
+            if (!v.ok) { unverified.push(cur.label); cur = { ...cur, gen: null, genOn: null, updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x)); continue; }
+            g = { ...g, checked: true };
+          }
+          cur = { ...cur, ...applyGen(cur, g), updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x)); save({ ...d, items, genCount: (d.genCount || 0) + genN }); }
         catch (e) { if (hasPos(cur.src)) { cur = { ...cur, gen: null, printedOrig: true, updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x)); orig.push(cur.label); } else { bad.push(`${cur.label}：${e.message || "失敗"}`); continue; } }
       }
       ok.push(cur);
     }
-    if (!ok.length) { setErr(bad.length ? `作れませんでした。${bad[0]}` : "対象がありません"); setBusy(""); return; }
+    if (!ok.length) { if (genN) save({ ...d, items, genCount: (d.genCount || 0) + genN }); setErr(bad.length ? `作れませんでした。${bad[0]}` : unverified.length ? `検算で不一致が続いたので、今日は作れませんでした（${unverified.join("、")}）。明日もう一度。` : "対象がありません"); setBusy(""); return; }
     try {
       setBusy("PDFを作成");
       await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`));
       const pos = new Map(ok.map((i, k) => [i.id, k + 1]));
-      save({ ...d, items: items.map((x) => (pos.has(x.id) ? { ...x, printedOn: today(), printedAs: pos.get(x.id), updatedAt: now() } : x)), log: { ...d.log, [today()]: true } });
-      setLog([`${ok.length}件を1枚にまとめました。印刷して明日の机に。`, ...orig.map((b) => `類題を作れなかったので元の問題を載せました（この回は「説明もできた」でのみ進みます）: ${b}`), ...bad.map((b) => `作れなかった項目（次回に回します）: ${b}`)]);
+      save({ ...d, items: items.map((x) => (pos.has(x.id) ? { ...x, printedOn: today(), printedAs: pos.get(x.id), updatedAt: now() } : x)), genCount: (d.genCount || 0) + genN, log: { ...d.log, [today()]: true } });
+      setLog([`${ok.length}件を1枚にまとめました。印刷して明日の机に。`, ...unverified.map((b) => `検算で2回とも不一致（翌日に回します）: ${b}`), ...orig.map((b) => `類題を作れなかったので元の問題を載せました（この回は「説明もできた」でのみ進みます）: ${b}`), ...bad.map((b) => `作れなかった項目（次回に回します）: ${b}`)]);
     } catch (e) { setErr(e.message || "PDFを作れませんでした"); }
     setBusy("");
   };
