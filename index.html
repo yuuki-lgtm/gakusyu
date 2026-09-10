@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 23:22"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 23:24"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -2126,7 +2126,7 @@ const CSS = `
 .snacks{position:fixed;left:10px;right:10px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:30;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .snack{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:4px;font-size:12px;line-height:1.55;background:#1E2321;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.22)}
 .snack span{flex:1}.snack.err{background:#7A2D26}.snack.warn{background:#8A5A1E}
-.snack button{background:none;border:none;color:#fff;font-size:18px;line-height:1;padding:0 2px;cursor:pointer;font-family:inherit}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
+.snack button{background:none;border:none;color:#fff;font-size:20px;line-height:1;margin:-8px -8px -8px 0;padding:8px 10px;min-width:36px;min-height:36px;cursor:pointer;font-family:inherit}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
 .et.bad.on{background:#A8443B;border-color:#A8443B;color:#fff}.et.why{margin-top:4px;margin-left:4px}.et.why.on{background:#C08A3E;border-color:#C08A3E}
 .chk{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--ink2);line-height:1.6;margin:6px 0 10px}.chk input{width:auto;height:auto;margin-top:3px}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}
