@@ -539,6 +539,7 @@ describe("紙で回す（印刷セット・採点セット・一括確定）", (
       { id: "3", subject: "国語", unitId: "u", label: "C", fmt: "計算", gen: null }];
     const p = m.genToPaper(items, () => u);
     assert.equal(p.questions.length, 4);
+    assert.ok(m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].q.startsWith("【英語】q"), "単元が無ければ教科だけ");
     assert.ok(p.questions[0].q.startsWith("【数学・正負の数】q1") && !p.questions[0].q.includes(m.SELF_LINE));
     assert.equal(p.questions[1].q, "q2");
     assert.ok(p.questions[2].q.startsWith("説明：なぜ符号が変わるか") && p.questions[2].q.endsWith(m.SELF_LINE) && p.questions[2].a.includes("説明もできた"));
