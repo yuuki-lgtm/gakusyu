@@ -352,3 +352,10 @@ test("その他→登録: 落とした項目（タップ）が既定で開き、
   const reg = render(m.RegTab, { d: F.demo(), save: noop, initial: null }).html;
   assert.ok(reg.includes('class="on">落とした項目（タップ）') && reg.includes("×だった問題をタップすると印が付き"));
 });
+test("夜の作業の進み具合は番号つきのステップ表示（ボタンではない）", () => {
+  m.nightSave(1);
+  try { const html = render(m.NightFlow, { d: F.demo(), save: noop, go: noop }).html;
+    assert.ok(html.includes('<ol class="steps"') && html.includes('<li class="done">') && html.includes('<li class="on">') && html.includes("✓"));
+    assert.ok(!html.includes("night-steps")); }
+  finally { m.nightSave(null); }
+});
