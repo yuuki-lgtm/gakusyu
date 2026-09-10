@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 13:56"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 13:57"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -318,6 +318,8 @@ function pickUnits(d, subject, max = 3) {
 }
 
 /* ---- 間隔反復と学力の指標 ---- */
+/* 類題の問題数。習得中（間隔1日・3日）は3問、保持の確認（7日以上）は1問、暗記ものは常に1問。落として1日に戻れば3問に戻る */
+const problemCount = (i) => (!needsWhy(i) ? 1 : (i.level || 0) <= 1 ? 3 : 1);
 /* 「説明もできた」を求めるか。用語と、説明不要（暗記もの）の印がある項目は求めない */
 const needsWhy = (i) => i.fmt !== "知識・用語" && !i.noWhy;
 /* 落とした項目を1件作る。今日 × で登録し、明日に出る。f で上書きできる */
@@ -581,15 +583,15 @@ function genContent(item, b64, text, qb64 = null) {
 /* 1項目ぶんの類題（3問＋説明の問い）。用語は記述形式。元の問題の画像があれば渡す */
 async function genForItem(i, u, ctx, prev = "なし", model = null) {
   const context = itemContext(i, u, ctx);
-  const isRead = i.fmt === "長文読解", isWrite = i.fmt === "記述・作文" || i.fmt === "英作文", isTerm = i.fmt === "知識・用語", noWhy = !needsWhy(i);
+  const isRead = i.fmt === "長文読解", isWrite = i.fmt === "記述・作文" || i.fmt === "英作文", isTerm = i.fmt === "知識・用語", noWhy = !needsWhy(i), nq = problemCount(i);
   let b64 = null, qb64 = null; if (i.src && i.src.path) { try { b64 = await stGet(i.src.path); if (hasPos(i.src)) b64 = await annotateB64(b64, [{ x: i.src.x, y: i.src.y }]); if (i.src.qpath) qb64 = await stGet(i.src.qpath); } catch { b64 = null; qb64 = null; } } // 読めなければ画像なしで続ける
   const t = isRead
-    ? await callAI(genContent(i, b64, `${context}\n直前の問題（重複させない）: ${prev}\n\nこの読解技能だけを問う練習問題を。150〜250字のオリジナルの短い文章を1つ書き、その文章についてこの技能を問う設問を2問。`, qb64),
+    ? await callAI(genContent(i, b64, `${context}\n直前の問題（重複させない）: ${prev}\n\nこの読解技能だけを問う練習問題を。150〜250字のオリジナルの短い文章を1つ書き、その文章についてこの技能を問う設問を${nq === 1 ? 1 : 2}問。`, qb64),
         `日本の中学1年生向け。文章は完全オリジナルで既存作品の引用をしない。設問の解答には根拠の箇所を示す。whyは「どこを見て、どう判断したか」を子どもに言わせる問い。\nJSONのみ: {"passage":"","problems":[{"q":"","a":""}],"why":"","point":"","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2600, model)
     : isWrite
-    ? await callAI(genContent(i, b64, `${context}\n\nこの誤りの種類だけを練習する短い課題を3問。各問は1〜2文を書かせる程度の分量にし、この種類の誤りが起きやすい場面を意図的に含める。`, qb64),
+    ? await callAI(genContent(i, b64, `${context}\n\nこの誤りの種類だけを練習する短い課題を${nq}問。各問は1〜2文を書かせる程度の分量にし、この種類の誤りが起きやすい場面を意図的に含める。`, qb64),
         `日本の中学1年生向け。aは模範解答と、この誤りが起きやすい箇所の指摘。whyは「書いたあと何を確認するか」を子どもに言わせる問い。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2400, model)
-    : await callAI(genContent(i, b64, `${context}\n直前に出した問題（重複させない）: ${prev}\n\n${isTerm ? "この用語だけを狙った問題を3問。3問とも「〜を何といいますか。書きなさい」「〜を書きなさい」の記述形式（選択肢・穴埋めのヒントなし）。1問目は用語そのものを書かせる、2問目は意味や使い方、3問目は別の聞き方。whyは空でよい。" : "この項目だけを狙った練習問題を3問。1問目は最も基本の形、2問目は本題、3問目は同じ考え方を別の見た目で。" + (noWhy ? "暗記ものなので説明の問いは不要（why は空）。" : "あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。")}`, qb64),
+    : await callAI(genContent(i, b64, `${context}\n直前に出した問題（重複させない）: ${prev}\n\n${isTerm ? `この用語だけを狙った問題を${nq}問。「〜を何といいますか。書きなさい」「〜を書きなさい」の記述形式（選択肢・穴埋めのヒントなし）。${nq === 1 ? "用語そのものを書かせる1問。" : "1問目は用語そのものを書かせる、2問目は意味や使い方、3問目は別の聞き方。"}whyは空でよい。` : nq === 1 ? "この項目だけを狙った本題の問題を1問。基本の形ではなく、身についていれば解ける本題。" + (noWhy ? "暗記ものなので説明の問いは不要（why は空）。" : "あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。") : "この項目だけを狙った練習問題を3問。1問目は最も基本の形、2問目は本題、3問目は同じ考え方を別の見た目で。" + (noWhy ? "暗記ものなので説明の問いは不要（why は空）。" : "あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。")}`, qb64),
         `日本の中学1年生を教える講師。厳守: 中1範囲を超えない／習った範囲から逸脱しない／直前の問題と同じ数値・設定にしない／ヒントや選択肢を付けず白紙から解かせる／数学は途中式を書かせる／安定している項目は既知として扱ってよい／未定着の項目を前提にしない。\nwhyは「なぜその手順になるのか」を子どもの言葉で言わせる問い。scriptは採点後の声かけ。できている点を先に述べ、直す点は1つだけ。専門用語なし。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"落とし続ける原因の推定","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2600, model);
   return parseJSON(t);
 }
@@ -994,7 +996,7 @@ function TodayMake({ d, save }) {
   const toggleSel = (id) => setSel((x) => { const n = new Set(x); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [log, setLog] = useState([]);
   const sec = useElapsed(busy);
-  const fresh = (i) => !!(i.gen && i.gen.problems && i.genOn === today());
+  const fresh = (i) => !!(i.gen && i.gen.problems && i.genOn === today() && i.gen.problems.length === (i.fmt === "長文読解" ? Math.min(2, problemCount(i)) : problemCount(i)));
   const make = async () => {
     setErr(""); setLog([]);
     if (!hasKey()) { setErr("APIキーが未設定です。「設定」タブで登録してください。"); return; }
@@ -1074,7 +1076,7 @@ function TodayGrade({ d, save }) {
   const commit = () => { const { d: nd, n } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; setMsg(`${n}件を確定しました。${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); setTimeout(() => setMsg(""), 4000); };
   return (<section className="sec">
     {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
-      <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>3問すべて正解で「解けた」、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
+      <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（判定欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
       {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, FALLBACK)}>Sonnet 4.6 で読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (

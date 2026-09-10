@@ -1260,3 +1260,25 @@ describe("一度に多数を登録したときの分散", () => {
     assert.ok(m.spreadDue(mk(6), d, 6).every((i) => i.nextDue === day(1)), "5+6=11 は 12 未満なので分散しない");
   });
 });
+
+describe("類題の問題数（段階）", () => {
+  test("習得中（間隔1・3日）は3問、7日以上は1問、暗記ものは常に1問、落として戻れば3問", () => {
+    assert.equal(m.problemCount({ level: 0, fmt: "計算" }), 3); assert.equal(m.problemCount({ level: 1, fmt: "計算" }), 3);
+    assert.equal(m.problemCount({ level: 2, fmt: "計算" }), 1); assert.equal(m.problemCount({ level: 4, fmt: "計算" }), 1);
+    assert.equal(m.problemCount({ level: 0, fmt: "知識・用語" }), 1); assert.equal(m.problemCount({ level: 1, fmt: "計算", noWhy: true }), 1);
+    assert.equal(m.problemCount(m.applyJudgment(item({ level: 3, history: [] }), "x")), 3);
+  });
+  test("genForItem は段階に応じた問題数を求める", async () => {
+    const orig = globalThis.fetch; const sent = []; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => { sent.push(JSON.parse(opts.body)); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"problems":[{"q":"q","a":"a"}],"why":""}' }] }) }; };
+    try {
+      await m.genForItem(item({ level: 2, fmt: "計算", history: [] }), null, { siblings: [], stable: [], units: [] });
+      await m.genForItem(item({ level: 0, fmt: "計算", history: [] }), null, { siblings: [], stable: [], units: [] });
+      await m.genForItem(item({ level: 0, fmt: "知識・用語", history: [] }), null, { siblings: [], stable: [], units: [] });
+      const txt = (k) => JSON.stringify(sent[k].messages[0].content);
+      assert.ok(txt(0).includes("本題の問題を1問") && !txt(0).includes("練習問題を3問"));
+      assert.ok(txt(1).includes("練習問題を3問"));
+      assert.ok(txt(2).includes("問題を1問") && txt(2).includes("用語そのものを書かせる1問"));
+    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+});
