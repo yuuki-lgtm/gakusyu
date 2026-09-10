@@ -139,7 +139,7 @@
 - 実ブラウザ確認: Chrome 拡張は file:// を開けないので `python -m http.server 8765 --bind 127.0.0.1` で `http://127.0.0.1:8765/index.html`。デモデータは `test/fixtures.js` の `demo()` を localStorage に入れる。教材画像は `_fake/storage/v1/object/authenticated/materials/...` を作って `sb_url` を `http://127.0.0.1:8765/_fake` にすると読める。終わったら消す。
 
 ## バージョンと運用
-- ヘッダーの1行目は左から「学習ループ・同期タグ（同期先があるときだけ。`.sy`）・（右端）バージョン `.ver`」、2行目に件数。
+- ヘッダーは1行だけ。左から「学習ループ・同期タグ（同期先があるときだけ。`.sy`）・（右端）バージョン `.ver`」。件数（未定着・今日・安定・連続）の行は 2026-09-10 に外した（ホームの数字カードと重複し、他の画面では判断に使わない。連続日数を常時見せない）。
 - `index.html` の `VERSION`（ヘッダー右端と「その他」の更新ボタンに表示）は、git の pre-commit フック `tools/pre-commit` がコミット日時で自動更新する。別の環境では一度 `sh tools/install-hooks.sh`。
 - push すると GitHub Pages に1〜2分で反映。iPhone で古いままなら、「その他」の「最新版に更新（再読み込み）」（クエリを付けて `location.replace`）。それでも古ければアプリを完全に終了して開き直す。
 - ブラウザの `alert`／`confirm` は使わない（削除の確認は画面内の2択）。

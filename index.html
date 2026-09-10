@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 19:09"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 19:13"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -998,8 +998,6 @@ function App() {
 
   if (!d) return <div style={{ padding: 40, color: "#888" }}>読み込み中…</div>;
 
-  const active = d.items.filter((i) => i.status === "active");
-  const daily = pickDaily(d); const due = daily.chosen;
   const nextExam = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
   const left = nextExam ? diffDays(today(), nextExam.date) : null;
   // 下のバーは頻度で3つ。毎日＝ホーム（夜の作業・朝の印刷・今日）、週1＝週末（テスト・模試・定期）、たまに＝その他（登録・分析・依頼文・設定）
@@ -1011,8 +1009,7 @@ function App() {
 
   return (
     <div className="root"><style>{CSS}</style>
-      <header className="hd"><div className="hd-t"><span>学習ループ</span>{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div>
-        <div className="hd-s">未定着 {active.length} · 今日 {due.length}件{daily.rest.length ? `（繰り越し ${daily.rest.length}件）` : ""} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日</div></header>
+      <header className="hd"><div className="hd-t"><span>学習ループ</span>{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div></header>
       <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{TAB_ICONS[k]}<span className="tab-l">{l}</span></button>))}</nav>
       <main className="main">
         {Object.keys(opened).map((k) => { const m = opened[k].m; return (<div key={`${k}:${opened[k].n}`} hidden={tab !== k}>
@@ -2084,8 +2081,7 @@ const CSS = `
 .root{--ink:#1E2321;--ink2:#5A615C;--ink3:#8A928C;--paper:#F6F7F5;--card:#FFF;--line:#DDE2DD;
  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
 .root *{box-sizing:border-box}
-.hd{padding:18px 16px 4px}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em;display:flex;align-items:center}.hd-s{font-size:12px;line-height:18px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;align-items:center}
-.tabs{display:flex;gap:0;padding:0 0 env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0D0C}.tabs.three .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;letter-spacing:.02em;padding:8px 4px 7px;margin:0;border:none;border-radius:0;background:none;color:rgba(255,255,255,.5);-webkit-tap-highlight-color:transparent}
+.hd{padding:18px 16px 6px}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em;display:flex;align-items:center}.tabs{display:flex;gap:0;padding:0 0 env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0D0C}.tabs.three .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;letter-spacing:.02em;padding:8px 4px 7px;margin:0;border:none;border-radius:0;background:none;color:rgba(255,255,255,.5);-webkit-tap-highlight-color:transparent}
 .tab-i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tabs.three .tab:active{background:rgba(255,255,255,.08)}
 .tabs.three .tab.on{color:#fff;font-weight:700}
