@@ -1084,7 +1084,7 @@ describe("夜の作業（続きから再開）", () => {
   test("ホーム: 初期設定が済んでいれば「夜の作業」が先頭。続きがあれば続きの表示", () => {
     const d = F.demo();
     assert.equal(m.nextActions(d).A[0].k, "night");
-    m.nightSave(1); try { assert.ok(m.nextActions(d).A[0].title.includes("続き（2/4 ワークの×を登録）")); } finally { m.nightSave(null); }
+    m.nightSave(1); try { assert.ok(m.nextActions(d).A[0].title.includes("続き（2/4 ×を登録）")); } finally { m.nightSave(null); }
     assert.equal(m.nextActions(F.empty()).A[0].k, "units");
     const noProg = { ...d, units: d.units.map((u) => ({ ...u, learnedOn: null, learnedBy: undefined })) };
     assert.equal(m.nextActions(noProg).A[0].k, "prog"); assert.equal(m.nextActions(noProg).A[1].k, "night");
