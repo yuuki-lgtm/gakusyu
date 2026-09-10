@@ -372,11 +372,11 @@ test("夜の作業: やることが無い段階は飛ばす。空のデータな
   m.nightSave(null);
   const e = render(m.NightFlow, { d: F.empty(), save: noop, go: noop }).html;
   assert.ok(e.includes("夜の作業 4/4") && e.includes("終わる") && !e.includes("に戻る"));
-  assert.equal((e.match(/<li class="skip">/g) || []).length, 3);
+  assert.equal((e.match(/<li class="skip past">/g) || []).length, 3, "飛ばして通過した段階は線を緑にするため past を付ける");
   const d = F.demo(); const h = render(m.NightFlow, { d, save: noop, go: noop }).html;
   assert.ok(h.includes("夜の作業 1/4") && h.includes("次へ：×の登録 →"));
   const noMat = { ...d, materials: [] }; const h2 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html;
-  assert.ok(h2.includes("夜の作業 1/4") && h2.includes("次へ：明日の分 →") && (h2.match(/<li class="skip">/g) || []).length === 2);
+  assert.ok(h2.includes("夜の作業 1/4") && h2.includes("次へ：明日の分 →") && (h2.match(/<li class="skip">/g) || []).length === 2, "まだ通過していない飛ばす段階は skip だけ");
   m.nightSave(2);
   try { const h3 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html; assert.ok(h3.includes("夜の作業 3/4") && h3.includes("← 採点に戻る"), "途中保存は尊重し、戻る先は飛ばした段階を越える"); }
   finally { m.nightSave(null); }
