@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 23:00"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 23:07"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1007,6 +1007,17 @@ function App() {
     if (syncOn()) { clearTimeout(pushTimer.current); pushTimer.current = setTimeout(async () => {
       try { const remote = await pullRemote(); const merged = remote ? mergeData(n, migrate(remote.data)) : n; await pushRemote(merged); if (remote) { dRef.current = merged; setD(merged); localStorage.setItem(KEY, JSON.stringify(merged)); } setSync("ok"); } catch { setSync("err"); } }, 1500); }
   };
+
+  // 登録直後の名前付けに失敗して「仮」のままの項目を、開いたときに裏で付け直す（同じ項目は1回の起動で1回だけ。ボタンを押す手間を無くす）
+  const triedRef = useRef(new Set());
+  useEffect(() => { if (!d || !hasKey()) return;
+    const tent = (d.items || []).filter((i) => i.status === "active" && i.named === false && hasPos(i.src) && !triedRef.current.has(i.id));
+    if (!tent.length) return; tent.forEach((i) => triedRef.current.add(i.id));
+    (async () => { let named = 0;
+      for (const sub of SUBJECTS) { const add = tent.filter((i) => i.subject === sub); if (!add.length) continue;
+        try { const msg = await nameAndApply(dRef.current, add, sub, (id) => unitById(dRef.current, id), save); const mm = msg.match(/^(\d+)件に項目名/); if (mm) named += Number(mm[1]); } catch {} }
+      if (named) { setToast(`仮の項目 ${named} 件に名前を付けました`); setTimeout(() => setToast(""), 5000); } })();
+  }, [d && d.items.filter((i) => i.named === false).length]);
 
   if (!d) return <div style={{ padding: 40, color: "#888" }}>読み込み中…</div>;
 
