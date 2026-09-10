@@ -283,3 +283,10 @@ test("今日/採点: 元の問題の回は印と説明が出る", () => {
   assert.ok(html.includes(">元の問題<") && html.includes("「解けた」では間隔が伸びず"));
   assert.ok(render(m.GradeRowDetail, { i: d.items[0], d, save: noop }).html.includes("元の問題（ワーク p.11）をもう一度解いています"));
 });
+test("説明不要の切り替え: 未定着一覧と×登録のポップアップ。分析に件数", () => {
+  const d = F.demo(); d.items = d.items.map((i) => (i.id === "i4" ? { ...i, noWhy: true } : i));
+  const list = render(m.RegTab, { d, save: noop, initial: "list" }).html;
+  assert.ok(list.includes(">説明不要<") && list.includes(">説明あり<") && list.includes('class="tag">説明不要'));
+  const ana = render(m.AnaTab, { d }).html;
+  assert.ok(ana.includes("説明不要の項目") && ana.includes("用語 0、印あり 1"));
+});

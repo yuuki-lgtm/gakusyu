@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 11:58"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 11:59"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1539,7 +1539,8 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     <p className="ph-note">×だった問題をタップ。もう一度タップで取り消し。薄い印は登録済みで、タップすると状態が見えます。</p>
     {selItem && (<div className="mpop"><div className="c-label">{selItem.label}</div>
       <div className="ir-meta">{selItem.status === "stable" ? "安定" : "未定着"} · {selItem.failCount}回 · 間隔{INT[selItem.level || 0]}日 · 次回 {selItem.nextDue.slice(5)}{selItem.printedOn ? " · 印刷済み" : ""}</div>
-      <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selItem.etype === e ? " on" : "")} onClick={() => setEtype(selItem, e)}>{e}</button>))}</div></div>)}
+      <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selItem.etype === e ? " on" : "")} onClick={() => setEtype(selItem, e)}>{e}</button>))}</div>
+      {selItem.fmt !== "知識・用語" && <button className={"et why" + (selItem.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === selItem.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{selItem.noWhy ? "説明不要（暗記もの）" : "説明を求める"}</button>}</div>)}
     {taps.length > 0 && (<><p className="tap-sum">印 {taps.length}（{Object.entries(byPage).map(([k, n]) => `${k}: ${n}`).join("、")}）</p>
       <button className="btn-main" onClick={commit}>まとめて登録（{taps.length}件）</button></>)}
     {kind !== "テスト" && cur && (<div className="lastp"><span>今日やった最後のページを開いて</span><button className="btn-sm" onClick={upTo} disabled={!!taps.length}>p.{page} までやった</button></div>)}
@@ -1576,8 +1577,9 @@ function ItemList({ d, save }) {
   return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
-        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
-          <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select></div><button className="btn-x" onClick={() => save(removeRec(d, "items", i.id))}>×</button></div>); })}</div>); })}</>);
+        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}{i.noWhy && <em className="tag">説明不要</em>}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
+          <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select>
+          {i.fmt !== "知識・用語" && <button className={"et why" + (i.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{i.noWhy ? "説明不要" : "説明あり"}</button>}</div><button className="btn-x" onClick={() => save(removeRec(d, "items", i.id))}>×</button></div>); })}</div>); })}</>);
 }
 function MaterialReg({ d, save }) {
   const [subject, setSubject] = useState("数学");
@@ -1693,6 +1695,7 @@ function AnaTab({ d }) {
 
     <FormatBlock d={d} />
 
+    <div className="blk"><h3>説明不要の項目 <span className="cnt">暗記もの。「解けた」で先へ進む</span></h3><div className="big">{d.items.filter((i) => i.status === "active" && !needsWhy(i)).length}<small> / 未定着 {d.items.filter((i) => i.status === "active").length}件（用語 {d.items.filter((i) => i.status === "active" && i.fmt === "知識・用語").length}、印あり {d.items.filter((i) => i.status === "active" && i.noWhy && i.fmt !== "知識・用語").length}）</small></div><p className="blk-s">多すぎるなら、説明させる項目が減っています。「登録→未定着一覧」で外せます。</p></div>
     <div className="blk"><h3>誤答の種類 <span className="cnt">対処が違う</span></h3>
       {etAgg.length === 0 ? <p className="empty">記録なし。</p> : etAgg.map(([t, c]) => (<div className="erow" key={t}><span className="er-name">{t}</span><span className="er-bar"><span style={{ width: `${(c / etMax) * 100}%` }} /></span><span className="er-n">{c}</span></div>))}
       <p className="blk-s" style={{ marginTop: 8 }}>知らなかった→暗記／分かっていたが間違えた→見直し習慣／読み間違えた→問題文の読み方／時間切れ→制限時間つき練習</p></div>
@@ -1858,6 +1861,7 @@ const CSS = `
 .lastp{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--ink2)}.lastp .btn-sm{margin-left:auto;white-space:nowrap}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
+.et.why{margin-top:4px;margin-left:4px}.et.why.on{background:#C08A3E;border-color:#C08A3E}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}
 .matpick{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}.matpick .seg{margin-bottom:8px}.qn-row{display:flex;gap:6px;margin-top:8px}.qn-row input{flex:1}
 .src-n{font-size:11px;color:var(--ink2);display:flex;align-items:center;gap:4px;margin:0 0 8px;padding:6px 8px;background:#EEF3F6;border-left:2px solid #3D6B8E}.src-n .btn-x{margin-left:auto}
