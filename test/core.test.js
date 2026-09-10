@@ -1007,3 +1007,23 @@ describe("模試（段階5: 採点と予測）", () => {
     assert.deepEqual(m.predictFor(other, ex, "英語"), { pct: 80, src: "累積" }, "別の定期テストの模試は使わない");
   });
 });
+
+describe("模試（段階6: ×は未定着へ、模試は再利用しない）", () => {
+  const mk = (subject, round, date = T) => ({ id: "mk" + subject + round, kind: "模試", subject, date, examId: "e1", round, questions: [{ n: 1, fmt: "計算", pts: 100, label: "L", unitId: "u1", aim: "" }], unitIds: ["u1"], status: "printed", updatedAt: "" });
+  test("模試の×は newItem で通常の未定着になる（撮る画面と同じ生成）", () => {
+    const p = mk("数学", 14); const i = m.newItem({ subject: p.subject, unitId: p.questions[0].unitId, label: p.questions[0].label, fmt: "計算", etype: "知らなかった" });
+    assert.deepEqual([i.status, i.level, i.failCount, i.nextDue], ["active", 0, 1, day(1)]);
+  });
+  test("模試の用紙は、週次の判断・累積の間隔・まとめてPDF・今日の印刷に使われない", () => {
+    const d = F.demo(); d.papers.push(mk("数学", 14));
+    assert.equal(m.lastCumOn(d), day(-10));
+    assert.ok(!m.nextActions({ ...d, exams: [] }).A.some((a) => a.k === "mock"));
+    assert.ok(m.printSet(d).every((i) => !i.paperId), "今日の印刷は項目だけで、用紙は使わない");
+    const dow = new Date(T + "T00:00:00").getDay(); const weekend = dow === 0 || dow === 6;
+    if (weekend) assert.ok(m.nextActions({ ...d, papers: d.papers.filter((p) => p.kind === "模試" || diffDays(p.date, T) > 6) }).A.some((a) => a.k === "make"), "模試を作った週でも週次テストの提案は消えない");
+  });
+  test("撮る画面の一覧には模試も出る（採点は既存の経路）", () => {
+    const d = F.demo(); d.papers.push({ ...mk("数学", 14), code: "0910数模" });
+    const pending = d.papers.filter((p) => p.status === "printed"); assert.ok(pending.some((p) => p.kind === "模試"));
+  });
+});

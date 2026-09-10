@@ -244,3 +244,11 @@ test("定期: 予測に模試か累積かが出る", () => {
   const html = render(m.ExamTab, { d: F.demo(), save: noop }).html;
   assert.ok(html.includes("80%（累積）"));
 });
+test("テスト/撮る: 模試の用紙が選べて、用紙の説明に「1回きり」が出る", () => {
+  const d = F.demo(); const mk = { id: "mkx", kind: "模試", subject: "数学", date: F.T, code: "0910数模", examId: "e1", examName: "2学期中間", round: 14, minutes: 50, maxScore: 100, questions: [{ n: 1, q: "q", a: "a", fmt: "計算", pts: 100, label: "L", unitId: "u1", aim: "", svg: "", sec: "【1】用語" }], unitIds: ["u1"], imgs: [], status: "printed", updatedAt: F.ts(0) };
+  d.papers.push(mk);
+  const g = render(m.WeekTab, { d, save: noop, initial: "grade" }).html;
+  assert.ok(g.includes("0910数模"));
+  const ps = render(m.PrintSheet, { paper: mk }).html;
+  assert.ok(ps.includes("1回きり") && ps.includes("模試（2学期中間）"));
+});

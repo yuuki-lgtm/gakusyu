@@ -1249,7 +1249,7 @@ function PrintSheet({ paper: p }) {
     <button className="btn-sm wide" onClick={copyText}>テキストをコピー（メモアプリ経由）</button>
     {state === "copied" && <p className="msg">コピーしました。メモアプリに貼り付け、共有から「プリント」。</p>}
     {state === "failed" && <p className="warn-t">コピーできませんでした。</p>}
-    <p className="q-warn">{p.model && `${p.model} が生成。`}資料 → 問題（奇数ページなら白紙を足す）→ 解答の順でA4に組みます。両面印刷で解答が別の紙になります。{(p.refs || []).length > 0 && `資料の教材ページ（${p.refs.map((r) => `${r.kind} p.${r.page}`).join("、")}）はPDF生成時に読み込みます。`}iPhoneは共有シートが開くので「ファイルに保存」か「プリント」。印刷前に内容を必ず確認してください。</p>
+    <p className="q-warn">{p.model && `${p.model} が生成。`}{p.kind === "模試" && "模試は1回きり。次の回は新しく作ります。"}資料 → 問題（奇数ページなら白紙を足す）→ 解答の順でA4に組みます。両面印刷で解答が別の紙になります。{(p.refs || []).length > 0 && `資料の教材ページ（${p.refs.map((r) => `${r.kind} p.${r.page}`).join("、")}）はPDF生成時に読み込みます。`}iPhoneは共有シートが開くので「ファイルに保存」か「プリント」。印刷前に内容を必ず確認してください。</p>
     <div className="prev"><style>{SHEET_CSS.replace(/\.sw /g, ".prev .sw ").replace(/^\.sw\{/m, ".prev .sw{")}</style><div className="sw" dangerouslySetInnerHTML={{ __html: body }} /></div>
   </>);
 }
