@@ -362,3 +362,9 @@ test("夜の作業の進み具合は番号つきのステップ表示（ボタ�
     assert.ok(!html.includes("night-steps")); }
   finally { m.nightSave(null); }
 });
+test("ホーム/1週間の流れ: 7行で、いまの画面の呼び名（週末・その他）を使う", () => {
+  const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
+  for (const t of ["平日・子ども", "平日・親（夜5分）", "土曜", "日曜", "定期テスト前（14日前から）", "返却時", "週1"]) assert.ok(h.includes(`<b>${t}</b>`), t);
+  assert.ok(h.includes("「週末→作る」") && h.includes("「週末→模試」") && h.includes("「その他→登録→教材」") && h.includes("「その他→依頼文」") && h.includes("「週末→定期」"));
+  assert.ok(!h.includes("「定期」で実点") && !h.includes("「登録」で答案"));
+});
