@@ -30,6 +30,9 @@
 - **返却時**: 「定期」で実点を入れる。
 - **週1**: 「依頼文」をコピーして相談。
 
+## コードの並び（index.html）
+`<script type="text/babel">` の中は「1. 定数・共通処理 → 2. データ → 3. AI → 4. 印刷 → 5. 画面」の順。各節は `/* ==== */`、その中の小分けは `/* ---- */` の見出し。新しい関数は該当する節に足す。共通処理: `unitById(d, id)`、`removeRec(d, key, ids)`（墓標つき削除）、`newItem(f)`（落とした項目の生成）、`copyToClipboard(text)`。
+
 ## 画面
 下のタブ: ホーム／今日／テスト／登録／分析／定期／依頼文／設定。`App` が `tab` と `mode`（サブ画面）を持ち、`go(tab, mode)` で遷移する。ホームの「いまやること」は `nextActions(d)` が決める。
 
@@ -117,7 +120,7 @@
 - 起動: localStorage → `migrate` → 同期先があれば `pullRemote` と `mergeData` → 表示。保存は1.5秒まとめて `pushRemote`。
 
 ## テスト
-`npm test` で全部走る（`npm install` を一度だけ。node の組み込みテストランナー）。**修正したら必ず通す。** 2026-09-10 時点で194件。
+`npm test` で全部走る（`npm install` を一度だけ。node の組み込みテストランナー）。**修正したら必ず通す。** 2026-09-10 時点で197件。
 - `test/load.js` — index.html の `<script type="text/babel">` を取り出し、Babel で JSX を変換して node で評価する。localStorage / document / window / navigator は最小のスタブ。**関数やコンポーネントを足したら `EXPORTS` に名前を追加する。**
 - `test/fixtures.js` — デモ／空／pending あり の3状態。日付は今日基準の相対。スキーマを変えたらここも直す。
 - `test/render.test.js` — `renderToString` で全タブ・全サブモードと用紙プレビューを3状態で描画。React の警告、画面に出る `undefined`／`NaN` も失敗にする。
@@ -150,4 +153,4 @@
    - 「テスト→作る」で教材の添付、図を参照した問題の資料ページ、「1つのPDFに」。
    - 「定期」に手つかずのページが出るか。
 2. Supabase 同期を2端末で確認。
-3. コードを整理（1ファイルのままでよいが、関数の順序と重複を直す。テストがあるので壊れれば分かる）。
+3. CSS の `.cnt` が2か所で定義されていて（見出しの件数と、入力欄の幅）、見出し側に幅と余白が付いている。直すと見た目が変わるので、勇樹さんに確認してから。
