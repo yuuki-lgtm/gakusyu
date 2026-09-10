@@ -1247,11 +1247,11 @@ function UnitReg({ d, save }) {
       <details className="det"><summary>手で1つ追加</summary><Fld label="単元名"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：一次方程式の利用" /></Fld><div className="grid2"><Fld label="教科書のページ"><input value={pages} onChange={(e) => setPages(e.target.value)} placeholder="p.48-52" /></Fld><Fld label="ワークのページ"><input value={wb} onChange={(e) => setWb(e.target.value)} placeholder="p.20-23" /></Fld></div><button className="btn-sm" onClick={addOne}>追加</button></details>
     </section>
     <section className="sec"><h3 className="s-h">{subject}の単元 {us.length}件 <span className="cnt">習った {us.filter(taught).length}</span></h3>
-      <p className="lead">週末に「今週どこまで進んだ？」と聞いて、その単元の「ここまで」を押してください。それより前の単元もまとめて「習った」になります。作問は習った単元からしか出ません。ページ範囲は名前の下をタップすると直せます。</p>
+      <p className="lead">ワークの×を登録したページから、その単元は自動で「習った」になります。自動で拾えない単元は、週末に「今週どこまで進んだ？」と聞いて「ここまで」を押してください。それより前の単元もまとめて「習った」になります。作問は習った単元からしか出ません。ページ範囲は名前の下をタップすると直せます。</p>
       {us.length === 0 && <p className="empty">未登録。</p>}
       {us.map((u, idx) => (<div className={"urow" + (taught(u) ? "" : " untaught")} key={u.id}>
         {edit && edit.id === u.id ? (<div className="u-edit"><div className="u-name">{u.name}</div><div className="grid2"><Fld label="教科書"><input value={edit.pages} onChange={(e) => setEdit({ ...edit, pages: e.target.value })} placeholder="p.48-52" /></Fld><Fld label="ワーク"><input value={edit.wbPages} onChange={(e) => setEdit({ ...edit, wbPages: e.target.value })} placeholder="p.20-23" /></Fld></div><div className="q-btns"><button className="btn-sm" onClick={saveEdit}>保存</button><button className="btn-sm" onClick={() => setEdit(null)}>やめる</button></div></div>)
-        : (<><div><div className="u-name">{u.name}</div><button className="u-pg" onClick={() => setEdit({ id: u.id, pages: u.pages || "", wbPages: u.wbPages || "" })}>{unitPageLabel(u) || "ページ未設定"}</button><div className="u-meta">{taught(u) ? (u.lastTestedOn ? `最終出題 ${u.lastTestedOn.slice(5)}` : <span className="never">未出題</span>) : "まだ習っていない"}</div></div>
+        : (<><div><div className="u-name">{u.name}</div><button className="u-pg" onClick={() => setEdit({ id: u.id, pages: u.pages || "", wbPages: u.wbPages || "" })}>{unitPageLabel(u) || "ページ未設定"}</button><div className="u-meta">{taught(u) ? (u.lastTestedOn ? `最終出題 ${u.lastTestedOn.slice(5)}` : <span className="never">未出題</span>) : "まだ習っていない"}{u.learnedBy === "auto" ? " · ワークから自動" : ""}</div></div>
         <div className="u-btns">{!taught(u) && <button className="btn-sm" onClick={() => save({ ...d, units: d.units.map((x) => (x.subject === subject && us.indexOf(x) <= idx && !x.learnedOn ? { ...x, learnedOn: today(), updatedAt: now() } : x)) })}>ここまで</button>}
           <button className="btn-x" onClick={() => save({ ...d, units: d.units.filter((x) => x.id !== u.id), deleted: [...d.deleted, u.id] })}>×</button></div></>)}</div>))}</section>
   </>);
@@ -1275,6 +1275,46 @@ function tapsToItems(taps, subject, us, fallbackUnitId = "") {
     return { id: uid(), subject, unitId: u ? u.id : fallbackUnitId || "", label: `${t.kind} p.${t.page} の×（${k}）`, named: false, note: "", fmt: "", etype: ETYPES[0], createdOn: today(),
       history: [{ d: today(), r: "x", etype: ETYPES[0] }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", src: { path: t.path, kind: t.kind, page: t.page, x: t.x, y: t.y }, updatedAt: now() };
   });
+}
+
+/* ---- 索引と進度（裏で持つ。外れていても登録と類題には影響しない） ---- */
+/* ページを「やった」にする（×を登録した、または×なしと押した）。最初の日を残す */
+function markDone(d, paths, on = today()) {
+  const set = new Set(paths);
+  return { ...d, materials: (d.materials || []).map((mt) => (set.has(mt.path) && !mt.doneOn ? { ...mt, doneOn: on, updatedAt: now() } : mt)) };
+}
+/* やったページから進度を自動判定。単元のワーク（または教科書）のページのどれかが「やった」なら、その単元は習った扱い。手動の「ここまで」は残る */
+function applyAutoProgress(d) {
+  const done = new Map(); (d.materials || []).forEach((mt) => { if (mt.doneOn) done.set(`${mt.subject}/${mt.kind}/${mt.page}`, mt.doneOn); });
+  if (!done.size) return d;
+  let changed = false;
+  const units = d.units.map((u) => {
+    if (u.learnedOn) return u;
+    const dates = MKINDS.flatMap((k) => unitPages(u, k).map((p) => done.get(`${u.subject}/${k}/${p}`)).filter(Boolean));
+    if (!dates.length) return u;
+    changed = true; return { ...u, learnedOn: dates.sort()[0], learnedBy: "auto", updatedAt: now() };
+  });
+  return changed ? { ...d, units } : d;
+}
+/* 定期テストの範囲で、ワークの手つかずのページ（取り込み済みなのに「やった」になっていないページ）。索引があれば問題数も */
+function untouchedPages(d, unitIds) {
+  const out = [];
+  d.units.filter((u) => unitIds.includes(u.id)).forEach((u) => {
+    const ms = matsOf(d, u.subject, "ワーク"); if (!ms.length) return;
+    const pages = unitPages(u, "ワーク"); const left = ms.filter((mt) => pages.includes(mt.page) && !mt.doneOn);
+    if (!left.length) return;
+    const withIdx = left.filter((mt) => mt.idx && Array.isArray(mt.idx.ns));
+    out.push({ unit: u, pages: left.map((mt) => mt.page), problems: withIdx.reduce((s, mt) => s + mt.idx.ns.length, 0), noIdx: left.length - withIdx.length });
+  });
+  return out;
+}
+/* ページの問題番号の索引を AI で作る。{ns:["1","2(1)",…], at} */
+async function buildIndex(mt, model = null) {
+  const b64 = await stGet(mt.path);
+  const t = await callAI([imgBlock(b64), { type: "text", text: `添付は中学1年${mt.subject}の${mt.kind} p.${mt.page}。このページにある問題の番号を、上から順にすべて書き出してください。小問があれば「2(1)」のように親の番号を付けて1つずつ。` }],
+    `JSONのみ: {"ns":["1","2(1)","2(2)"]}。問題が無いページなら空配列。`, 800, model);
+  const ns = (parseJSON(t).ns || []).map(String).filter(Boolean);
+  return { ns, at: today() };
 }
 
 function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
@@ -1311,7 +1351,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const commit = () => {
     if (!taps.length) return;
     const add = tapsToItems(taps, subject, us, fallbackUnitId);
-    save({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } });
+    save(applyAutoProgress(markDone({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }, taps.map((t) => t.path))));
     setTaps([]); setMsg(`${add.length}件を登録しました。明日の「今日」に出ます${hasKey() ? "。項目名をAIが付けています…" : ""}`);
     if (hasKey()) { setNaming(true); nameItems(add, (id) => us.find((u) => u.id === id)).then((patch) => {
       const n = Object.keys(patch).length;
@@ -1320,18 +1360,23 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     else setTimeout(() => setMsg(""), 4000);
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
+  const allOk = () => { if (!cur) return; save(applyAutoProgress(markDone({ ...d, log: { ...d.log, [today()]: true } }, [cur.path]))); setMsg(`p.${page} を「やった」にしました`); setTimeout(() => setMsg(""), 3000); };
+  // 裏で問題番号の索引を作る（テスト前の「手つかず」検出用。無くても登録と類題には影響しない）
+  useEffect(() => { if (!cur || cur.idx || !hasKey()) return; let alive = true; const path = cur.path;
+    buildIndex(cur).then((idx) => { if (alive) save((c) => ({ ...c, materials: (c.materials || []).map((mt) => (mt.path === path ? { ...mt, idx, updatedAt: now() } : mt)) })); }).catch(() => {});
+    return () => { alive = false; }; }, [cur && cur.path]);
   if (!kinds.length) return null;
   const byPage = {}; taps.forEach((t) => { byPage[`${t.kind} p.${t.page}`] = (byPage[`${t.kind} p.${t.page}`] || 0) + 1; });
   return (<div className="matpick">
     <div className="seg sm">{kinds.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
     <div className="pnav"><button className="btn-sm" onClick={() => step(-1)} disabled={pages.indexOf(page) <= 0}>←</button>
-      <span className="pcur">p.<input className="pnum" type="number" inputMode="numeric" value={page} onChange={(e) => setPage(parseInt(e.target.value, 10) || 0)} /> {unit ? unit.name : <em className="nv">単元と未対応</em>}</span>
+      <span className="pcur">p.<input className="pnum" type="number" inputMode="numeric" value={page} onChange={(e) => setPage(parseInt(e.target.value, 10) || 0)} /> {unit ? unit.name : <em className="nv">単元と未対応</em>}{cur && cur.doneOn && <em className="pg"> 済</em>}</span>
       <button className="btn-sm" onClick={() => step(1)} disabled={pages.indexOf(page) < 0 || pages.indexOf(page) >= pages.length - 1}>→</button></div>
     {cur ? (img ? (<div className="mwrap" onClick={onTap}><img src={img} alt={`${kind} p.${page}`} draggable="false" />
         {old.map((i) => (<span key={i.id} className={"mk-old" + (i.status === "stable" ? " stable" : "") + (i.id === sel ? " sel" : "")} style={{ left: `${i.src.x * 100}%`, top: `${i.src.y * 100}%` }} />))}
         {here.map((t, k) => (<span key={k} className="mk-new" style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }} />))}
       </div>) : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
-    <p className="ph-note">×だった問題をタップ。もう一度タップで取り消し。薄い印は登録済みで、タップすると状態が見えます。</p>
+    <p className="ph-note">×だった問題をタップ。もう一度タップで取り消し。薄い印は登録済みで、タップすると状態が見えます。{cur && !cur.doneOn && !here.length && <button className="lnk" onClick={allOk}>このページは×なし（やった）</button>}</p>
     {selItem && (<div className="mpop"><div className="c-label">{selItem.label}</div>
       <div className="ir-meta">{selItem.status === "stable" ? "安定" : "未定着"} · {selItem.failCount}回 · 間隔{INT[selItem.level || 0]}日 · 次回 {selItem.nextDue.slice(5)}{selItem.printedOn ? " · 印刷済み" : ""}</div>
       <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selItem.etype === e ? " on" : "")} onClick={() => setEtype(selItem, e)}>{e}</button>))}</div></div>)}
@@ -1572,6 +1617,7 @@ function ExamCard({ ex, d, save }) {
     <Fld label="出題範囲"><div className="chips">{d.units.map((u) => (<button key={u.id} className={"chip" + (ex.unitIds.includes(u.id) ? " on" : "")} style={ex.unitIds.includes(u.id) ? { background: HUE[u.subject] } : {}} onClick={() => upd({ unitIds: ex.unitIds.includes(u.id) ? ex.unitIds.filter((x) => x !== u.id) : [...ex.unitIds, u.id] })}>{u.subject}・{u.name}</button>))}</div></Fld>
     {!past && ex.unitIds.length > 0 && (<>
       <div className={"count" + (left <= 14 ? " near" : "")}><div className="cn-n">あと {left} 日</div><div className="cn-s">範囲内の未定着 <strong>{rangeItems.length}</strong> 件{left <= 14 && " · 新しいことはやらず、これだけを潰す"}</div></div>
+      {(() => { const un = untouchedPages(d, ex.unitIds); return un.length > 0 && (<div className="sub-b"><strong>ワークで手つかずのページ</strong><ul className="plain">{un.map((x) => (<li key={x.unit.id}><Dot s={x.unit.subject} />{x.unit.name} p.{pagesToRanges(x.pages)}<em> {x.problems ? `問題 ${x.problems}` : ""}{x.noIdx ? `（索引なし ${x.noIdx}ページ）` : ""}</em></li>))}</ul><p className="blk-s">「登録→落とした項目」でページを開いて×を登録するか、「×なし（やった）」を押すと消えます。</p></div>); })()}
       {never.length > 0 && <div className="alert"><strong>一度も出題していない範囲 {never.length} 件</strong><p>落とした記録がないのは試していないから。最優先でテストしてください。</p><ul className="plain">{never.map((u) => (<li key={u.id}><Dot s={u.subject} />{u.subject}・{u.name}</li>))}</ul></div>}
       {stuck.length > 0 && <div className="sub-b"><strong>3回以上落ちている {stuck.length} 件</strong> — 反復では解決しません。診断か相談を。</div>}
       {SUBJECTS.map((s) => { const its = rangeItems.filter((i) => i.subject === s); if (!its.length) return null; return (<div className="plan" key={s}><div className="pl-h" style={{ color: HUE[s] }}>{s}（{its.length}）</div><ul className="plain">{its.map((i) => (<li key={i.id}>{i.label}<em> {i.fmt}</em></li>))}</ul></div>); })}
@@ -1667,7 +1713,7 @@ const CSS = `
 .mwrap{position:relative;display:block;user-select:none;-webkit-user-select:none;cursor:crosshair}.mwrap img{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff;-webkit-touch-callout:none}
 .mk-new,.mk-old{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel{box-shadow:0 0 0 3px #C08A3E}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
-.msg.naming{color:#C08A3E}
+.msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}
 .matpick{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}.matpick .seg{margin-bottom:8px}.qn-row{display:flex;gap:6px;margin-top:8px}.qn-row input{flex:1}
 .src-n{font-size:11px;color:var(--ink2);display:flex;align-items:center;gap:4px;margin:0 0 8px;padding:6px 8px;background:#EEF3F6;border-left:2px solid #3D6B8E}.src-n .btn-x{margin-left:auto}

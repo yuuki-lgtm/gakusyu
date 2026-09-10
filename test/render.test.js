@@ -186,3 +186,12 @@ test("デモ: テスト/作る に今日作った教科をまとめてPDFにす�
   assert.ok(html.includes("今日作った 1 教科を1つのPDFに（数学）"));
   assert.ok(!render(m.WeekTab, { d: F.empty(), save: noop, initial: "make" }).html.includes("1つのPDFに"));
 });
+test("デモ: 定期にワークで手つかずのページが出る", () => {
+  const { html } = render(m.ExamTab, { d: F.demo(), save: noop });
+  assert.ok(html.includes("ワークで手つかずのページ"));
+  assert.ok(html.includes("正負の数 p.11") && html.includes("文字と式 p.12") && html.includes("問題 4"), html.match(/手つかずのページ[\s\S]{0,400}/)?.[0]);
+});
+test("デモ: 登録/項目 のページに「済」と「×なし（やった）」が出る", () => {
+  const html = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html;
+  assert.ok(html.includes("済"), "p.10 はやった");
+});

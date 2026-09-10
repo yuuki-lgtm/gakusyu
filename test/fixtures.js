@@ -74,9 +74,9 @@ function fixtures(m) {
       { id: "w3", date: day(-7), subject: "英語", len: 2, structure: 2, surface: 1, note: "三単現の s", updatedAt: ts(-7) },
     ],
     materials: [
-      { id: "m1", subject: "数学", kind: "ワーク", page: 10, path: "fam-demo/math/wb/10.jpg", updatedAt: ts(-30) },
+      { id: "m1", subject: "数学", kind: "ワーク", page: 10, path: "fam-demo/math/wb/10.jpg", doneOn: day(-3), idx: { ns: ["1", "2(1)", "2(2)"], at: day(-3) }, updatedAt: ts(-3) },
       { id: "m2", subject: "数学", kind: "ワーク", page: 11, path: "fam-demo/math/wb/11.jpg", updatedAt: ts(-30) },
-      { id: "m3", subject: "数学", kind: "ワーク", page: 12, path: "fam-demo/math/wb/12.jpg", updatedAt: ts(-30) },
+      { id: "m3", subject: "数学", kind: "ワーク", page: 12, path: "fam-demo/math/wb/12.jpg", idx: { ns: ["1", "2", "3", "4"], at: day(-3) }, updatedAt: ts(-30) },
       { id: "m4", subject: "数学", kind: "教科書", page: 12, path: "fam-demo/math/tb/12.jpg", updatedAt: ts(-30) },
       { id: "m5", subject: "英語", kind: "教科書", page: 8, path: "fam-demo/eng/tb/8.jpg", updatedAt: ts(-30) },
     ],

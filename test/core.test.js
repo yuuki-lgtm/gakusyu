@@ -664,3 +664,40 @@ describe("印の位置を AI に渡す（項目名・類題）", () => {
     } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
   });
 });
+
+describe("索引と進度（裏で持つ）", () => {
+  test("markDone: 指定のページを「やった」にする。既にあれば最初の日を残す。無いパスは無視", () => {
+    const d = F.demo();
+    const r = m.markDone(d, ["fam-demo/math/wb/11.jpg", "fam-demo/math/wb/10.jpg", "nope"]);
+    const by = Object.fromEntries(r.materials.map((x) => [x.path, x.doneOn]));
+    assert.equal(by["fam-demo/math/wb/11.jpg"], T);
+    assert.equal(by["fam-demo/math/wb/10.jpg"], day(-3), "既にやったページは最初の日のまま");
+    assert.equal(by["fam-demo/math/wb/12.jpg"], undefined);
+    assert.equal(m.markDone({ v: 3 }, ["x"]).materials.length, 0);
+  });
+  test("applyAutoProgress: やったページを含む単元は習った扱い（最初の日）。手動で習った単元は触らない", () => {
+    const d = F.demo(); d.units = d.units.map((u) => (u.id === "u1" || u.id === "u2" ? { ...u, learnedOn: null } : u));
+    const r = m.applyAutoProgress(d);
+    const u1 = r.units.find((u) => u.id === "u1"), u2 = r.units.find((u) => u.id === "u2"), u4 = r.units.find((u) => u.id === "u4");
+    assert.equal(u1.learnedOn, day(-3)); assert.equal(u1.learnedBy, "auto");
+    assert.equal(u2.learnedOn, null, "p.12-19 はまだやっていない");
+    assert.equal(u4.learnedOn, day(-50), "手動のまま");
+    const r2 = m.applyAutoProgress(m.markDone(d, ["fam-demo/math/wb/12.jpg"]));
+    assert.equal(r2.units.find((u) => u.id === "u2").learnedOn, T);
+    const e = m.empty ? null : m.blank(); assert.equal(m.applyAutoProgress(e), e, "やったページが無ければそのまま");
+  });
+  test("untouchedPages: 範囲の単元で、取り込み済みなのに やっていない ワークのページ。索引があれば問題数", () => {
+    const d = F.demo();
+    const r = m.untouchedPages(d, ["u1", "u2", "u4"]);
+    assert.deepEqual(r.map((x) => [x.unit.id, x.pages, x.problems, x.noIdx]), [["u1", [11], 0, 1], ["u2", [12], 4, 0]]);
+    assert.deepEqual(m.untouchedPages(d, ["u4"]), [], "英語はワークを取り込んでいない");
+    assert.deepEqual(m.untouchedPages(m.markDone(d, ["fam-demo/math/wb/11.jpg", "fam-demo/math/wb/12.jpg"]), ["u1", "u2"]), []);
+  });
+  test("buildIndex: AI に番号を書き出させる。無ければ空", async () => {
+    const orig = globalThis.fetch;
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url) => (url.includes("/storage/") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer } : { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"ns":["1","2(1)",3,""]}' }] }) });
+    try { const r = await m.buildIndex({ path: "p", subject: "数学", kind: "ワーク", page: 5 }); assert.deepEqual(r, { ns: ["1", "2(1)", "3"], at: T }); }
+    finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+});
