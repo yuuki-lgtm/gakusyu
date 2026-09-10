@@ -701,3 +701,18 @@ describe("索引と進度（裏で持つ）", () => {
     finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
   });
 });
+
+describe("日付（ローカル日付。UTC 変換で1日ずれない）", () => {
+  test("addDays は文字列で見て正しく進む・戻る（タイムゾーンに依らない）", () => {
+    assert.equal(m.addDays("2026-09-10", 1), "2026-09-11");
+    assert.equal(m.addDays("2026-09-10", 3), "2026-09-13");
+    assert.equal(m.addDays("2026-09-30", 1), "2026-10-01");
+    assert.equal(m.addDays("2026-01-01", -1), "2025-12-31");
+    assert.equal(m.addDays("2026-02-28", 1), "2026-03-01");
+  });
+  test("today は YYYY-MM-DD で、その日の 0 時からの差が 0", () => {
+    const t = m.today(); assert.match(t, /^\d{4}-\d{2}-\d{2}$/);
+    const n = new Date(); assert.equal(t, `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`);
+    assert.equal(m.diffDays(t, m.addDays(t, 1)), 1);
+  });
+});

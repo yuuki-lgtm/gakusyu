@@ -36,8 +36,10 @@ const MKINDS = ["ワーク", "教科書"];
 const SUBJ_CODE = { 数学: "math", 英語: "eng", 社会: "soc", 理科: "sci", 国語: "jpn" };
 const KIND_CODE = { ワーク: "wb", 教科書: "tb" };
 
-const today = () => new Date().toISOString().slice(0, 10);
-const addDays = (d, n) => { const t = new Date(d + "T00:00:00"); t.setDate(t.getDate() + n); return t.toISOString().slice(0, 10); };
+/* 日付は端末のローカル日付で扱う（toISOString は UTC になり、日本では日付が1日ずれる） */
+const fmtDate = (t) => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+const today = () => fmtDate(new Date());
+const addDays = (d, n) => { const t = new Date(d + "T00:00:00"); t.setDate(t.getDate() + n); return fmtDate(t); };
 const diffDays = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const now = () => new Date().toISOString();
