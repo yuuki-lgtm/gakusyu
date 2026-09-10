@@ -732,3 +732,29 @@ describe("見開きの取り込み", () => {
     assert.deepEqual(await m.splitSpread("AAAA", false), ["AAAA"]);
   });
 });
+
+describe("見開きの綴じ目の推定", () => {
+  /* 白地の画像を作り、列の範囲に色を塗る。fn(x, y) が [r,g,b] を返す */
+  const img = (w, h, fn) => { const px = new Uint8ClampedArray(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const [r, g, b] = fn(x, y) || [255, 255, 255]; const i = (y * w + x) * 4; px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255; } return px; };
+  const text = (x, y) => (x % 3 === 0 && y % 4 === 0 ? [0, 0, 0] : null); // 文字っぽい、まばらな点
+  test("綴じ目の影（暗い帯）があればその中心。ずれていても追う", () => {
+    const w = 200, h = 50;
+    const px = img(w, h, (x, y) => (x >= 108 && x <= 113 ? [40, 40, 40] : text(x, y)));
+    const g = m.findGutter(px, w, h);
+    assert.ok(Math.abs(g - 111 / w) < 0.01, `g=${g}`);
+  });
+  test("影が無ければ、余白が合わさった白い帯の中心。中央に最も近い帯を選ぶ", () => {
+    const w = 200, h = 50;
+    const px = img(w, h, (x, y) => (x < 80 || x > 130 ? text(x, y) : null)); // 80〜130 が空白（中心 105）
+    const g = m.findGutter(px, w, h);
+    assert.ok(Math.abs(g - 105.5 / w) < 0.01, `g=${g}`);
+    const px2 = img(w, h, (x, y) => ((x >= 76 && x <= 84) || (x >= 100 && x <= 104) ? null : text(x, y))); // 2つの空白帯（幅 9 と 5）。中央に近い 100〜104
+    const g2 = m.findGutter(px2, w, h);
+    assert.ok(Math.abs(g2 - 102.5 / w) < 0.01, `g2=${g2}`);
+  });
+  test("手がかりが無ければ真ん中", () => {
+    const w = 200, h = 50;
+    assert.equal(m.findGutter(img(w, h, text), w, h), 0.5, "全面に文字");
+    assert.equal(m.findGutter(img(w, h, () => null), w, h) > 0.4 && m.findGutter(img(w, h, () => null), w, h) < 0.6, true, "全面が白なら中央付近の帯の中心");
+  });
+});

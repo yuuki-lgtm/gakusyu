@@ -24,7 +24,7 @@ input,select,textarea{font-size:16px !important}
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useRef } = React;
 
-const VERSION = "2026-09-10 10:40"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 10:42"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1076,14 +1076,36 @@ const isSpreadShape = (w, h) => w > h * 1.15;
 /* 画像の形の並びから、各画像のページ番号を割り当てる。shapes: ["spread"|"single", …] */
 function assignPages(start, shapes) { let n = start; return shapes.map((sh) => (sh === "spread" ? [n++, n++] : [n++])); }
 const loadImg = (b64) => new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error("画像を読めません")); img.src = `data:image/jpeg;base64,${b64}`; });
-/* 画像を見て、見開きなら左右に切って2ページ、片ページならそのまま1ページ。rightFirst（右綴じ・縦書き）なら右ページが先。canvas が無ければそのまま1つ返す */
+/* 見開きの綴じ目（切る位置）を推定する。px は RGBA の画素、w×h は縮小後の大きさ。
+   中央付近（幅の35〜65%）で、暗い縦の帯（綴じ目の影）があればその中心。無ければ、何も書かれていない縦の帯（左右の余白が合わさった所）のうち中央に最も近いものの中心。
+   どちらも無ければ真ん中。戻り値は 0〜1 の割合 */
+function findGutter(px, w, h) {
+  const lo = Math.floor(w * 0.35), hi = Math.ceil(w * 0.65);
+  const dark = new Float32Array(w), ink = new Float32Array(w);
+  for (let x = 0; x < w; x++) { let sd = 0, si = 0; for (let y = 0; y < h; y++) { const i = (y * w + x) * 4; const l = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114; sd += 255 - l; if (l < 128) si++; } dark[x] = sd / h; ink[x] = si / h; }
+  const med = [...dark].sort((a, b) => a - b)[Math.floor(w / 2)];
+  let best = -1, bv = -1; for (let x = lo; x < hi; x++) if (dark[x] > bv) { bv = dark[x]; best = x; }
+  // 影: 文字の列はまばらなので平均は薄い。列全体がはっきり暗い（平均の暗さ 100 超）ものだけを影とみなす
+  if (best >= 0 && bv > 100 && bv > med + 40) { let a = best, b = best; while (a > lo && dark[a - 1] > Math.max(60, med + 20)) a--; while (b < hi - 1 && dark[b + 1] > Math.max(60, med + 20)) b++; return ((a + b) / 2 + 0.5) / w; }
+  // 空白の帯: 幅が全体の 2% 以上あるものだけ（文字の間の細い隙間は除く）
+  const minRun = Math.max(3, Math.round(w * 0.02)); const runs = []; let st = -1;
+  for (let x = lo; x <= hi; x++) { const blank = x < hi && ink[x] < 0.01; if (blank && st < 0) st = x; if (!blank && st >= 0) { if (x - st >= minRun) runs.push([st, x - 1]); st = -1; } }
+  if (runs.length) { const c = w / 2; runs.sort((p, q) => Math.abs((p[0] + p[1]) / 2 - c) - Math.abs((q[0] + q[1]) / 2 - c)); const [a, b] = runs[0]; return ((a + b) / 2 + 0.5) / w; }
+  return 0.5;
+}
+/* 画像を見て、見開きなら綴じ目で左右に切って2ページ、片ページならそのまま1ページ。rightFirst（右綴じ・縦書き）なら右ページが先。canvas が無ければそのまま1つ返す */
 async function splitSpread(b64, rightFirst) {
   if (typeof Image === "undefined") return [b64];
   const img = await loadImg(b64);
   if (!isSpreadShape(img.width, img.height)) return [b64];
-  const half = Math.floor(img.width / 2);
-  const cut = (x0) => { const c = document.createElement("canvas"); c.width = half; c.height = img.height; c.getContext("2d").drawImage(img, x0, 0, half, img.height, 0, 0, half, img.height); const out = c.toDataURL("image/jpeg", 0.85).split(",")[1]; c.width = c.height = 0; return out; };
-  const left = cut(0), right = cut(img.width - half);
+  // 縮小して綴じ目を探す
+  const sw = 400, sh = Math.max(1, Math.round((img.height * sw) / img.width));
+  const sc = document.createElement("canvas"); sc.width = sw; sc.height = sh; const sg = sc.getContext("2d"); sg.drawImage(img, 0, 0, sw, sh);
+  let g = 0.5; try { g = findGutter(sg.getImageData(0, 0, sw, sh).data, sw, sh); } catch { g = 0.5; }
+  sc.width = sc.height = 0;
+  const cutX = Math.round(img.width * g);
+  const cut = (x0, cw) => { const c = document.createElement("canvas"); c.width = cw; c.height = img.height; c.getContext("2d").drawImage(img, x0, 0, cw, img.height, 0, 0, cw, img.height); const out = c.toDataURL("image/jpeg", 0.85).split(",")[1]; c.width = c.height = 0; return out; };
+  const left = cut(0, cutX), right = cut(cutX, img.width - cutX);
   return rightFirst ? [right, left] : [left, right];
 }
 /* PDF を1ページずつ JPEG（base64）にして onPage に渡す。全ページを一度にメモリへ載せない */
