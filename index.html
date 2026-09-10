@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 08:32"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 08:41"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -556,7 +556,7 @@ function nextActions(d) {
     if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
     const ns = nightLoad();
     const toGrade0 = d.items.filter((i) => i.printedOn && i.printedOn < t).length, daily0 = pickDaily(d);
-    A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×登録 → 最後のページ → 明日の分）", why: `${toGrade0 ? `採点 ${toGrade0} 件。` : ""}${daily0.chosen.length ? `明日の分 ${daily0.chosen.length} 件${daily0.rest.length ? `（繰り越し ${daily0.rest.length} 件）` : ""}。` : ""}1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。`, tab: "night", t: "5分" });
+    A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×の登録 → 最後のページ → 明日の紙）", why: `${toGrade0 ? `採点 ${toGrade0} 件。` : ""}${daily0.chosen.length ? `明日の分 ${daily0.chosen.length} 件${daily0.rest.length ? `（繰り越し ${daily0.rest.length} 件）` : ""}。` : ""}1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。`, tab: "night", t: "5分" });
     if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと、「テスト」の一覧で用紙を開いて撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: pending.some((p) => p.kind === "模試") && pending.every((p) => p.kind === "模試") ? "mock" : "make", t: "1枚2分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
     const mx = upcomingExams(d)[0]; const md = mx ? mockDue(d, mx, t) : null;
@@ -1071,7 +1071,7 @@ function App() {
   const nextExam = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
   const left = nextExam ? diffDays(today(), nextExam.date) : null;
   // 下のバーは頻度で3つ。毎日＝ホーム（夜の作業・朝の印刷・今日）、週1＝週末（テスト・模試・定期）、たまに＝その他（登録・分析・依頼文・設定）
-  const tabs = [["home", "ホーム"], ["week", left !== null && left <= 14 ? `週末 あと${left}日` : "週末"], ["more", "その他"]];
+  const tabs = [["home", "ホーム"], ["week", left !== null && left <= 14 ? `テスト あと${left}日` : "テスト"], ["more", "その他"]];
   const group = GROUP_OF[tab] || "home";
   // バーは、そのグループで最後に開いていた画面に戻す（その他→登録→ホーム→その他 なら登録）。いま居るグループをもう一度押すと先頭へ
   lastIn.current[group] = tab;
@@ -1106,7 +1106,7 @@ function MorningPrint({ d }) {
   const [busy, setBusy] = useState(""); const [err, setErr] = useState("");
   if (!items.length) return null;
   const go = async () => { setErr(""); setBusy("開始"); try { await exportPDF(genToPaper(items, (id) => unitById(d, id)), (n) => setBusy(String(n))); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
-  return (<div className="blk morning"><button className="btn-main" onClick={go} disabled={!!busy}>{busy ? `PDFを作成中… ${busy}` : `今日の分を印刷する（${items.length}件・PDFだけ）`}</button>
+  return (<div className="blk morning"><button className="btn-main" onClick={go} disabled={!!busy}>{busy ? `PDFを作成中… ${busy}` : `今日の紙をもう一度PDFに（${items.length}件）`}</button>
     <p className="blk-s">判定はしません。夜に作った類題をそのまま出します。子どもが朝に押してもよい。</p></div>);
 }
 function HomeTab({ d, go }) {
@@ -1121,9 +1121,9 @@ function HomeTab({ d, go }) {
     <MorningPrint d={d} />
     {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt press" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span><span className="chev">›</span></button>))}</div>)}
     {nx ? (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>あと{left}日</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)
-      : (<button className="blk exam-line" onClick={() => go("reg", "list")}><span className="hm-k">未定着</span><strong>{d.items.filter((i) => i.status === "active").length}件</strong><span className="ex-n">安定 {d.items.filter((i) => i.status === "stable").length}件 · 定期テストは「週末→定期」で登録</span></button>)}
+      : (<button className="blk exam-line" onClick={() => go("reg", "list")}><span className="hm-k">未定着</span><strong>{d.items.filter((i) => i.status === "active").length}件</strong><span className="ex-n">安定 {d.items.filter((i) => i.status === "stable").length}件 · 定期テストは「テスト→定期テスト」で登録</span></button>)}
     <div className="blk"><h3>1週間の流れ</h3><ol className="flow">
-      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て右の欄に ○× → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> ホームの「夜の作業」を押して、採点 → ×登録 → 最後のページ → 明日の分、の順に「次へ」</li><li><b>土曜</b> 「週末→作る」で5教科 → 1つのPDFで印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」</li><li><b>日曜</b> 「週末→読解・記述」で読解1本・記述1本 → 撮る</li><li><b>定期テスト前（14日前から）</b> ホームに「模試を作る」が出たら「週末→模試」で作って印刷 → 50分で解く → 赤ペンで採点 → 用紙の行で撮る。14・7・3日前の3回</li><li><b>返却時</b> 「その他→登録→教材」で答案を「テスト」として取り込む → 「落とした項目」で×をタップ → 「週末→定期」で実点を入れる</li><li><b>週1</b> 「その他→依頼文」をコピーして相談</li></ol></div>
+      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て右の欄に ○× → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> ホームの「夜の作業」を押して、採点 → ×登録 → 最後のページ → 明日の分、の順に「次へ」</li><li><b>土曜</b> 「テスト→5教科テスト」で作る → 1つのPDFで印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」</li><li><b>日曜</b> 「テスト→読解・記述」で読解1本・記述1本 → 撮る</li><li><b>定期テスト前（14日前から）</b> ホームに「模試を作る」が出たら「テスト→模試」で作って印刷 → 50分で解く → 赤ペンで採点 → 用紙の行で撮る。14・7・3日前の3回</li><li><b>返却時</b> 「その他→登録→教材」で答案を「テスト」として取り込む → 「落とした項目」で×をタップ → 「テスト→定期テスト」で実点を入れる</li><li><b>週1</b> 「その他→依頼文」をコピーして相談</li></ol></div>
   </div>);
 }
 
@@ -1135,7 +1135,7 @@ function TodayTab({ d, save, initial }) {
   const ps = printSet(d).length;
   return (<div className="pane">
     <p className="tabhint">夜の2ステップ。昨日の紙を見て「採点」→「印刷」で明日の分を1枚に。子どもは紙に解き、解答を見て自分の判定を書く。行をタップすると類題と解答が見えます。</p>
-    <div className="subtabs"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>印刷{ps ? ` (${ps})` : ""}</button></div>
+    <div className="subtabs"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>明日の紙{ps ? ` (${ps})` : ""}</button></div>
     {mode === "grade" && <TodayGrade d={d} save={save} />}
     {mode === "print" && <TodayMake d={d} save={save} />}
   </div>);
@@ -1198,7 +1198,7 @@ function TodayMake({ d, save }) {
         : (<>{[...SUBJECTS, ...cands.map((i) => i.subject)].filter((sb, k, arr) => arr.indexOf(sb) === k && cands.some((i) => i.subject === sb)).map((sb) => (<div key={sb}><h4 className="sub-h"><Dot s={sb} />{sb}<em className="pg"> {cands.filter((i) => i.subject === sb).length}件</em></h4>
           {cands.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? <> · 類題あり <button className="lnk" onClick={(e) => { e.preventDefault(); setRedo((r) => new Set([...r, i.id])); }}>作り直す</button></> : redo.has(i.id) ? " · 作り直す" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}</div>))}
           <p className="ph-note">チェック {set.length} 件（{set.reduce((a, i) => a + problemCount(i), 0)} 問）、繰り越し {cands.length - set.length} 件。</p>
-          <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `この内容で作る（${set.length}件 → PDF）`}</button></>)}
+          <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `明日の紙を作る（${set.length}件 → PDF）`}</button></>)}
       {log.length > 0 && <div className="loglist">{log.map((l, k) => (<div key={k}>{l}</div>))}</div>}
     </section>
     {printed.length > 0 && <section className="sec"><h3 className="s-h">採点待ち <span className="cnt">{printed.length}件</span></h3><p className="lead">紙をなくしたときは、同じ内容をもう一度PDFにできます（類題は作り直しません）。</p><button className="btn-sm wide" onClick={reprint} disabled={!!busy}>採点待ちの分をもう一度PDFにする</button></section>}
@@ -1273,7 +1273,7 @@ function TodayGrade({ d, save }) {
 }
 /* ---- 夜の作業（採点 → ×登録 → 最後のページ → 明日の分。1画面ずつ「次へ」。途中で閉じても今日の分は続きから） ---- */
 const NIGHT_KEY = "night_step";
-const NIGHT_STEPS = [["grade", "採点", "昨日の紙を撮るか、行ごとに押して「まとめて確定」"], ["items", "×の登録", "今日のワークの×をページでタップして「まとめて登録」"], ["last", "最後のページ", "今日やった最後のページまでを「やった」に"], ["print", "明日の分", "類題を作って1つのPDFに。印刷して机へ"]];
+const NIGHT_STEPS = [["grade", "昨日の紙を採点", "昨日の紙を撮るか、行ごとに押して「まとめて確定」"], ["items", "ワークの×を登録", "今日のワークの×をページでタップして「まとめて登録」"], ["last", "今日の最後のページ", "今日やった最後のページまでを「やった」に"], ["print", "明日の紙を作る", "類題を作って1つのPDFに。印刷して机へ"]];
 const nightLoad = (dflt = 0) => { try { const v = JSON.parse(localStorage.getItem(NIGHT_KEY) || "null"); return v && v.d === today() && v.step >= 0 && v.step < NIGHT_STEPS.length ? v.step : dflt; } catch { return dflt; } };
 const nightSave = (step) => { try { if (step === null) localStorage.removeItem(NIGHT_KEY); else localStorage.setItem(NIGHT_KEY, JSON.stringify({ d: today(), step })); } catch {} };
 /* その段階にやることがあるか。無い段階は「次へ」で飛ばす（教材が無い家庭や、まだ紙が無い初日でも明日の分に着く） */
@@ -1321,13 +1321,13 @@ function WeekTab({ d, save, initial }) {
   useEffect(() => { if (initial) { setMode(asMode(initial)); if (initial === "write") setRw("write"); if (initial === "read") setRw("read"); } }, [initial]);
   return (
     <div className="pane">
-      <p className="tabhint">週末の作業。作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。定期テストの登録と範囲もここ。</p>
-      <div className="subtabs"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>作る</button>
-        <button className={mode === "exam" ? "on" : ""} onClick={() => setMode("exam")}>定期</button>
+      <p className="tabhint">週末のテスト。5教科テストを作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。定期テストの登録と範囲もここ。</p>
+      <div className="subtabs"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>5教科テスト</button>
+        <button className={mode === "exam" ? "on" : ""} onClick={() => setMode("exam")}>定期テスト</button>
         <button className={mode === "mock" ? "on" : ""} onClick={() => setMode("mock")}>模試</button>
         <button className={mode === "rw" ? "on" : ""} onClick={() => setMode("rw")}>読解・記述</button></div>
       {mode === "make" && (<><MakePapers d={d} save={save} initialKind={initial === "cum" ? "累積" : "週次"} />
-        <details className="det" open={initial === "manual"}><summary>手入力（学校のワークや問題集の結果）</summary><ManualTest d={d} save={save} /></details></>)}
+        <details className="det" open={initial === "manual"}><summary>ワークの結果を記録（学校のワークや問題集）</summary><ManualTest d={d} save={save} /></details></>)}
       {mode === "exam" && <ExamTab d={d} save={save} />}
       {mode === "mock" && <MockMaker d={d} save={save} preset={preset} />}
       {mode === "rw" && (<><div className="seg sm"><button className={rw === "read" ? "on" : ""} onClick={() => setRw("read")}>読解</button><button className={rw === "write" ? "on" : ""} onClick={() => setRw("write")}>記述</button></div>
@@ -1378,7 +1378,7 @@ function MakePapers({ d, save, initialKind = "週次" }) {
           <div className="chips">{d.units.filter((u) => u.subject === s).map((u) => { const on = (customUnits[s] || []).includes(u.id); return (
             <button key={u.id} className={"chip" + (on ? " on" : "") + (taught(u) ? "" : " dim")} style={on ? { background: HUE[s] } : {}} onClick={() => setCustomUnits((c) => ({ ...c, [s]: on ? (c[s] || []).filter((x) => x !== u.id) : [...(c[s] || []), u.id] }))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>); })}</div></div>))}</details>
       {sel.length > 0 && (d.materials || []).length > 0 && <p className="ph-note">添付される教材：{sel.map((s) => `${s} ${matsLabel(materialsForUnits(d, s, unitsFor(s))) || "なし"}`).join(" ／ ")}。問題が参照したページだけ「資料」として用紙に印刷されます。</p>}
-      <button className="btn-main" onClick={genAll} disabled={!!busy || !sel.length}>{busy ? `${busy} を作成中… ${sec}秒` : `${sel.length}教科まとめて作る`}</button>
+      <button className="btn-main" onClick={genAll} disabled={!!busy || !sel.length}>{busy ? `${busy} を作成中… ${sec}秒` : `${sel.length}教科のテストを作る`}</button>
       {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}
       {todays.length > 0 && <button className="btn-sm wide" onClick={pdfAll} disabled={!!busy || !!pdfBusy}>{pdfBusy ? `PDFを作成中… ${pdfBusy}` : `今日作った ${todays.length} 教科を1つのPDFに（${todays.map((p) => p.subject).join("・")}）`}</button>}
       {todays.length > 0 && <p className="ph-note">教科ごとに問題を偶数ページにそろえて並べ、最後に全教科の解答をまとめます。両面印刷1回で、解答は別の紙になります。</p>}
@@ -1604,7 +1604,7 @@ function WritingFlow({ d, save }) {
           {rev.errors.map((e, i) => (<label className={"cand2" + (addItems[i] ? " on" : "")} key={i}><input type="checkbox" checked={!!addItems[i]} onChange={(ev) => setAddItems((x) => ({ ...x, [i]: ev.target.checked }))} /><span><em className="pg">{e.kind}</em> {e.where} → {e.fix}</span></label>))}</>)}
         {rev.content && <div className="q-s">声かけ：{rev.content}</div>}
         {task.model && <details className="det"><summary>模範解答</summary><div className="tr">{task.model}</div></details>}
-        <button className="btn-main" onClick={commit}>記録する（{sc.len + sc.structure + sc.surface}/6）</button>
+        <button className="btn-main" onClick={commit}>結果を記録する（{sc.len + sc.structure + sc.surface}/6）</button>
       </>)}
     </section>
     {recent.length > 0 && <section className="sec"><h3 className="s-h">最近の記述</h3><div className="mini">{recent.map((w) => (<div key={w.id}>{w.date.slice(5)} {w.len + w.structure + w.surface}/6 {w.note}</div>))}</div></section>}
@@ -1636,7 +1636,7 @@ function ManualTest({ d, save }) {
     <Fld label="形式ごとの成績">{rows.map((r) => (<div className="fmtrow" key={r.id}><select value={r.fmt} onChange={(e) => upd(r.id, "fmt", e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select><input type="number" className="num" placeholder="出題" value={r.total} onChange={(e) => upd(r.id, "total", e.target.value)} /><input type="number" className="num" placeholder="正答" value={r.correct} onChange={(e) => upd(r.id, "correct", e.target.value)} />{rows.length > 1 && <button className="btn-x" onClick={() => setRows((x) => x.filter((y) => y.id !== r.id))}>×</button>}</div>))}
       <button className="btn-sm" onClick={() => setRows((r) => [...r, { id: uid(), fmt: FORMATS[0], total: "", correct: "" }])}>形式を追加</button></Fld>
     <Fld label="出題した単元"><div className="chips">{subjUnits.length === 0 && <span className="empty">単元が未登録です。</span>}{subjUnits.map((u) => (<button key={u.id} className={"chip" + (sel.includes(u.id) ? " on" : "")} style={sel.includes(u.id) ? { background: HUE[subject] } : {}} onClick={() => setSel((s) => (s.includes(u.id) ? s.filter((x) => x !== u.id) : [...s, u.id]))}>{u.name}{!u.lastTestedOn && <em className="nv">未</em>}</button>))}</div></Fld>
-    <button className="btn-main" onClick={submit}>記録する</button>
+    <button className="btn-main" onClick={submit}>結果を記録する</button>
   </section>);
 }
 
@@ -1646,7 +1646,7 @@ function RegTab({ d, save, initial }) {
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
   return (<div className="pane">
     <p className="tabhint">単元は学期に1回。項目は、平日のワークの×をページで指してタップする場所です。進度はワークの×から自動、拾えなければ「単元」で「ここまで」。自作テストの×は「テスト→撮る」で自動です。</p>
-    <div className="subtabs"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着一覧</button><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>教材</button></div>
+    <div className="subtabs"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元と進度</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着リスト</button><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>教材の取り込み</button></div>
     {mode === "unit" && <UnitReg d={d} save={save} />}
     {mode === "item" && <ItemReg d={d} save={save} />}
     {mode === "list" && <ItemList d={d} save={save} />}
@@ -1796,7 +1796,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
       </div></div>) : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
     <p className="ph-note">×だった問題をタップすると印が付き、誤答の種類を選べます（初期値は「知らなかった」）。薄い印は登録済みで、タップすると状態と誤答の種類が見えます。</p>
     {taps.length > 0 && (<><p className="tap-sum">印 {taps.length}（{Object.entries(byPage).map(([k, n]) => `${k}: ${n}`).join("、")}）</p>
-      <button className="btn-main" onClick={commit}>まとめて登録（{taps.length}件）</button></>)}
+      <button className="btn-main" onClick={commit}>{taps.length}件を未定着に入れる</button></>)}
     {kind !== "テスト" && cur && (<div className="lastp"><span>今日やった最後のページを開いて</span><button className="btn-sm" onClick={upTo} disabled={!!taps.length}>p.{page} までやった</button></div>)}
     {kind !== "テスト" && cur && taps.length > 0 && <p className="ph-note">先に「まとめて登録」を押してから。</p>}
     {naming && <p className="msg naming">項目名をAIが付けています…</p>}
@@ -1937,9 +1937,9 @@ function MaterialReg({ d, save }) {
 function MoreTab({ d, go }) {
   const last = (arr) => (arr && arr.length ? arr.map((x) => x.updatedAt || "").sort().pop() : "");
   const rows = [
-    ["reg", "登録", "落とした項目（ページをタップして登録。夜の作業の外からもここで）・単元・教材の取り込み・未定着一覧。", last(d.units)],
+    ["reg", "登録（単元・×・教材）", "落とした項目（ページをタップして登録。夜の作業の外からもここで）・単元と進度・教材の取り込み・未定着リスト。", last(d.units)],
     ["ana", "分析", "保持率・形式別・一致率・問題が変。見るだけ。月1の振り返りに。", ""],
-    ["export", "依頼文", "学習状況を文章にしてコピー。週1の相談に。", ""],
+    ["export", "相談用の依頼文", "学習状況を文章にしてコピー。週1の相談に。", ""],
     ["set", "設定", "同期・APIキー・今日の分の上限・バックアップ。", d.backupOn || ""],
   ];
   const reload = () => { try { window.location.replace(window.location.pathname + "?r=" + Date.now()); } catch {} };
