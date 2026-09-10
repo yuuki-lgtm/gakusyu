@@ -351,6 +351,22 @@ function deferForExam(d) {
 /* 後ろ倒し中の項目（そのテストで、まだ再出題日が来ていないもの） */
 const deferredFor = (d, ex) => d.items.filter((i) => i.defer && i.defer.examId === ex.id && i.nextDue > today());
 
+/* ---- 採点結果の集計 ---- */
+/* 撮った答案の○×（marks: {n: "o"|"x"|"blank"|"unknown"}）から、形式別の正答数と、模試なら配点による得点（100点換算は pct(score, maxScore)） */
+function gradeResult(paper, marks) {
+  const rows = {}; let score = 0, maxScore = 0;
+  paper.questions.forEach((qq) => { const mk = marks[qq.n]; if (mk === "unknown" || !mk) return; rows[qq.fmt] = rows[qq.fmt] || { fmt: qq.fmt, total: 0, correct: 0 }; rows[qq.fmt].total++; if (mk === "o") rows[qq.fmt].correct++; if (qq.pts) { maxScore += qq.pts; if (mk === "o") score += qq.pts; } });
+  const rlist = Object.values(rows);
+  return { rows: rlist, total: rlist.reduce((p, c) => p + c.total, 0), correct: rlist.reduce((p, c) => p + c.correct, 0), ...(paper.kind === "模試" ? { score, maxScore } : {}) };
+}
+/* 定期テストの予測。その定期テストの模試（100点換算）があれば優先、無ければ直近の累積テスト */
+function predictFor(d, ex, subject) {
+  const mk = d.tests.filter((t) => t.kind === "模試" && t.examId === ex.id && t.subject === subject && t.maxScore > 0).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  if (mk) return { pct: pct(mk.score, mk.maxScore), src: "模試" };
+  const c = d.tests.filter((t) => t.subject === subject && t.kind === "累積" && t.date <= ex.date).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  return c ? { pct: pct(c.correct, c.total), src: "累積" } : null;
+}
+
 /* ---- 紙で回す（印刷セット・採点セット・一括確定） ---- */
 /* 明日までに期日が来る未印刷の項目（子どもが判定中のものは除く） */
 function printSet(d) {
@@ -1268,11 +1284,8 @@ function GradeFlow({ d, save }) {
 
   const commit = () => {
     if (!paper || !marks) return;
-    const rows = {};
-    paper.questions.forEach((qq) => { const m = marks[qq.n]; if (m === "unknown" || !m) return; rows[qq.fmt] = rows[qq.fmt] || { fmt: qq.fmt, total: 0, correct: 0 }; rows[qq.fmt].total++; if (m === "o") rows[qq.fmt].correct++; });
-    const rlist = Object.values(rows);
-    const total = rlist.reduce((p, c) => p + c.total, 0), correct = rlist.reduce((p, c) => p + c.correct, 0);
-    const test = { id: uid(), subject: paper.subject, date: today(), kind: paper.kind, source: `自作 ${paper.code}`, rows: rlist, total, correct, unitIds: paper.unitIds, paperId: paper.id, updatedAt: now() };
+    const r = gradeResult(paper, marks);
+    const test = { id: uid(), subject: paper.subject, date: today(), kind: paper.kind, source: `自作 ${paper.code}`, ...r, unitIds: paper.unitIds, paperId: paper.id, ...(paper.kind === "模試" ? { examId: paper.examId } : {}), updatedAt: now() };
     const newItems = paper.questions.filter((qq) => checked[qq.n]).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" }));
     save({ ...d, tests: [...d.tests, test], items: [...d.items, ...newItems], papers: d.papers.map((p) => (p.id === paper.id ? { ...p, status: "graded", updatedAt: now() } : p)), log: { ...d.log, [today()]: true } });
     setMarks(null); setPid(pending.filter((p) => p.id !== paper.id)[0]?.id || "");
@@ -1288,6 +1301,7 @@ function GradeFlow({ d, save }) {
         <div className="markgrid">{paper.questions.map((qq) => { const m = marks[qq.n] || "unknown"; return (
           <button key={qq.n} className={"mk " + m} onClick={() => setMarks((x) => ({ ...x, [qq.n]: m === "o" ? "x" : m === "x" ? "blank" : m === "blank" ? "unknown" : "o" }))}>{qq.n}<span>{m === "o" ? "○" : m === "x" ? "×" : m === "blank" ? "空" : "?"}</span></button>); })}</div>
         <p className="ph-note">読み取りが違っていたら番号をタップして直せます（○→×→空欄→?の順）。「?」は集計から外れます。</p>
+        {paper.kind === "模試" && (() => { const r = gradeResult(paper, marks); return <p className="ph-note">模試の得点: {r.score} / {r.maxScore}（100点換算 {pct(r.score, r.maxScore) ?? "—"}点）。「?」の問題は除いています。</p>; })()}
         <div className="cand-h">未定着リストに入れる項目</div>
         {paper.questions.filter((qq) => marks[qq.n] === "x" || marks[qq.n] === "blank").map((qq) => (
           <div className={"cand2" + (checked[qq.n] ? " on" : "")} key={qq.n}>
@@ -1753,7 +1767,7 @@ function ExamCard({ ex, d, save }) {
   const rangeItems = d.items.filter((i) => ex.unitIds.includes(i.unitId) && i.status === "active");
   const never = inRange.filter((u) => !u.lastTestedOn);
   const stuck = rangeItems.filter((i) => i.failCount >= 3);
-  const predicted = (s) => { const c = d.tests.filter((t) => t.subject === s && t.kind === "累積" && t.date <= ex.date).sort((a, b) => (a.date < b.date ? 1 : -1))[0]; return c ? pct(c.correct, c.total) : null; };
+  const predicted = (s) => predictFor(d, ex, s);
   return (<div className="blk">
     <div className="ex-h"><strong>{ex.name || "テスト"}</strong> {ex.date} {!past && <em className={"cnt-b" + (left <= 14 ? " near" : "")}>D-{left}</em>}<button className="btn-x" onClick={() => save(removeRec(d, "exams", ex.id))}>×</button></div>
     <Fld label="出題範囲"><div className="chips">{d.units.map((u) => (<button key={u.id} className={"chip" + (ex.unitIds.includes(u.id) ? " on" : "")} style={ex.unitIds.includes(u.id) ? { background: HUE[u.subject] } : {}} onClick={() => upd({ unitIds: ex.unitIds.includes(u.id) ? ex.unitIds.filter((x) => x !== u.id) : [...ex.unitIds, u.id] })}>{u.subject}・{u.name}</button>))}</div></Fld>
@@ -1765,9 +1779,9 @@ function ExamCard({ ex, d, save }) {
       {SUBJECTS.map((s) => { const its = rangeItems.filter((i) => i.subject === s); if (!its.length) return null; return (<div className="plan" key={s}><div className="pl-h" style={{ color: HUE[s] }}>{s}（{its.length}）</div><ul className="plain">{its.map((i) => (<li key={i.id}>{i.label}<em> {i.fmt}</em></li>))}</ul></div>); })}
       {rangeItems.length === 0 && <p className="done">範囲内の未定着はゼロ。直前に詰め込む必要はありません。</p>}</>)}
     <div className="calib"><div className="cand-h">実際の点数（返却後に入力）と、ツール上の予測</div>
-      {SUBJECTS.map((s) => { const p = predicted(s); const a = ex.actual?.[s]; const gap = a !== undefined && a !== "" && p !== null ? Number(a) - p : null; return (
-        <div className="cal-row" key={s}><span className="m-n" style={{ color: HUE[s] }}>{s}</span><input type="number" className="num" placeholder="実点" value={a ?? ""} onChange={(e) => upd({ actual: { ...(ex.actual || {}), [s]: e.target.value } })} /><span className="cal-p">予測 {p === null ? "—" : p + "%"}</span>{gap !== null && <span className="cal-g" style={{ color: Math.abs(gap) <= 7 ? "#2F6F5E" : "#A8443B" }}>{gap > 0 ? "+" : ""}{gap}</span>}</div>); })}
-      <p className="blk-s">予測＝直近の累積テストの正答率。ずれが±7を超える教科は、自作の物差しが本番と合っていません。その教科の作問の難易度か範囲を見直す材料です。</p></div>
+      {SUBJECTS.map((s) => { const p = predicted(s); const a = ex.actual?.[s]; const gap = a !== undefined && a !== "" && p !== null ? Number(a) - p.pct : null; return (
+        <div className="cal-row" key={s}><span className="m-n" style={{ color: HUE[s] }}>{s}</span><input type="number" className="num" placeholder="実点" value={a ?? ""} onChange={(e) => upd({ actual: { ...(ex.actual || {}), [s]: e.target.value } })} /><span className="cal-p">予測 {p === null ? "—" : `${p.pct}%（${p.src}）`}</span>{gap !== null && <span className="cal-g" style={{ color: Math.abs(gap) <= 7 ? "#2F6F5E" : "#A8443B" }}>{gap > 0 ? "+" : ""}{gap}</span>}</div>); })}
+      <p className="blk-s">予測＝この定期テストの模試の得点（100点換算）。模試が無ければ直近の累積テストの正答率。ずれが±7を超える教科は、自作の物差しが本番と合っていません。その教科の作問の難易度か範囲を見直す材料です。</p></div>
   </div>);
 }
 function ExportTab({ d }) {

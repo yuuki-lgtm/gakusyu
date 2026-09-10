@@ -240,3 +240,7 @@ test("テスト/模試: 定期テストの範囲の教科が出る。空デー�
 test("テスト/模試: 返却テストがある教科はその旨が出る", () => {
   assert.ok(render(m.WeekTab, { d: F.demo(), save: noop, initial: "mock:数学" }).html.includes("数学は返却テスト1枚を形式の参考にします"));
 });
+test("定期: 予測に模試か累積かが出る", () => {
+  const html = render(m.ExamTab, { d: F.demo(), save: noop }).html;
+  assert.ok(html.includes("80%（累積）"));
+});

@@ -986,3 +986,24 @@ describe("模試（段階4: ホームの日程。14・7・3日前、1日1〜2教
     assert.equal(m.nextActions(F.demo()).A.find((x) => x.k === "mock"), undefined);
   });
 });
+
+describe("模試（段階5: 採点と予測）", () => {
+  const mockPaper = { id: "mp", kind: "模試", subject: "数学", examId: "e1", unitIds: ["u1"], questions: [
+    { n: 1, fmt: "計算", pts: 40, label: "a" }, { n: 2, fmt: "計算", pts: 30, label: "b" }, { n: 3, fmt: "記述・作文", pts: 30, label: "c" }] };
+  test("gradeResult: 模試は配点で得点。? は除く。週次は従来どおり得点なし", () => {
+    const r = m.gradeResult(mockPaper, { 1: "o", 2: "x", 3: "unknown" });
+    assert.deepEqual([r.score, r.maxScore, r.total, r.correct], [40, 70, 2, 1]);
+    assert.deepEqual(r.rows, [{ fmt: "計算", total: 2, correct: 1 }]);
+    const w = m.gradeResult({ ...mockPaper, kind: "週次" }, { 1: "o", 2: "blank", 3: "x" });
+    assert.equal(w.score, undefined); assert.deepEqual([w.total, w.correct], [3, 1]);
+  });
+  test("predictFor: 模試があれば100点換算で優先、無ければ累積、どちらも無ければ null", () => {
+    const d = F.demo(); const ex = d.exams[0];
+    assert.deepEqual(m.predictFor(d, ex, "英語"), { pct: 80, src: "累積" }, "t3 は 4/5");
+    assert.equal(m.predictFor(d, ex, "理科"), null);
+    const withMock = { ...d, tests: [...d.tests, { id: "tm", kind: "模試", examId: "e1", subject: "英語", date: T, score: 61, maxScore: 100, rows: [], total: 0, correct: 0 }] };
+    assert.deepEqual(m.predictFor(withMock, ex, "英語"), { pct: 61, src: "模試" });
+    const other = { ...withMock, tests: withMock.tests.map((t) => (t.id === "tm" ? { ...t, examId: "e2" } : t)) };
+    assert.deepEqual(m.predictFor(other, ex, "英語"), { pct: 80, src: "累積" }, "別の定期テストの模試は使わない");
+  });
+});

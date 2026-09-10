@@ -48,7 +48,7 @@
 ### テスト `WeekTab`（作る／撮る／読解／記述／手入力）
 - **作る `MakePapers`**: 教科ごとに `pickUnits()`（未定着がある単元と最近出していない単元）か手で選んだ単元で `genPaper()`（週次・累積・模試で共通の作問関数。AI 節）を呼び、`materialsForUnits()` の教材ページを「図1〜図N」として添付して作問。問題文が参照した図（「図3」または `fig`）のページだけ `refs` に残す。「今日作った N 教科を1つのPDFに」で `exportPDF(papers)`。各行の `PaperRow`→`PrintSheet` は1教科ずつ。
 - **模試 `MockMaker`**: 「定期」で範囲を選んだ直近のテストの範囲で、1教科ずつ `genPaper(kind:"模試")` で作る。用紙は `examId`・`examName`・`left`・`round`・`minutes:50`・`maxScore:100` を持つ。形式は本番に寄せる: 大問は教科ごとの `MOCK_SECTIONS`（知識→計算→応用→記述の順）、各問に配点 `pts`（`normalizePts` で合計をちょうど100に）、`sec` に大問名。用紙には大問の見出し・配点・50分・100点満点が出る。教材種別「テスト」の答案（`testSheets`、新しい4枚まで）があれば `refSheets` で画像にして【参考】として渡し、大問数・配点の配分・記述の量を寄せる（問題文は写させない）。週次の判断（`paperThisWeek`）や「今日作った教科をまとめてPDF」には混ぜない。模試の用紙は再利用しない。
-- **撮る `GradeFlow`**: 採点済みの答案を撮り、AI が○×を読む。×と空欄を未定着に入れ、形式別の結果を `tests` に入れる。
+- **撮る `GradeFlow`**: 採点済みの答案を撮り、AI が○×を読む。`gradeResult()` で形式別の結果に集計し、×と空欄を未定着に入れる。模試なら配点で `score`／`maxScore`（100点換算は `pct`）と `examId` も `tests` に入れる。
 - **読解 `ReadingMaker`**: 新規の文章と設問を作る（既存作品は使わない）。落とした設問は「読解の技能」として未定着に。
 - **記述 `WritingFlow`**: 課題を作り、答案を撮って添削。表面の誤りの種類を未定着に。
 - **手入力 `ManualTest`**: 学校のワーク等の結果を形式別に入れる。
@@ -61,7 +61,7 @@
 
 ### 分析 `AnaTab`／定期 `ExamTab`／依頼文 `ExportTab`／設定 `Settings`
 - 分析: 保持率（30日以上あけた再出題の正答率）、形式別、子どもと親の判定の一致率、誤答の種類の分布。見るだけ。
-- 定期: テストの登録と範囲。範囲内の未定着、未出題の単元、**ワークで手つかずのページ（`untouchedPages`）**、実点と予測のずれ。**14日前から `deferForExam()` が範囲外の項目の再出題日をテスト翌日に後ろ倒しする**（起動時と保存のたびに適用。`level` は変えないので、判定すれば元の間隔で進む。印刷済み・判定中・単元なしは触らない）。後ろ倒し中の件数を表示。
+- 定期: テストの登録と範囲。範囲内の未定着、未出題の単元、**ワークで手つかずのページ（`untouchedPages`）**、実点と予測のずれ（`predictFor`: その定期テストの模試の100点換算を優先、無ければ直近の累積テスト）。**14日前から `deferForExam()` が範囲外の項目の再出題日をテスト翌日に後ろ倒しする**（起動時と保存のたびに適用。`level` は変えないので、判定すれば元の間隔で進む。印刷済み・判定中・単元なしは触らない）。後ろ倒し中の件数を表示。
 - 依頼文: 学習状況を文章にしてコピー。
 - 設定: 設定を別の端末に渡すリンク（`cfgLink`／`importCfg`、#cfg= で開くか貼り付け）、Supabase（URL・anon キー・共有ID、SQL の案内）、API キー、バックアップ、バージョン。
 
@@ -75,7 +75,7 @@
           pending:{d, self, selfE, pm}|null, gen, genOn(類題を作った日), printedOn(紙に印刷した日|null), diag,
           src:{path, kind, page, x, y}|undefined(教材のページとタップ位置。旧データは q=問題番号), named(false なら仮の名前),
           defer:{examId, from}|null(定期テスト前の後ろ倒し中), updatedAt}],
-  tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解', source, rows:[{fmt,total,correct}], total, correct, unitIds, paperId, updatedAt}],
+  tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解'|'模試', source, rows:[{fmt,total,correct}], total, correct, score, maxScore, examId(模試のみ), unitIds, paperId, updatedAt}],
   papers:[{id, code, subject, date, kind('週次'|'累積'|'読解'|'模試'), title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg,fig, sec, pts}],
           examId, examName, left, round, minutes, maxScore(模試のみ),
           refs:[{n, kind, page, path}](資料にする教材ページの参照), imgs:[b64](旧データの写真), status:'printed'|'graded', model, updatedAt}],
