@@ -393,3 +393,8 @@ test("印のポップオーバー: 測るまでは非表示で印の位置に置
   assert.equal(errors.length, 0, errors.join(", "));
   assert.ok(html.includes('class="mpop pop"') && html.includes("visibility:hidden") && html.includes("left:30%") && html.includes("top:70%") && html.includes("中身"));
 });
+test("未定着一覧: 項目名の下に「どういう問題だったか」（note。AI の要約や間違え方）を出す。無ければ出さない", () => {
+  const h = render(m.ItemList, { d: F.demo(), save: noop }).html;
+  assert.ok(h.includes('<div class="ir-note">符号を落とす</div>'));
+  assert.equal((h.match(/class="ir-note"/g) || []).length, F.demo().items.filter((i) => i.status === "active" && i.note).length);
+});
