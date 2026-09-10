@@ -1220,3 +1220,25 @@ describe("リスニングは形式の弱点として記録（未定着に入れ�
     } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
   });
 });
+
+describe("今日の分の量（候補・優先順・上限・繰り越し）", () => {
+  const it = (o) => item({ history: [], ...o });
+  test("dailyMax: 既定6、設定で1〜30", () => {
+    assert.equal(m.dailyMax(), 6);
+    m.stubs.localStorage.setItem("daily_max", "4"); assert.equal(m.dailyMax(), 4);
+    m.stubs.localStorage.setItem("daily_max", "99"); assert.equal(m.dailyMax(), 6);
+    m.stubs.localStorage.removeItem("daily_max");
+  });
+  test("printSet の優先順: 定期テストの範囲内 → 落とした回数 → 期日が古い", () => {
+    const d = { ...m.blank(), exams: [{ id: "e", date: day(10), unitIds: ["in"], actual: {}, updatedAt: "" }],
+      items: [it({ id: "old", unitId: "out", nextDue: day(-5), failCount: 1 }), it({ id: "many", unitId: "out", nextDue: T, failCount: 4 }), it({ id: "range", unitId: "in", nextDue: day(1), failCount: 0 }), it({ id: "new", unitId: "out", nextDue: day(1), failCount: 1 })] };
+    assert.deepEqual(m.printSet(d).map((i) => i.id), ["range", "many", "old", "new"]);
+  });
+  test("pickDaily: 上限までが今日の分、残りは繰り越し（期日が過ぎたまま残る）", () => {
+    const d = { ...m.blank(), items: Array.from({ length: 9 }, (_, k) => it({ id: "i" + k, nextDue: T, failCount: 9 - k })) };
+    const r = m.pickDaily(d, 6);
+    assert.equal(r.chosen.length, 6); assert.equal(r.rest.length, 3); assert.equal(r.all.length, 9);
+    assert.deepEqual(r.chosen.map((i) => i.id), ["i0", "i1", "i2", "i3", "i4", "i5"]);
+    assert.equal(m.pickDaily(d).chosen.length, 6, "既定の上限");
+  });
+});

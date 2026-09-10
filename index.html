@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 13:47"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 13:56"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -379,10 +379,19 @@ function predictFor(d, ex, subject) {
 
 /* ---- 紙で回す（印刷セット・採点セット・一括確定） ---- */
 /* 明日までに期日が来る未印刷の項目（子どもが判定中のものは除く） */
+/* 1日の上限（今日の分に入れる件数）。設定タブで変える。既定6 */
+const DAILY_MAX_KEY = "daily_max";
+const dailyMax = () => { const v = parseInt(LS(DAILY_MAX_KEY), 10); return v >= 1 && v <= 30 ? v : 6; };
+/* 直近の定期テスト（範囲あり）の範囲の単元 id */
+const examRangeIds = (d) => new Set((upcomingExams(d)[0] || { unitIds: [] }).unitIds);
+/* 明日までに期日が来る未印刷の項目（候補）。優先順: 定期テストの範囲内 → 落とした回数 → 期日が古い */
 function printSet(d) {
-  const lim = addDays(today(), 1);
-  return d.items.filter((i) => !i.printedOn && i.nextDue <= lim && i.pending?.d !== today()).sort((a, b) => b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
+  const lim = addDays(today(), 1); const range = examRangeIds(d);
+  return d.items.filter((i) => !i.printedOn && i.nextDue <= lim && i.pending?.d !== today())
+    .sort((a, b) => (range.has(b.unitId) - range.has(a.unitId)) || b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
 }
+/* 候補のうち上限までを「今日の分」に、残りは繰り越し */
+function pickDaily(d, max = dailyMax()) { const all = printSet(d); return { chosen: all.slice(0, max), rest: all.slice(max), all }; }
 /* 印刷済みで、まだ確定していない項目 */
 function gradeSet(d) {
   return d.items.filter((i) => i.printedOn).sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : (a.printedAs || 999) - (b.printedAs || 999) || b.failCount - a.failCount));
@@ -504,8 +513,8 @@ function nextActions(d) {
     const noProg = SUBJECTS.filter((sub) => d.units.some((u) => u.subject === sub) && !d.units.some((u) => u.subject === sub && u.learnedOn));
     if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
     const ns = nightLoad();
-    const toGrade0 = d.items.filter((i) => i.printedOn && i.printedOn < t).length, toPrint0 = printSet(d).length;
-    A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×登録 → 最後のページ → 明日の分）", why: `${toGrade0 ? `採点 ${toGrade0} 件。` : ""}${toPrint0 ? `明日の分 ${toPrint0} 件。` : ""}1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。`, tab: "night", t: "5分" });
+    const toGrade0 = d.items.filter((i) => i.printedOn && i.printedOn < t).length, daily0 = pickDaily(d);
+    A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×登録 → 最後のページ → 明日の分）", why: `${toGrade0 ? `採点 ${toGrade0} 件。` : ""}${daily0.chosen.length ? `明日の分 ${daily0.chosen.length} 件${daily0.rest.length ? `（繰り越し ${daily0.rest.length} 件）` : ""}。` : ""}1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。`, tab: "night", t: "5分" });
     if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと、「テスト」の一覧で用紙を開いて撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: pending.some((p) => p.kind === "模試") && pending.every((p) => p.kind === "模試") ? "mock" : "make", t: "1枚2分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
     const mx = upcomingExams(d)[0]; const md = mx ? mockDue(d, mx, t) : null;
@@ -900,7 +909,7 @@ function App() {
   if (!d) return <div style={{ padding: 40, color: "#888" }}>読み込み中…</div>;
 
   const active = d.items.filter((i) => i.status === "active");
-  const due = d.items.filter((i) => i.nextDue <= today());
+  const daily = pickDaily(d); const due = daily.chosen;
   const nextExam = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
   const left = nextExam ? diffDays(today(), nextExam.date) : null;
   const tabs = [["home", "ホーム"], ["today", `今日${due.length ? ` (${due.length})` : ""}`], ["week", "テスト"], ["reg", "登録"], ["ana", "分析"], ["exam", left !== null ? `定期 D-${left}` : "定期"], ["export", "依頼文"], ["set", "設定"]];
@@ -908,7 +917,7 @@ function App() {
   return (
     <div className="root"><style>{CSS}</style>
       <header className="hd"><div className="hd-t">学習ループ</div>
-        <div className="hd-s">未定着 {active.length} · 今日 {due.length} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div></header>
+        <div className="hd-s">未定着 {active.length} · 今日 {due.length}件{daily.rest.length ? `（繰り越し ${daily.rest.length}件）` : ""} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div></header>
       <nav className="tabs">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => go(k)}>{l}</button>))}</nav>
       <main className="main">
         {tab === "home" && <HomeTab d={d} go={go} />}
@@ -972,7 +981,11 @@ function TodayTab({ d, save, initial }) {
 }
 function TodayMake({ d, save }) {
   const unitOf = (id) => unitById(d, id);
-  const set = printSet(d); const printed = gradeSet(d);
+  const cands = printSet(d); const printed = gradeSet(d);
+  const [sel, setSel] = useState(() => new Set(pickDaily(d).chosen.map((i) => i.id)));
+  useEffect(() => { setSel(new Set(pickDaily(d).chosen.map((i) => i.id))); }, [cands.map((i) => i.id).join(","), dailyMax()]);
+  const set = cands.filter((i) => sel.has(i.id));
+  const toggleSel = (id) => setSel((x) => { const n = new Set(x); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [log, setLog] = useState([]);
   const sec = useElapsed(busy);
   const fresh = (i) => !!(i.gen && i.gen.problems && i.genOn === today());
@@ -1002,10 +1015,11 @@ function TodayMake({ d, save }) {
   const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { setErr(e.message || "PDFを作れませんでした"); } setBusy(""); };
   return (<>
     <section className="sec">
-      <p className="lead">明日までに期日が来る項目の類題を、1項目3問（用語は「〜を書きなさい」の記述）で自動で作り、教科・単元の見出し付きで1つのPDFにします。問題が奇数ページなら白紙を足し、解答は最後にまとめるので、両面印刷で解答が別の紙になります。子どもは解いたあと解答を見て、紙の「自分の判定」に印をつけます。</p>
-      {set.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "明日の分はありません。"}</p>
-        : (<>{set.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}</div><div className="ir-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{fresh(i) ? " · 類題あり" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : ""}</div></div></div>); })}
-          <button className="btn-main" onClick={make} disabled={!!busy}>{busy ? `${busy}… ${sec}秒` : `今日の分を作る（${set.length}件 → PDF）`}</button></>)}
+      <p className="lead">明日までに期日が来る項目が候補です。上位 {dailyMax()} 件（「設定」で変えられます）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
+      {cands.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "明日の分はありません。"}</p>
+        : (<>{cands.map((i, k) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}{k >= dailyMax() && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? " · 類題あり" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}
+          <p className="ph-note">チェック {set.length} 件、繰り越し {cands.length - set.length} 件。</p>
+          <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `この内容で作る（${set.length}件 → PDF）`}</button></>)}
       {err && <div className="errbox"><p>{err}</p></div>}
       {log.length > 0 && <div className="loglist">{log.map((l, k) => (<div key={k}>{l}</div>))}</div>}
     </section>
@@ -1823,6 +1837,7 @@ function ExportTab({ d }) {
     <Fld label="依頼内容"><textarea rows={2} value={ask} onChange={(e) => setAsk(e.target.value)} /></Fld><textarea id="expta" className="exp" readOnly rows={18} value={text} /><button className="btn-main" onClick={copy}>コピーする</button></div>);
 }
 function Settings({ d, save, setSync }) {
+  const [dmax, setDmax] = useState(String(dailyMax()));
   const [key, setKey] = useState(LS(AKEY)); const [url, setUrl] = useState(LS(SB_URL)); const [anon, setAnon] = useState(LS(SB_KEY)); const [room, setRoom] = useState(LS(SB_ROOM));
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
   const say = (t) => { setMsg(t); setTimeout(() => setMsg(""), 4000); };
@@ -1851,6 +1866,8 @@ function Settings({ d, save, setSync }) {
       <Fld label="共有ID（知っている人だけがデータに触れます）"><input value={room} onChange={(e) => setRoom(e.target.value)} placeholder="fam-..." /></Fld>
       <div className="q-btns"><button className="btn-sm" onClick={genRoom}>共有IDを作る</button><button className="btn-sm" onClick={saveSync}>保存</button><button className="btn-sm" onClick={testSync} disabled={busy === "sync" || !url || !anon || !room}>{busy === "sync" ? "確認中…" : "接続して同期"}</button></div>
       <p className="q-warn">奥様の端末では同じ3つを入れて「接続して同期」。以後は自動です。項目単位で新しい方を採用するので、2人が別々に入力しても消えません。共有IDはパスワードと同じ扱いです。</p></section>
+    <section className="sec"><h3 className="s-h">今日の分の上限</h3><p className="lead">1日に出す項目の件数。多すぎると続きません。超えた分は翌日に繰り越します。</p>
+      <Fld label="1日の上限（1〜30、既定6）"><input type="number" inputMode="numeric" min="1" max="30" value={dmax} onChange={(e) => { setDmax(e.target.value); const v = parseInt(e.target.value, 10); if (v >= 1 && v <= 30) localStorage.setItem(DAILY_MAX_KEY, String(v)); }} /></Fld></section>
     <section className="sec"><h3 className="s-h">APIキー</h3><p className="lead">AI機能に必要です。console.anthropic.com で発行。この端末の中にだけ保存されます。</p>
       <Fld label="Anthropic API キー"><input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-..." autoComplete="off" /></Fld>
       <div className="q-btns"><button className="btn-sm" onClick={saveKey}>保存</button><button className="btn-sm" onClick={testKey} disabled={busy === "key" || !key.trim()}>{busy === "key" ? "確認中…" : "接続を確認"}</button></div></section>
@@ -1875,6 +1892,7 @@ const CSS = `
 .night-nav{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}.night-nav .btn-main{flex:1;margin-top:0}
 .lp-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.lp-row:last-of-type{border-bottom:none}.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}
 .c-label.tap{display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;color:var(--ink);cursor:pointer}
+.irow.pick{cursor:pointer}.irow.pick input[type=checkbox]{width:auto;margin-top:4px}.irow.pick.on{background:#F3F6F3;margin:0 -13px;padding:8px 13px}
 .grow{padding:10px 0;border-bottom:1px solid var(--line)}.grow:last-of-type{border-bottom:none}.grow.done{background:#F3F6F3;margin:0 -13px;padding:10px 13px}.grow.skip .c-label{color:var(--ink3);text-decoration:line-through}
 .grow-r{display:flex;align-items:center;gap:8px;margin-top:5px}.grow-r .j-who{flex:0 0 40px;margin:0}.grow-r .j-btns{flex:1}.j-btns.sm button{padding:7px 2px;font-size:11px}.gskip{margin-left:auto;background:none;border:1px solid var(--line);border-radius:2px;font-size:10px;color:var(--ink3);padding:1px 6px;cursor:pointer;font-family:inherit}
 .mat-sum{font-size:12px;color:var(--ink2);line-height:1.8;margin:-4px 0 10px}.mat-sum b{color:var(--ink);margin-right:4px}
