@@ -177,3 +177,8 @@ test("デモ: 用紙のプレビューは教材ページの枠を出し、画像
   assert.ok(!html.includes("data:image/jpeg"));
   assert.ok(html.includes("はPDF生成時に読み込みます"));
 });
+test("デモ: テスト/作る に今日作った教科をまとめてPDFにするボタンが出る", () => {
+  const { html } = render(m.WeekTab, { d: F.demo(), save: noop, initial: "make" });
+  assert.ok(html.includes("今日作った 1 教科を1つのPDFに（数学）"));
+  assert.ok(!render(m.WeekTab, { d: F.empty(), save: noop, initial: "make" }).html.includes("1つのPDFに"));
+});

@@ -15,7 +15,7 @@ const EXPORTS = [
   // 中核ロジック
   "migrate", "mergeData", "sbFetch", "cfgLink", "importCfg", "matPath", "stUpload", "stGet", "stRemove", "pagesToRanges", "parsePages", "unitPages", "unitForPage", "applyTOC", "unitPageLabel", "materialsForUnits", "matsLabel", "b64ToBlob", "bufToB64", "matsOf", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "parseJSON", "genContent", "srcLabel", "printSet", "gradeSet", "judgeAll", "ctxFor", "itemContext", "SELF_LINE",
   // 印刷
-  "escHTML", "safeSvg", "paperHTML", "paperFigs", "usedFigs", "resolveRefs", "fileHTML", "paperText", "genToPaper", "isIOS",
+  "escHTML", "safeSvg", "paperHTML", "needBlank", "pdfName", "paperFigs", "usedFigs", "resolveRefs", "fileHTML", "paperText", "genToPaper", "isIOS",
   // 画面
   "App", "HomeTab", "TodayTab", "TodayMake", "TodayGrade", "TodayCards", "ItemCard", "WeekTab", "MakePapers", "PaperRow", "GradeFlow", "ReadingMaker", "WritingFlow", "ManualTest",
   "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "MaterialReg", "MatPicker", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",

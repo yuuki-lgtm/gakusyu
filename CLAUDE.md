@@ -66,6 +66,7 @@
 
 ## 印刷
 - `paperHTML(p, res)` で用紙HTMLを組み（`res` は `resolveRefs()` が読んだ教材ページの base64）、`buildPDF()` で html2canvas + jsPDF によりA4に詰める（ブロックごとに画像化、境目で切らない）。
+- `buildPDF(papers)` は用紙の配列も受ける。各用紙の「資料＋問題」（`data-part="q"`）を先に並べ、用紙ごとにページ数が奇数なら白紙を足して偶数にし、解答（`data-part="a"`）は全用紙ぶんを最後にまとめる。両面印刷1回で解答が別の紙になるため。今日の類題PDFも「今日作った教科をまとめてPDF」も同じ経路。2026-09-10 に Windows Chrome で6ページ（2教科）と3ページ（類題）を確認済み。
 - 既知の問題: html2canvas は oklab/oklch を読めない。対策として独立 iframe 内で描画している。Claude.ai のアーティファクト内ではまだ再現する可能性あり。**実ブラウザで確認すること。**
 - iOS Safari では `navigator.share` でPDFを共有シートへ。
 

@@ -555,3 +555,19 @@ describe("紙で回す（印刷セット・採点セット・一括確定）", (
     assert.ok(t.includes("教科: 数学") && t.includes("未定着項目: 負の数のかけ算") && t.includes("落とした回数: 2"));
   });
 });
+
+describe("PDF の組み方（問題を先に、解答は最後、両面印刷で別の紙）", () => {
+  test("paperHTML は資料と問題のシートに q、解答に a の印を付ける", () => {
+    const p = { id: "p", code: "c", subject: "数学", date: T, kind: "週次", title: "", passage: "", unitIds: [], imgs: [TINY_JPEG], status: "printed", questions: [{ n: 1, q: "q", a: "a", label: "l", aim: "", fmt: "計算", svg: "" }] };
+    const parts = [...m.paperHTML(p).matchAll(/class="sheet" data-part="(q|a)"/g)].map((x) => x[1]);
+    assert.deepEqual(parts, ["q", "q", "a"]);
+    assert.deepEqual([...m.paperHTML({ ...p, imgs: [] }).matchAll(/data-part="(q|a)"/g)].map((x) => x[1]), ["q", "a"]);
+  });
+  test("needBlank は奇数ページのときだけ", () => {
+    assert.equal(m.needBlank(1), true); assert.equal(m.needBlank(2), false); assert.equal(m.needBlank(3), true); assert.equal(m.needBlank(0), false);
+  });
+  test("pdfName は1枚なら教科とコード、複数なら確認テスト", () => {
+    assert.equal(m.pdfName([{ subject: "数学", code: "0909数" }]), "数学_0909数.pdf");
+    assert.equal(m.pdfName([{ subject: "数学" }, { subject: "英語" }]), `確認テスト_${T}_2教科.pdf`);
+  });
+});

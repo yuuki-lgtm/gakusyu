@@ -417,7 +417,7 @@ function TodayMake({ d, save }) {
   const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => i.gen && i.gen.problems); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { setErr(e.message || "PDFを作れませんでした"); } setBusy(""); };
   return (<>
     <section className="sec">
-      <p className="lead">明日までに期日が来る項目の類題を、1項目3問（用語は「〜を書きなさい」の記述）で自動で作り、教科・単元の見出し付きで1枚のPDFにします。解答は別ページ。子どもは解いたあと解答を見て、紙の「自分の判定」に印をつけます。</p>
+      <p className="lead">明日までに期日が来る項目の類題を、1項目3問（用語は「〜を書きなさい」の記述）で自動で作り、教科・単元の見出し付きで1つのPDFにします。問題が奇数ページなら白紙を足し、解答は最後にまとめるので、両面印刷で解答が別の紙になります。子どもは解いたあと解答を見て、紙の「自分の判定」に印をつけます。</p>
       {set.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "明日の分はありません。"}</p>
         : (<>{set.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}</div><div className="ir-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{fresh(i) ? " · 類題あり" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : ""}</div></div></div>); })}
           <button className="btn-main" onClick={make} disabled={!!busy}>{busy ? `${busy}… ${sec}秒` : `今日の分を作る（${set.length}件 → PDF）`}</button></>)}
@@ -707,6 +707,9 @@ JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","un
   };
 
   const papers = [...d.papers].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 12);
+  const todays = d.papers.filter((p) => p.date === today() && p.kind !== "読解").sort((a, b) => SUBJECTS.indexOf(a.subject) - SUBJECTS.indexOf(b.subject));
+  const [pdfBusy, setPdfBusy] = useState(""); const [pdfErr, setPdfErr] = useState("");
+  const pdfAll = async () => { setPdfErr(""); setPdfBusy("開始"); try { await exportPDF(todays, (x) => setPdfBusy(String(x))); } catch (e) { setPdfErr(e.message || "PDFを作れませんでした"); } setPdfBusy(""); };
 
   return (<>
     <section className="sec">
@@ -721,6 +724,9 @@ JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","un
       {sel.length > 0 && (d.materials || []).length > 0 && <p className="ph-note">添付される教材：{sel.map((s) => `${s} ${matsLabel(materialsForUnits(d, s, unitsFor(s))) || "なし"}`).join(" ／ ")}。問題が参照したページだけ「資料」として用紙に印刷されます。</p>}
       <button className="btn-main" onClick={genAll} disabled={!!busy || !sel.length}>{busy ? `${busy} を作成中… ${sec}秒` : `${sel.length}教科まとめて作る`}</button>
       {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}
+      {todays.length > 0 && <button className="btn-sm wide" onClick={pdfAll} disabled={!!busy || !!pdfBusy}>{pdfBusy ? `PDFを作成中… ${pdfBusy}` : `今日作った ${todays.length} 教科を1つのPDFに（${todays.map((p) => p.subject).join("・")}）`}</button>}
+      {todays.length > 0 && <p className="ph-note">教科ごとに問題を偶数ページにそろえて並べ、最後に全教科の解答をまとめます。両面印刷1回で、解答は別の紙になります。</p>}
+      {pdfErr && <div className="errbox"><p>{pdfErr}</p></div>}
     </section>
     {papers.length > 0 && (<section className="sec"><h3 className="s-h">作ったテスト</h3>
       {papers.map((p) => (<PaperRow key={p.id} p={p} d={d} save={save} />))}</section>)}
@@ -995,13 +1001,13 @@ async function resolveRefs(p, onStep) {
 function paperHTML(p, res = {}) {
   const nl = LINES[p.subject] || 2;
   const figs = paperFigs(p, res);
-  const ref = figs.length ? `<div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　資料</span><small>${escHTML(p.code)}</small></div><p class="note">問題文の図番号はこのページを指します。</p>${figs.map((f) => `<div class="ref"><div class="cap">${escHTML(f.cap)}</div>${f.b64 ? `<img src="data:image/jpeg;base64,${f.b64}" alt="">` : `<div class="ref-wait">${f.pending ? "PDF生成時に教材のページを読み込みます" : "画像なし"}</div>`}</div>`).join("")}</div>` : "";
+  const ref = figs.length ? `<div class="sheet" data-part="q"><div class="ttl"><span>${escHTML(p.subject)}　資料</span><small>${escHTML(p.code)}</small></div><p class="note">問題文の図番号はこのページを指します。</p>${figs.map((f) => `<div class="ref"><div class="cap">${escHTML(f.cap)}</div>${f.b64 ? `<img src="data:image/jpeg;base64,${f.b64}" alt="">` : `<div class="ref-wait">${f.pending ? "PDF生成時に教材のページを読み込みます" : "画像なし"}</div>`}</div>`).join("")}</div>` : "";
   const passage = p.passage ? `<div class="psg">${escHTML(p.title || "")}${p.title ? "<br><br>" : ""}${escHTML(p.passage).replace(/\n/g, "<br>")}</div>` : "";
   const qs = p.questions.map((q) => { const svg = safeSvg(q.svg); return `<div class="p"><div class="pn">${q.n}.</div><div class="pt"><p class="pq">${escHTML(q.q)}</p>${svg ? `<div class="fig">${svg}</div>` : ""}${Array.from({ length: svg ? Math.max(2, nl - 1) : nl }, () => `<div class="rule"></div>`).join("")}</div></div>`; }).join("");
   const anyFig = false;
   const ans = `<div class="${anyFig ? "" : "cols"}">${p.questions.map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.a)}</div></div>`).join("")}</div>`;
   const aim = `<div class="aim"><div style="font-weight:600;margin-bottom:2mm">出題のねらい</div>${p.questions.map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.label || q.aim)}${q.aim && q.aim !== q.label ? " — " + escHTML(q.aim) : ""}</div></div>`).join("")}</div>`;
-  return `${ref}<div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(p.kind)}テスト</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span><span>点　　　／${p.questions.length}</span></div>${passage}${qs}</div><div class="sheet"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
+  return `${ref}<div class="sheet" data-part="q"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(p.kind)}テスト</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span><span>点　　　／${p.questions.length}</span></div>${passage}${qs}</div><div class="sheet" data-part="a"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
 }
 function fileHTML(p, res = {}) {
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHTML(p.subject)} ${escHTML(p.code)}</title><style>@page{size:A4;margin:17mm 16mm}html,body{margin:0;padding:0}${SHEET_CSS}.sw .sheet{page-break-after:always}.sw .sheet:last-child{page-break-after:auto}#pb{position:fixed;right:16px;bottom:16px;padding:15px 26px;background:#1E2321;color:#fff;border:none;border-radius:5px;font-size:15px;font-family:-apple-system,sans-serif;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35)}@media screen{body{background:#8A928C;padding:14px 0}.sw .sheet{width:210mm;min-height:297mm;margin:0 auto 16px;padding:17mm 16mm;box-sizing:border-box;box-shadow:0 2px 10px rgba(0,0,0,.35)}}@media print{#pb{display:none}}</style></head><body><div class="sw">${paperHTML(p, res)}</div><button id="pb" onclick="window.print()">印刷する</button></body></html>`;
@@ -1034,8 +1040,11 @@ async function pdfToJpegs(file, onPage, maxW = 1500) {
   return pdf.numPages;
 }
 
-async function buildPDF(p, onStep) {
-  const res = await resolveRefs(p, onStep); // 教材ページは用紙に持たず、ここで読む
+/* 用紙（1枚または複数）を1つのPDFに。各用紙の「資料＋問題」を先に並べ、用紙ごとにページ数が奇数なら白紙を足して偶数にする。
+   解答は全用紙ぶんを最後にまとめる。両面印刷1回で、解答が必ず別の紙になる */
+async function buildPDF(papers, onStep) {
+  const list = Array.isArray(papers) ? papers : [papers];
+  const res = {}; for (const p of list) Object.assign(res, await resolveRefs(p, onStep)); // 教材ページは用紙に持たず、ここで読む
   await loadLibs();
   const { jsPDF } = window.jspdf;
   const W = 794, H = 1123, PX = 60, PT = 64, PB = 60;
@@ -1045,15 +1054,15 @@ async function buildPDF(p, onStep) {
   document.body.appendChild(fr);
   const doc = fr.contentDocument;
   doc.open();
-  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:#fff;color:#111}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw{width:${W}px;background:#fff;font-size:14.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .pq{font-size:15px}.sw .arow,.sw .at{font-size:13.5px}.sw .aim{font-size:12px}.sw .psg{font-size:14px}.sw .rule{border-bottom-color:#B0B0B0}.sw .note,.sw .aim{color:#444}</style></head><body><div class="sw">${paperHTML(p, res)}</div></body></html>`);
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:#fff;color:#111}.sw,.sw *{color:#111;border-color:#111}${SHEET_CSS}.sw{width:${W}px;background:#fff;font-size:14.5px}.sw .sheet{padding:0 ${PX}px;background:#fff}.sw .cols{column-count:1}.sw .pq{font-size:15px}.sw .arow,.sw .at{font-size:13.5px}.sw .aim{font-size:12px}.sw .psg{font-size:14px}.sw .rule{border-bottom-color:#B0B0B0}.sw .note,.sw .aim{color:#444}</style></head><body><div class="sw">${list.map((p) => `<div class="pp">${paperHTML(p, res)}</div>`).join("")}</div></body></html>`);
   doc.close();
   await new Promise((r) => setTimeout(r, 150));
   const host = doc.body;
   try {
     const pdf = new jsPDF({ unit: "px", format: [W, H], hotfixes: ["px_scaling"] });
-    const sheets = [...host.querySelectorAll(".sheet")];
     let firstPage = true, n = 0;
-    for (const sh of sheets) {
+    const pages = () => (firstPage ? 0 : pdf.internal.getNumberOfPages());
+    const draw = async (sh) => {
       if (!firstPage) pdf.addPage(); firstPage = false;
       let y = PT;
       const blocks = [...sh.children].flatMap((el) => (el.classList.contains("cols") || el.classList.contains("aim") ? [...el.children] : [el]));
@@ -1078,10 +1087,21 @@ async function buildPDF(p, onStep) {
         pdf.addImage(cv.toDataURL("image/jpeg", 0.9), "JPEG", PX, y, w, h);
         y += h + mb;
       }
+    };
+    // 問題（資料を含む）を用紙ごとに。奇数ページなら白紙を1枚足す
+    for (const pp of host.querySelectorAll(".pp")) {
+      const before = pages();
+      for (const sh of pp.querySelectorAll('.sheet[data-part="q"]')) await draw(sh);
+      if (needBlank(pages() - before)) pdf.addPage();
     }
+    // 解答は最後にまとめて
+    for (const sh of host.querySelectorAll('.sheet[data-part="a"]')) await draw(sh);
     return pdf;
   } finally { fr.remove(); }
 }
+/* 問題のページ数が奇数なら白紙を1枚足す（両面印刷で解答を別の紙にするため） */
+const needBlank = (pages) => pages % 2 === 1;
+const pdfName = (list) => (list.length === 1 ? `${list[0].subject}_${list[0].code}.pdf` : `確認テスト_${today()}_${list.length}教科.pdf`);
 
 /* 共有シートは iOS/iPadOS だけ。Mac/Windows の Chrome も navigator.share を持つが、OSの共有ダイアログが開いて処理が止まるので直接保存する */
 const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -1090,8 +1110,9 @@ async function shareFile(blob, name, type) {
   try { const file = new File([blob], name, { type }); if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return true; } } catch (e) { if (e && e.name === "AbortError") return true; }
   return false;
 }
-async function exportPDF(p, onStep) {
-  const pdf = await buildPDF(p, onStep); const name = `${p.subject}_${p.code}.pdf`;
+async function exportPDF(papers, onStep) {
+  const list = Array.isArray(papers) ? papers : [papers];
+  const pdf = await buildPDF(list, onStep); const name = pdfName(list);
   if (await shareFile(pdf.output("blob"), name, "application/pdf")) return;
   pdf.save(name);
 }
@@ -1127,7 +1148,7 @@ function PrintSheet({ paper: p }) {
     <button className="btn-sm wide" onClick={copyText}>テキストをコピー（メモアプリ経由）</button>
     {state === "copied" && <p className="msg">コピーしました。メモアプリに貼り付け、共有から「プリント」。</p>}
     {state === "failed" && <p className="warn-t">コピーできませんでした。</p>}
-    <p className="q-warn">{p.model && `${p.model} が生成。`}資料 → 問題用紙 → 解答の順でA4に組みます。{(p.refs || []).length > 0 && `資料の教材ページ（${p.refs.map((r) => `${r.kind} p.${r.page}`).join("、")}）はPDF生成時に読み込みます。`}iPhoneは共有シートが開くので「ファイルに保存」か「プリント」。印刷前に内容を必ず確認してください。</p>
+    <p className="q-warn">{p.model && `${p.model} が生成。`}資料 → 問題（奇数ページなら白紙を足す）→ 解答の順でA4に組みます。両面印刷で解答が別の紙になります。{(p.refs || []).length > 0 && `資料の教材ページ（${p.refs.map((r) => `${r.kind} p.${r.page}`).join("、")}）はPDF生成時に読み込みます。`}iPhoneは共有シートが開くので「ファイルに保存」か「プリント」。印刷前に内容を必ず確認してください。</p>
     <div className="prev"><style>{SHEET_CSS.replace(/\.sw /g, ".prev .sw ").replace(/^\.sw\{/m, ".prev .sw{")}</style><div className="sw" dangerouslySetInnerHTML={{ __html: body }} /></div>
   </>);
 }
