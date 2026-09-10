@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 22:47"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 23:00"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -241,6 +241,9 @@ const matPath = (subject, kind, page, role = "") => `${LS(SB_ROOM)}/${SUBJ_CODE[
 /* テストの紙の役割。qa＝問題と答案が同じ紙、q＝問題用紙、a＝答案。同じ番号の q と a が対になる */
 const TEST_ROLES = [["qa", "問題と答案が同じ紙"], ["q", "問題用紙"], ["a", "答案"]];
 const roleOf = (mt) => (mt.kind === "テスト" ? mt.role || "qa" : "");
+/* 取り込みの「最初の番号」の既定: その教科・種別（テストは紙の役割ごと）で取り込み済みの最後の番号＋1、無ければ 1。
+   問題用紙→答案と役割を切り替えたときに番号を 1 に戻し忘れるのを防ぐ */
+const nextPageNo = (d, subject, kind, role = "qa") => { const ms = matsOf(d, subject, kind).filter((m) => kind !== "テスト" || roleOf(m) === role); return ms.length ? Math.max(...ms.map((m) => m.page)) + 1 : 1; };
 /* ×をタップする紙（答案。問題と答案が同じ紙も含む） */
 const answerSheets = (d, subject) => matsOf(d, subject, "テスト").filter((mt) => roleOf(mt) !== "q");
 /* 答案に対応する問題用紙（同じ番号の q）。無ければ null */
@@ -1806,6 +1809,7 @@ function MaterialReg({ d, save }) {
   const sec = useElapsed(busy);
   const mine = matsOf(d, subject, kind);
   useEffect(() => { setConfirmDel(false); }, [subject, kind]);
+  useEffect(() => { setStart(String(nextPageNo(d, subject, kind, role))); }, [subject, kind, role, (d.materials || []).length]); // 教科・種別・役割を変えるたびに番号を合わせる
   const isPdf = files.length === 1 && /pdf$/i.test(files[0].type || files[0].name);
   const pick = async (e) => { setErr(""); setMsg(""); const fs = Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true })); setFiles(fs); setShapes([]); e.target.value = "";
     if (fs.length === 1 && /pdf$/i.test(fs[0].type || fs[0].name)) return;
@@ -1837,7 +1841,7 @@ function MaterialReg({ d, save }) {
       else for (let k = 0; k < files.length; k++) { setBusy(`画像を圧縮 ${k + 1}/${files.length}`); await put(await compressImage(files[k], 1500, 0.8), k, files.length); }
       const ids = new Set(recs.map((r) => r.id));
       save({ ...d, materials: [...(d.materials || []).filter((m) => !ids.has(m.id)), ...recs] });
-      setFiles([]); setStart(String(s0 + recs.length));
+      setFiles([]);
       setMsg(`${recs.length}ページを保存しました（p.${s0}〜${s0 + recs.length - 1}）`);
     } catch (e) {
       if (recs.length) save({ ...d, materials: [...(d.materials || []).filter((m) => !recs.some((r) => r.id === m.id)), ...recs] });

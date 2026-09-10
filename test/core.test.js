@@ -1550,3 +1550,16 @@ describe("名前を付け直す", () => {
     } finally { globalThis.fetch = orig; for (const k of ["sb_url", "sb_key", "anthropic_api_key"]) m.stubs.localStorage.removeItem(k); }
   });
 });
+
+describe("取り込みの最初の番号", () => {
+  test("nextPageNo: 取り込み済みの最後の番号＋1。テストは問題用紙と答案で別々に数え、無ければ 1", () => {
+    const mt = (kind, page, role) => ({ id: kind + page + (role || ""), subject: "英語", kind, page, path: "x", ...(role ? { role } : {}), updatedAt: "" });
+    const d = { ...m.blank(), materials: [mt("ワーク", 10), mt("ワーク", 12), mt("テスト", 1, "q"), mt("テスト", 2, "q"), mt("テスト", 3, "qa")] };
+    assert.equal(m.nextPageNo(d, "英語", "ワーク"), 13);
+    assert.equal(m.nextPageNo(d, "英語", "教科書"), 1);
+    assert.equal(m.nextPageNo(d, "英語", "テスト", "q"), 3, "問題用紙は 2 枚あるので 3");
+    assert.equal(m.nextPageNo(d, "英語", "テスト", "a"), 1, "答案はまだ無いので 1（問題用紙の続き番号にしない）");
+    assert.equal(m.nextPageNo(d, "英語", "テスト", "qa"), 4);
+    assert.equal(m.nextPageNo(d, "数学", "ワーク"), 1);
+  });
+});
