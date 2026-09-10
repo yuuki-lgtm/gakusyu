@@ -1077,3 +1077,31 @@ describe("夜の作業（続きから再開）", () => {
     assert.equal(m.nextActions(noProg).A[0].k, "prog"); assert.equal(m.nextActions(noProg).A[1].k, "night");
   });
 });
+
+describe("類題が作れない項目は元の問題を印刷（A-1）", () => {
+  const src = { path: "fam/math/wb/11.jpg", kind: "ワーク", page: 11, x: 0.3, y: 0.4 };
+  test("refKey は切り出しなら path#x,y。cropAround は canvas が無ければそのまま", async () => {
+    assert.equal(m.refKey({ path: "p" }), "p"); assert.equal(m.refKey({ path: "p", crop: { x: 0.3, y: 0.4 } }), "p#0.3,0.4");
+    assert.equal(await m.cropAround("AAAA", 0.3, 0.4), "AAAA");
+  });
+  test("genToPaper: 類題が無く printedOrig の項目は、元の問題を図にして1問。類題がある項目は従来どおり", () => {
+    const u = { id: "u", name: "正負の数" };
+    const items = [{ id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", gen: null, printedOrig: true, src },
+      { id: "2", subject: "数学", unitId: "u", label: "B", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }], why: "w" } },
+      { id: "3", subject: "数学", unitId: "u", label: "C", fmt: "計算", gen: null, src }];
+    const p = m.genToPaper(items, () => u);
+    assert.equal(p.questions.length, 3, "元の問題1＋類題1＋説明1。printedOrig が無い C は出ない");
+    assert.ok(p.questions[0].q.startsWith("【数学・正負の数】元の問題（図1）をもう一度解き") && p.questions[0].q.endsWith(m.SELF_LINE) && p.questions[0].fig === 1);
+    assert.deepEqual(p.refs, [{ n: 1, kind: "ワーク", page: 11, path: "fam/math/wb/11.jpg", crop: { x: 0.3, y: 0.4 } }]);
+    const h = m.paperHTML(p); assert.ok(h.includes("図1（ワーク p.11・元の問題）") && h.includes("class=\"sheet\" data-part=\"q\"") && h.includes("PDF生成時に教材のページを読み込みます"));
+    const h2 = m.paperHTML(p, { "fam/math/wb/11.jpg#0.3,0.4": TINY_JPEG }); assert.ok(h2.includes("data:image/jpeg;base64,"));
+  });
+  test("resolveRefs: 切り出しの参照は path#x,y のキーで入る", async () => {
+    const orig = globalThis.fetch;
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k");
+    globalThis.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1, 2]).buffer });
+    try { const res = await m.resolveRefs({ refs: [{ n: 1, kind: "ワーク", page: 1, path: "p.jpg", crop: { x: 0.5, y: 0.5 } }, { n: 2, kind: "ワーク", page: 2, path: "q.jpg" }] });
+      assert.deepEqual(Object.keys(res).sort(), ["p.jpg#0.5,0.5", "q.jpg"]); }
+    finally { globalThis.fetch = orig; ["sb_url", "sb_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+});
