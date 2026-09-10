@@ -350,10 +350,10 @@ test("下のバーは3つ。週末に作る／定期／模試／読解・記述�
   const mn = render(m.WeekTab, { d: F.demo(), save: noop, initial: "manual" }).html; assert.ok(mn.includes("形式ごとの成績") && /<details class="det" open=""/.test(mn));
   const more = render(m.MoreTab, { d: F.demo(), go: noop }).html; for (const t of ["登録", "分析", "依頼文", "設定"]) assert.ok(more.includes(`<span class="nxt-t">${t}</span>`), t);
 });
-test("その他→登録: 落とした項目（タップ）が既定で開き、メニューにも書いてある", () => {
+test("その他→登録: 落とした項目が既定で開き、メニューにも書いてある", () => {
   assert.ok(render(m.MoreTab, { d: F.demo(), go: noop }).html.includes("落とした項目（ページをタップして登録"));
   const reg = render(m.RegTab, { d: F.demo(), save: noop, initial: null }).html;
-  assert.ok(reg.includes('class="on">落とした項目（タップ）') && reg.includes("×だった問題をタップすると印が付き"));
+  assert.ok(reg.includes('class="on">落とした項目<') && reg.includes("×だった問題をタップすると印が付き"));
 });
 test("夜の作業の進み具合は番号つきのステップ表示（ボタンではない）", () => {
   m.nightSave(1);
