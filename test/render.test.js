@@ -21,7 +21,6 @@ const SCREENS = (d) => [
   ["今日/印刷", m.TodayTab, { d, save: noop, initial: "print" }],
   ["今日/既定", m.TodayTab, { d, save: noop, initial: null }],
   ["テスト/作る", m.WeekTab, { d, save: noop, initial: "make" }],
-  ["テスト/撮る", m.WeekTab, { d, save: noop, initial: "grade" }],
   ["テスト/読解", m.WeekTab, { d, save: noop, initial: "read" }],
   ["テスト/記述", m.WeekTab, { d, save: noop, initial: "write" }],
   ["テスト/手入力", m.WeekTab, { d, save: noop, initial: "manual" }],
@@ -111,10 +110,6 @@ test("デモ: 分析に保持率が出る", () => {
   const { html } = render(m.AnaTab, { d: F.demo() });
   assert.ok(html.includes("保持率"));
   assert.ok(!html.includes("まだ30日以上あけた再出題がありません"));
-});
-test("デモ: テスト/撮る に未採点の用紙が選ばれる", () => {
-  const { html } = render(m.WeekTab, { d: F.demo(), save: noop, initial: "grade" });
-  assert.ok(html.includes("0909数"));
 });
 test("デモ: 定期に今後の試験と返却済みの試験が出る", () => {
   const { html } = render(m.ExamTab, { d: F.demo(), save: noop });
@@ -229,11 +224,11 @@ test("定期: 予測に模試か累積かが出る", () => {
   const html = render(m.ExamTab, { d: F.demo(), save: noop }).html;
   assert.ok(html.includes("80%（累積）"));
 });
-test("テスト/撮る: 模試の用紙が選べて、用紙の説明に「1回きり」が出る", () => {
+test("用紙の行: 模試の答案を撮る欄と、用紙の説明に「1回きり」が出る", () => {
   const d = F.demo(); const mk = { id: "mkx", kind: "模試", subject: "数学", date: F.T, code: "0910数模", examId: "e1", examName: "2学期中間", round: 14, minutes: 50, maxScore: 100, questions: [{ n: 1, q: "q", a: "a", fmt: "計算", pts: 100, label: "L", unitId: "u1", aim: "", svg: "", sec: "【1】用語" }], unitIds: ["u1"], imgs: [], status: "printed", updatedAt: F.ts(0) };
   d.papers.push(mk);
-  const g = render(m.WeekTab, { d, save: noop, initial: "grade" }).html;
-  assert.ok(g.includes("0910数模"));
+  const g = render(m.PaperGrade, { p: mk, d, save: noop }).html;
+  assert.ok(g.includes("この用紙の答案を撮る（0910数模）"));
   const ps = render(m.PrintSheet, { paper: mk }).html;
   assert.ok(ps.includes("1回きり") && ps.includes("模試（2学期中間）"));
 });
@@ -268,4 +263,11 @@ test("今日/採点: 行をタップで類題と解答、3回落ちていれば�
   assert.ok(det.includes("Q1") && !det.includes("A1") && det.includes("解答を見る") && det.includes("分数の意味があいまい"), "診断済みなら結果を出す");
   const det1 = render(m.GradeRowDetail, { i: d.items.find((i) => i.id === "i1"), d, save: noop }).html;
   assert.ok(det1.includes("(−2)×(+5)") && !det1.includes("診断"), "3回未満は診断なし");
+});
+test("用紙の行を開くと、未採点なら「この用紙の答案を撮る」がある。テストの切り替えに「撮る」は無い", () => {
+  const d = F.demo(); const p1 = d.papers.find((p) => p.id === "p1"), p2 = d.papers.find((p) => p.id === "p2");
+  assert.ok(render(m.PaperGrade, { p: p1, d, save: noop }).html.includes("この用紙の答案を撮る（0909数）"));
+  const w = render(m.WeekTab, { d, save: noop, initial: null }).html;
+  assert.ok(!w.includes("採点した答案を撮る") && w.includes("テストを作る"));
+  assert.equal(p2.status, "graded");
 });

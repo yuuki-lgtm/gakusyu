@@ -486,7 +486,7 @@ function nextActions(d) {
     if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
     const ns = nightLoad();
     A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×登録 → 最後のページ → 明日の分）", why: "1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。", tab: "night", t: "5分" });
-    if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: "grade", t: "1枚2分" });
+    if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと、「テスト」の一覧で用紙を開いて撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: pending.some((p) => p.kind === "模試") && pending.every((p) => p.kind === "模試") ? "mock" : "make", t: "1枚2分" });
     if (!weekend && d.units.length > 0) A.push({ k: "wb", title: "今日のワークの×を登録", why: "ページを開いて×だった問題をタップするだけ。明日の「今日」に出ます。", tab: "reg", mode: "item", t: "2分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
     if (toGrade.length) A.push({ k: "mark", title: `昨日の分を採点する（${toGrade.length}件）`, why: "紙を見て、項目ごとに「できなかった／解けた／説明もできた」を押し、まとめて確定。", tab: "today", mode: "grade", t: "3分" });
@@ -1079,23 +1079,20 @@ function LastPageStep({ d, save }) {
 
 /* ---- テスト ---- */
 function WeekTab({ d, save, initial }) {
-  const pending = d.papers.some((p) => p.status === "printed");
   const asMode = (m) => (m === "cum" ? "make" : m && m.startsWith("mock") ? "mock" : m); // cum＝累積テストを作る、mock:数学,英語＝模試を教科を選んだ状態で
   const preset = initial && initial.startsWith("mock:") ? initial.slice(5).split(",").filter(Boolean) : null;
-  const [mode, setMode] = useState(asMode(initial) || (pending ? "grade" : "make"));
+  const [mode, setMode] = useState(asMode(initial) || "make");
   useEffect(() => { if (initial) setMode(asMode(initial)); }, [initial]);
   return (
     <div className="pane">
-      <p className="tabhint">週末の作業。進度を更新 → 作る → 印刷 → 解く → 赤ペンで採点 → 撮る、の順です。</p>
+      <p className="tabhint">週末の作業。作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。</p>
       <div className="seg"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>テストを作る</button>
         <button className={mode === "mock" ? "on" : ""} onClick={() => setMode("mock")}>模試</button>
-        <button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点した答案を撮る</button>
         <button className={mode === "read" ? "on" : ""} onClick={() => setMode("read")}>読解</button>
         <button className={mode === "write" ? "on" : ""} onClick={() => setMode("write")}>記述</button>
         <button className={mode === "manual" ? "on" : ""} onClick={() => setMode("manual")}>手入力</button></div>
       {mode === "make" && <MakePapers d={d} save={save} initialKind={initial === "cum" ? "累積" : "週次"} />}
       {mode === "mock" && <MockMaker d={d} save={save} preset={preset} />}
-      {mode === "grade" && <GradeFlow d={d} save={save} />}
       {mode === "read" && <ReadingMaker d={d} save={save} />}
       {mode === "write" && <WritingFlow d={d} save={save} />}
       {mode === "manual" && <ManualTest d={d} save={save} />}
@@ -1204,6 +1201,7 @@ function PaperRow({ p, d, save }) {
     <span className="pr-t">{p.date.slice(5)} {p.subject} {p.kind}{p.kind === "模試" && p.round ? `（${p.round}日前）` : ""} {p.questions.length}問 <em className="code">{p.code}</em></span>
     <span className={"st " + (p.status === "graded" ? "g" : "")}>{p.status === "graded" ? "採点済" : "未採点"}</span></div>
     {open && (<div className="pr-body"><PrintSheet paper={p} />
+      {p.status === "printed" && <PaperGrade p={p} d={d} save={save} />}
       <button className="btn-x wide-x" onClick={() => save(removeRec(d, "papers", p.id))}>このテストを削除</button></div>)}</div>);
 }
 function PrintSheet({ paper: p }) {
@@ -1227,9 +1225,8 @@ function PrintSheet({ paper: p }) {
     <div className="prev"><style>{SHEET_CSS.replace(/\.sw /g, ".prev .sw ").replace(/^\.sw\{/m, ".prev .sw{")}</style><div className="sw" dangerouslySetInnerHTML={{ __html: body }} /></div>
   </>);
 }
-function GradeFlow({ d, save }) {
-  const pending = d.papers.filter((p) => p.status === "printed").sort((a, b) => (a.date < b.date ? 1 : -1));
-  const [pid, setPid] = useState(pending[0]?.id || "");
+/* 用紙の行の中で、採点済みの答案を撮って○×を読み取り、結果と未定着を登録する */
+function PaperGrade({ p: paper, d, save }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [marks, setMarks] = useState(null);
@@ -1237,7 +1234,6 @@ function GradeFlow({ d, save }) {
   const [checked, setChecked] = useState({});
   const [lastFile, setLastFile] = useState(null);
   const sec = useElapsed(busy);
-  const paper = d.papers.find((p) => p.id === pid);
 
   const read = async (f, model = null) => {
     if (!paper) return;
@@ -1262,14 +1258,13 @@ function GradeFlow({ d, save }) {
     const test = { id: uid(), subject: paper.subject, date: today(), kind: paper.kind, source: `自作 ${paper.code}`, ...r, unitIds: paper.unitIds, paperId: paper.id, ...(paper.kind === "模試" ? { examId: paper.examId } : {}), updatedAt: now() };
     const newItems = paper.questions.filter((qq) => checked[qq.n]).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" }));
     save({ ...d, tests: [...d.tests, test], items: [...d.items, ...newItems], papers: d.papers.map((p) => (p.id === paper.id ? { ...p, status: "graded", updatedAt: now() } : p)), log: { ...d.log, [today()]: true } });
-    setMarks(null); setPid(pending.filter((p) => p.id !== paper.id)[0]?.id || "");
+    setMarks(null);
   };
 
-  return (<section className="sec">
-    {pending.length === 0 ? <p className="empty">未採点のテストがありません。先に「テストを作る」から作って印刷してください。</p> : (<>
-      <p className="lead">赤ペンで採点したあと、答案を撮ってください。○×の記号を読み取り、結果と未定着項目を自動で組み立てます。</p>
-      <Fld label="どのテストか"><select value={pid} onChange={(e) => { setPid(e.target.value); setMarks(null); }}>{pending.map((p) => (<option key={p.id} value={p.id}>{p.date.slice(5)} {p.subject} {p.kind} {p.code}</option>))}</select></Fld>
-      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "採点済みの答案を撮る"}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) { setLastFile(f); read(f); } }} /></label>
+  return (<div className="pgrade">
+    {(<>
+      <p className="lead">赤ペンで採点したあと、この用紙の答案を撮ってください。○×の記号を読み取り、結果と未定着項目を自動で組み立てます。</p>
+      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : `この用紙の答案を撮る（${paper.code}）`}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) { setLastFile(f); read(f); } }} /></label>
       {err && <div className="errbox"><p>{err}</p>{lastFile && <button className="btn-sm" onClick={() => read(lastFile, FALLBACK)}>Sonnet 4.6 で読み取る</button>}</div>}
       {marks && paper && (<>
         <div className="markgrid">{paper.questions.map((qq) => { const m = marks[qq.n] || "unknown"; return (
@@ -1284,7 +1279,7 @@ function GradeFlow({ d, save }) {
         <button className="btn-main" onClick={commit}>この内容で登録する</button>
       </>)}
     </>)}
-  </section>);
+  </div>);
 }
 function ReadingMaker({ d, save }) {
   const [subject, setSubject] = useState("国語");
@@ -1917,6 +1912,7 @@ const CSS = `
 .det{margin:10px 0}.det summary{font-size:12px;color:var(--ink2);cursor:pointer}.det-s{margin-top:10px}.det-h{font-size:12px;font-weight:700;margin-bottom:5px}
 .ph-btn{display:block;text-align:center;padding:11px;border:1px dashed var(--line);border-radius:3px;background:var(--paper);font-size:12px;color:var(--ink2);cursor:pointer;margin-bottom:8px}.ph-note{font-size:11px;color:var(--ink3);line-height:1.6;margin:9px 0 6px}
 .loglist{margin-top:8px;font-size:12px;color:var(--ink2);line-height:1.7}
+.pgrade{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .prow{border-top:1px solid var(--line);padding:8px 0}.pr-main{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px}.pr-t{flex:1}.code{font-style:normal;font-family:ui-monospace,Menlo,monospace;color:var(--ink3);font-size:10px}.st{font-size:10px;padding:1px 6px;border-radius:2px;background:#C08A3E;color:#fff}.st.g{background:#2F6F5E}.pr-body{margin-top:8px}
 .markgrid{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}.mk{width:44px;height:44px;border:1px solid var(--line);border-radius:3px;background:var(--card);font-size:11px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ink3)}.mk span{font-size:15px;font-weight:700}
 .mk.o span{color:#2F6F5E}.mk.x span{color:#A8443B}.mk.blank span{color:#C08A3E}.mk.unknown{opacity:.5}
