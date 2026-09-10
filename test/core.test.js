@@ -1454,3 +1454,14 @@ describe("考え方の説明（2回以上落ちた項目）", () => {
     assert.ok(m.paperText(p).includes("【考え方】考え方の本文"));
   });
 });
+
+describe("診断の手順を項目として登録", () => {
+  test("stepToItem: 手順の文が項目名、通過の目安が補足。教科・単元・形式は元の項目から。翌日に出る。AI は呼ばない", () => {
+    const d = F.demo(); const i = d.items.find((x) => x.id === "i2");
+    const ni = m.stepToItem(i, i.diag.steps[0], 0);
+    assert.deepEqual([ni.subject, ni.unitId, ni.label, ni.fmt, ni.etype, ni.named, ni.from, ni.nextDue, ni.level, ni.failCount], ["数学", "u2", "分数のわり算を5問", "図・作図・グラフ", "知らなかった", true, "i2", day(1), 0, 1]);
+    assert.ok(ni.note.includes("文字式の表し方（÷） の診断 手順1") && ni.note.includes("通過の目安: 全問正解"));
+    assert.equal(m.stepToItem(i, { do: "", check: "" }, 2).label, "文字式の表し方（÷） の前提 3");
+    assert.ok(m.printSet({ ...d, items: [...d.items, ni] }).some((x) => x.id === ni.id), "翌日の候補に入る");
+  });
+});

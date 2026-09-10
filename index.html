@@ -485,6 +485,10 @@ function mergeSameSkill(d, newIds, patch) {
   const items = d.items.filter((x) => !drop.includes(x.id)).map((x) => (bump[x.id] ? { ...x, failCount: (x.failCount || 0) + bump[x.id], level: 0, nextDue: addDays(t, 1), status: "active", printedOn: null, gen: null, history: [...(x.history || []), { d: t, r: "x", etype: x.etype || ETYPES[0], merged: true }], updatedAt: now() } : x));
   return { d: { ...d, items, deleted: [...d.deleted, ...drop] }, merged: drop.length };
 }
+/* 診断の手順を、そのまま未定着項目にする（AI は呼ばない）。翌日の紙に類題が出る */
+function stepToItem(i, step, n) {
+  return newItem({ subject: i.subject, unitId: i.unitId, label: String(step.do || "").trim().slice(0, 60) || `${i.label} の前提 ${n + 1}`, note: `${i.label} の診断 手順${n + 1}${step.check ? "。通過の目安: " + step.check : ""}`, fmt: i.fmt || "", etype: ETYPES[0], named: true, from: i.id });
+}
 /* 類題の生成結果を項目に反映する。名前が仮のままなら、AI が返した label / fmt も採用 */
 function applyGen(item, g) {
   const patch = { gen: g, genOn: today() };
@@ -1128,7 +1132,8 @@ function GradeRowDetail({ i, d, save }) {
     {i.failCount >= 3 && !i.diag && <button className="btn-ai warn" onClick={() => diag()} disabled={busy}>{busy ? `診断中… ${sec}秒` : "なぜ定着しないのかを診断"}</button>}
     {err && <div className="errbox"><p>{err}</p><button className="btn-sm" onClick={() => diag(SONNET)}>Sonnet 5 で診断</button></div>}
     {i.diag && (<div className="dbox"><div className="d-row"><span>原因</span>{i.diag.cause}</div><div className="d-row"><span>戻る単元</span>{i.diag.prereq}</div>
-      {(i.diag.steps || []).map((st, n) => (<div className="d-step" key={n}><div className="ds-n">{n + 1}</div><div><div className="ds-do">{st.do}</div><div className="ds-ck">通過の目安：{st.check}</div></div></div>))}</div>)}
+      {(i.diag.steps || []).map((st, n) => (<div className="d-step" key={n}><div className="ds-n">{n + 1}</div><div><div className="ds-do">{st.do}</div><div className="ds-ck">通過の目安：{st.check}</div>
+        {st.itemId ? <div className="ds-ck">項目として登録済み{d.items.some((x) => x.id === st.itemId) ? "" : "（削除済み）"}</div> : <button className="btn-sm ds-add" onClick={() => { const ni = stepToItem(i, st, n); save((cur) => ({ ...cur, items: [...cur.items, ni].map((x) => (x.id === i.id ? { ...x, diag: { ...x.diag, steps: (x.diag.steps || []).map((s2, k) => (k === n ? { ...s2, itemId: ni.id } : s2)) }, updatedAt: now() } : x)), log: { ...cur.log, [today()]: true } })); }}>この手順を項目として登録（明日の紙に出る）</button>}</div></div>))}</div>)}
   </div>);
 }
 function TodayGrade({ d, save }) {
@@ -2058,6 +2063,7 @@ const CSS = `
 .q-p{font-size:11px;color:var(--ink2);line-height:1.6;margin-bottom:6px}.q-s{font-size:11px;color:var(--ink2);line-height:1.7;margin-bottom:9px;padding:7px;background:var(--card);border-radius:3px}
 .q-btns{display:flex;gap:7px}.q-btns .btn-sm{flex:1}.q-warn{font-size:10px;color:var(--ink3);line-height:1.6;margin:8px 0 0}
 .dbox{margin-top:9px;border:1px solid #E4C4C0;border-radius:3px;background:#FBF3F2;padding:10px}.d-h{width:100%;text-align:left;background:none;border:none;font-size:12px;font-weight:700;color:#8E3830;cursor:pointer;font-family:inherit;padding:0}
+.ds-add{margin-top:5px;font-size:11px;padding:5px 9px}
 .d-row{font-size:12px;line-height:1.6;margin-top:8px}.d-row span{display:block;font-size:10px;color:#8E3830;font-weight:700}.d-step{display:flex;gap:8px;margin-top:9px}.ds-n{flex:0 0 19px;height:19px;border-radius:50%;background:#8E3830;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}.ds-do{font-size:12px;line-height:1.5}.ds-ck{font-size:10px;color:var(--ink3);margin-top:2px}
 .judge{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.j-who{font-size:10px;color:var(--ink3);margin:6px 0 4px;font-weight:700}.agree{font-style:normal;color:#2F6F5E;margin-left:6px}
 .j-btns{display:flex;gap:6px}.j-btns button{flex:1;padding:10px 4px;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink3)}

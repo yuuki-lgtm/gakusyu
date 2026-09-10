@@ -325,3 +325,12 @@ test("今日/印刷: 今日作った類題がある項目に「作り直す」�
   const html = render(m.TodayTab, { d, save: noop, initial: "print" }).html;
   assert.ok(html.includes("類題あり") && html.includes(">作り直す</button>"));
 });
+test("採点の展開: 診断の各手順に「この手順を項目として登録」。登録済みなら表示だけ", () => {
+  const d = F.demo(); d.items = d.items.map((i) => (i.id === "i2" ? { ...i, printedOn: F.day(-1) } : i));
+  const i2 = d.items.find((i) => i.id === "i2");
+  const html = render(m.GradeRowDetail, { i: i2, d, save: noop }).html;
+  assert.equal((html.match(/この手順を項目として登録/g) || []).length, 2);
+  const done = { ...i2, diag: { ...i2.diag, steps: i2.diag.steps.map((s2, k) => (k === 0 ? { ...s2, itemId: "i3" } : s2)) } };
+  const h2 = render(m.GradeRowDetail, { i: done, d, save: noop }).html;
+  assert.equal((h2.match(/この手順を項目として登録/g) || []).length, 1); assert.ok(h2.includes("項目として登録済み"));
+});
