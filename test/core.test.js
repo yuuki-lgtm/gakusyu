@@ -475,3 +475,33 @@ describe("用紙の資料ページ（教材ページへの参照）", () => {
     } finally { globalThis.fetch = orig; ["sb_url", "sb_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
   });
 });
+
+describe("設定を別の端末へ渡すリンク", () => {
+  const ls = m.stubs.localStorage;
+  const clear = () => ["sb_url", "sb_key", "sb_room", "anthropic_api_key"].forEach((k) => ls.removeItem(k));
+  test("同期の3つを #cfg= に入れ、APIキーは指定したときだけ", () => {
+    clear(); ls.setItem("sb_url", "https://x.supabase.co"); ls.setItem("sb_key", "anon"); ls.setItem("sb_room", "fam-あ"); ls.setItem("anthropic_api_key", "sk-1");
+    const link = m.cfgLink("https://ex.github.io/g/index.html#old", false);
+    assert.ok(link.startsWith("https://ex.github.io/g/index.html#cfg="));
+    clear();
+    assert.equal(m.importCfg(link), 3);
+    assert.deepEqual([ls.getItem("sb_url"), ls.getItem("sb_key"), ls.getItem("sb_room"), ls.getItem("anthropic_api_key")], ["https://x.supabase.co", "anon", "fam-あ", null]);
+    ls.setItem("anthropic_api_key", "sk-1");
+    const link2 = m.cfgLink("https://ex.github.io/", true); clear();
+    assert.equal(m.importCfg(link2), 4); assert.equal(ls.getItem("anthropic_api_key"), "sk-1");
+    clear();
+  });
+  test("リンク全体でも、cfg= の中身だけでも、空白付きでも取り込める。壊れていれば 0", () => {
+    clear(); ls.setItem("sb_url", "u"); ls.setItem("sb_key", "k"); ls.setItem("sb_room", "r");
+    const link = m.cfgLink("https://a/", false); const token = link.split("#cfg=")[1]; clear();
+    assert.equal(m.importCfg("  " + token + "\n"), 3); clear();
+    assert.equal(m.importCfg("#cfg=" + token), 3); clear();
+    assert.equal(m.importCfg("https://a/?x=1#cfg=" + token), 3); clear();
+    assert.equal(m.importCfg("こんにちは"), 0); assert.equal(m.importCfg(""), 0); assert.equal(m.importCfg(null), 0);
+    assert.equal(ls.getItem("sb_url"), null);
+  });
+  test("設定が空ならリンクは空の設定、取り込みは 0", () => {
+    clear();
+    assert.equal(m.importCfg(m.cfgLink("https://a/", true)), 0);
+  });
+});
