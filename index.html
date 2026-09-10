@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 07:20"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 07:23"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -2113,7 +2113,7 @@ function Settings({ d, save, setSync }) {
     <section className="sec"><h3 className="s-h">今日の分の上限</h3><p className="lead">1日に出す問題数。習得中の項目は3問、保持の確認は1問で数えます。多すぎると続きません。超えた分は翌日に繰り越します。</p>
       <Fld label="1日の問題数の上限（1〜60、既定18）"><input type="number" inputMode="numeric" min="1" max="60" value={dmax} onChange={(e) => { setDmax(e.target.value); const v = parseInt(e.target.value, 10); if (v >= 1 && v <= 60) { localStorage.setItem(DAILY_MAX_KEY, String(v)); clearTimeout(dmaxT.current); dmaxT.current = setTimeout(() => notify(`上限を ${v} 問にしました`), 800); } }} /></Fld></section>
     <section className="sec"><h3 className="s-h">APIキー</h3><p className="lead">AI機能に必要です。console.anthropic.com で発行。この端末の中にだけ保存されます。</p>
-      <label className="chk"><input type="checkbox" checked={opusAll} onChange={(e) => { setOpusAll(e.target.checked); localStorage.setItem(ALL_OPUS_KEY, e.target.checked ? "1" : "0"); }} /> すべて Opus 5 を使う（既定は、類題・読み取り・索引・項目名は Sonnet 5、診断・同じ技能の判定・模試は Opus 5。費用と速さの違い）</label>
+      <label className="chk"><input type="checkbox" checked={opusAll} onChange={(e) => { setOpusAll(e.target.checked); localStorage.setItem(ALL_OPUS_KEY, e.target.checked ? "1" : "0"); }} /><span>すべて Opus 5 を使う（既定は、類題・読み取り・索引・項目名は Sonnet 5、診断・同じ技能の判定・模試は Opus 5。費用と速さの違い）</span></label>
       <Fld label="Anthropic API キー"><input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-..." autoComplete="off" /></Fld>
       <div className="q-btns"><button className="btn-sm" onClick={saveKey}>保存</button><button className="btn-sm" onClick={testKey} disabled={busy === "key" || !key.trim()}>{busy === "key" ? "確認中…" : "接続を確認"}</button></div>
       <p className="q-warn">帯の見本: <button className="lnk" onClick={() => setApiBlock("credit")}>残高切れを表示</button> ／ <button className="lnk" onClick={() => setApiBlock("invalid")}>キー無効を表示</button> ／ <button className="lnk" onClick={() => setApiBlock(null)}>消す</button>（見た目の確認用。AI の呼び出しが成功すれば自動で消えます）</p></section>
@@ -2160,7 +2160,7 @@ const CSS = `
 .root .snacks .snack span{flex:1;color:#fff;text-align:left}.sn-i{flex:0 0 18px;width:18px;height:18px;margin-top:1px}.root .snacks .snack.err{background:#7A2D26 !important}.root .snacks .snack.warn{background:#8A5A1E !important}
 .snack button{background:none;border:none;color:#fff;font-size:20px;line-height:1;margin:-8px -8px -8px 0;padding:8px 10px;min-width:36px;min-height:36px;cursor:pointer;font-family:inherit}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
 .et.bad.on{background:#A8443B;border-color:#A8443B;color:#fff}.et.why{margin-top:4px;margin-left:4px}.et.why.on{background:#C08A3E;border-color:#C08A3E}
-.chk{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--ink2);line-height:1.6;margin:6px 0 10px}.chk input{width:auto;height:auto;margin-top:3px}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--ink2);line-height:1.6;margin:6px 0 10px}.root .chk input[type=checkbox]{width:auto;height:auto;padding:0;margin:3px 0 0;flex:0 0 auto}.chk span{flex:1}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}
 .matpick{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}.matpick .seg{margin-bottom:8px}.qn-row{display:flex;gap:6px;margin-top:8px}.qn-row input{flex:1}
 .src-n{font-size:11px;color:var(--ink2);display:flex;align-items:center;gap:4px;margin:0 0 8px;padding:6px 8px;background:#EEF3F6;border-left:2px solid #3D6B8E}.src-n .btn-x{margin-left:auto}
@@ -2207,7 +2207,7 @@ const CSS = `
 .blk h3{margin:0 0 8px;font-size:13px}.blk-s{font-size:11px;color:var(--ink3);margin:-2px 0 8px;line-height:1.6}.cnt{font-weight:400;font-size:11px;color:var(--ink3);margin-left:6px}.s-h{font-size:13px;margin:0 0 7px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid2>*{min-width:0}.fld{display:block;margin-bottom:11px}.fld>span{display:block;font-size:11px;color:var(--ink3);margin-bottom:3px}
 .root input,.root select,.root textarea{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:3px;background:var(--card);font-size:14px;font-family:inherit;color:var(--ink)}
-.root input:not([type=checkbox]):not([type=file]),.root select{height:40px;padding-top:0;padding-bottom:0;line-height:38px;box-sizing:border-box;-webkit-appearance:none;appearance:none;border-radius:3px}
+.root input:not([type=checkbox]):not([type=file]),.root select{height:40px;padding-top:0;padding-bottom:0;line-height:38px;box-sizing:border-box;-webkit-appearance:none;appearance:none;border-radius:3px}.root input[type=checkbox],.root input[type=radio]{width:auto;height:auto;padding:0;background:none;border:none;flex:0 0 auto}
 .root input[type=date]{min-width:0;max-width:100%;display:block}
 .root select.et-sel{height:auto;line-height:normal;padding:3px 6px}
 .root input:focus,.root select:focus,.root textarea:focus{outline:2px solid #3D6B8E;outline-offset:-1px}
