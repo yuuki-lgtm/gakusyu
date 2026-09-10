@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 22:10"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 22:18"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1073,7 +1073,7 @@ function TodayTab({ d, save, initial }) {
   const ps = printSet(d).length;
   return (<div className="pane">
     <p className="tabhint">夜の2ステップ。昨日の紙を見て「採点」→「印刷」で明日の分を1枚に。子どもは紙に解き、解答を見て自分の判定を書く。行をタップすると類題と解答が見えます。</p>
-    <div className="seg"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>印刷{ps ? ` (${ps})` : ""}</button></div>
+    <div className="subtabs"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>印刷{ps ? ` (${ps})` : ""}</button></div>
     {mode === "grade" && <TodayGrade d={d} save={save} />}
     {mode === "print" && <TodayMake d={d} save={save} />}
   </div>);
@@ -1263,7 +1263,7 @@ function WeekTab({ d, save, initial }) {
   return (
     <div className="pane">
       <p className="tabhint">週末の作業。作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。定期テストの登録と範囲もここ。</p>
-      <div className="seg"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>作る</button>
+      <div className="subtabs"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>作る</button>
         <button className={mode === "exam" ? "on" : ""} onClick={() => setMode("exam")}>定期</button>
         <button className={mode === "mock" ? "on" : ""} onClick={() => setMode("mock")}>模試</button>
         <button className={mode === "rw" ? "on" : ""} onClick={() => setMode("rw")}>読解・記述</button></div>
@@ -1591,7 +1591,7 @@ function RegTab({ d, save, initial }) {
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
   return (<div className="pane">
     <p className="tabhint">単元は学期に1回。項目は、平日のワークの×をページで指してタップする場所です。進度はワークの×から自動、拾えなければ「単元」で「ここまで」。自作テストの×は「テスト→撮る」で自動です。</p>
-    <div className="seg"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目（タップ）</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着一覧</button><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>教材</button></div>
+    <div className="subtabs"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目（タップ）</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着一覧</button><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>教材</button></div>
     {mode === "unit" && <UnitReg d={d} save={save} />}
     {mode === "item" && <ItemReg d={d} save={save} />}
     {mode === "list" && <ItemList d={d} save={save} />}
@@ -2127,6 +2127,9 @@ const CSS = `
 .msg{font-size:12px;color:#2F6F5E;text-align:center;margin-top:10px}.warn-t{font-size:11px;color:#A8443B;margin:6px 0}.mb{margin-bottom:12px}
 .subj-row{display:flex;gap:5px;margin-bottom:12px}.subj{flex:1;padding:9px 2px;border:1px solid var(--line);background:var(--card);border-radius:3px;font-size:13px;color:var(--ink2);cursor:pointer;font-family:inherit}.subj.on{color:#fff;font-weight:700}
 .seg{display:flex;margin-bottom:14px;border:1px solid var(--line);border-radius:3px;overflow:hidden}.seg button{flex:1;padding:8px 4px;border:none;background:var(--card);font-size:12px;color:var(--ink3);cursor:pointer;font-family:inherit;border-right:1px solid var(--line)}.seg button:last-child{border-right:none}.seg button.on{background:var(--ink);color:#fff;font-weight:700}.seg.sm button{font-size:12px;padding:7px 4px}
+.subtabs{display:flex;gap:2px;margin:0 0 14px;border-bottom:1px solid var(--line);overflow-x:auto}
+.subtabs button{flex:1;padding:10px 4px;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;font-size:13px;color:var(--ink3);cursor:pointer;font-family:inherit;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+.subtabs button.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:700}
 .sec,.blk{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:13px;margin-bottom:12px}
 .blk h3{margin:0 0 8px;font-size:13px}.blk-s{font-size:11px;color:var(--ink3);margin:-2px 0 8px;line-height:1.6}.cnt{font-weight:400;font-size:11px;color:var(--ink3);margin-left:6px}.s-h{font-size:13px;margin:0 0 7px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid2>*{min-width:0}.fld{display:block;margin-bottom:11px}.fld>span{display:block;font-size:11px;color:var(--ink3);margin-bottom:3px}
