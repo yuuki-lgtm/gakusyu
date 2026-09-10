@@ -244,7 +244,7 @@ for (const [state, make] of Object.entries(STATES)) for (let st = 0; st < 4; st+
   m.nightSave(st);
   try { const { html, errors } = render(m.NightFlow, { d: make(), save: noop, go: noop });
     assert.equal(errors.length, 0, errors.join(", "));
-    assert.ok(html.includes(`夜の作業 ${st + 1}/4`) && html.includes(st < 3 ? "次へ：" : "終わる"));
+    assert.ok(!html.includes(`夜の作業 ${st + 1}/4`) && html.includes(`<strong>${m.NIGHT_STEPS[st][1]}</strong>`) && html.includes(st < 3 ? "次へ：" : "終わる"), "「夜の作業 N/4」の小さな表記は出さず、段階名を見出しに");
     assert.equal(html.includes("に戻る"), m.nightPrev(make(), st) >= 0, "戻る先はやることがある段階だけ");
     for (const bad of ["undefined", "NaN"]) assert.ok(!html.includes(bad));
   } finally { m.nightSave(null); }
@@ -371,14 +371,14 @@ test("ホーム/1週間の流れ: 7行で、いまの画面の呼び名（週末
 test("夜の作業: やることが無い段階は飛ばす。空のデータなら最初から「明日の分」、次へは実際の行き先", () => {
   m.nightSave(null);
   const e = render(m.NightFlow, { d: F.empty(), save: noop, go: noop }).html;
-  assert.ok(e.includes("夜の作業 4/4") && e.includes("終わる") && !e.includes("に戻る"));
+  assert.ok(e.includes("<strong>明日の分</strong>") && e.includes("終わる") && !e.includes("に戻る"));
   assert.equal((e.match(/<li class="skip past">/g) || []).length, 3, "飛ばして通過した段階は線を緑にするため past を付ける");
   const d = F.demo(); const h = render(m.NightFlow, { d, save: noop, go: noop }).html;
-  assert.ok(h.includes("夜の作業 1/4") && h.includes("次へ：×の登録 →"));
+  assert.ok(h.includes("<strong>採点</strong>") && h.includes("次へ：×の登録 →"));
   const noMat = { ...d, materials: [] }; const h2 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html;
-  assert.ok(h2.includes("夜の作業 1/4") && h2.includes("次へ：明日の分 →") && (h2.match(/<li class="skip">/g) || []).length === 2, "まだ通過していない飛ばす段階は skip だけ");
+  assert.ok(h2.includes("<strong>採点</strong>") && h2.includes("次へ：明日の分 →") && (h2.match(/<li class="skip">/g) || []).length === 2, "まだ通過していない飛ばす段階は skip だけ");
   m.nightSave(2);
-  try { const h3 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html; assert.ok(h3.includes("夜の作業 3/4") && h3.includes("← 採点に戻る"), "途中保存は尊重し、戻る先は飛ばした段階を越える"); }
+  try { const h3 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html; assert.ok(h3.includes("<strong>最後のページ</strong>") && h3.includes("← 採点に戻る"), "途中保存は尊重し、戻る先は飛ばした段階を越える"); }
   finally { m.nightSave(null); }
 });
 test("今日/印刷: 候補は教科ごとに見出しで分かれ、行には教科名を繰り返さない", () => {

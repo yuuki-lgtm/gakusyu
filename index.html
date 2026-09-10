@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 21:15"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 21:17"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1222,7 +1222,7 @@ function NightFlow({ d, save, go }) {
   const [k, title, hint] = NIGHT_STEPS[step];
   const next = step < NIGHT_STEPS.length - 1 ? nightNext(d, step) : -1, prev = nightPrev(d, step);
   return (<div className="pane">
-    <div className="night-h"><span>夜の作業 {step + 1}/{NIGHT_STEPS.length}</span><strong>{title}</strong><em>{hint}</em></div>
+    <div className="night-h"><strong>{title}</strong><em>{hint}</em></div>
     <ol className="steps" aria-label="進み具合">{NIGHT_STEPS.map(([kk, t], i) => (<li key={kk} className={i === step ? "on" : !nightHas(d, kk) ? (i < step ? "skip past" : "skip") : i < step ? "done" : ""}><span className="st-n">{i === step ? i + 1 : !nightHas(d, kk) ? "–" : i < step ? "✓" : i + 1}</span><span className="st-l">{t}</span></li>))}</ol>
     {k === "grade" && <TodayGrade d={d} save={save} />}
     {k === "items" && <ItemReg d={d} save={save} />}
@@ -2040,7 +2040,7 @@ const CSS = `
 .ctr{text-align:center;cursor:pointer}.sql{background:#1E2321;color:#D8DED8;font-size:10px;line-height:1.6;padding:10px;border-radius:3px;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;margin:0 0 12px;white-space:pre}
 .msg.fixed{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
 .morning .btn-main{margin-top:0}
-.night-h{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}.night-h span{font-size:11px;color:var(--ink3)}.night-h strong{font-size:18px}.night-h em{font-style:normal;font-size:12px;color:var(--ink2)}
+.night-h{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}.night-h strong{font-size:18px}.night-h em{font-style:normal;font-size:12px;color:var(--ink2)}
 .steps{display:flex;list-style:none;margin:0 0 14px;padding:0}.steps li{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--ink3)}
 .steps li:not(:last-child)::after{content:"";position:absolute;top:11px;left:calc(50% + 13px);right:calc(-50% + 13px);height:1px;background:var(--line)}.steps li.done:not(:last-child)::after,.steps li.past:not(:last-child)::after{background:#2F6F5E}
 .steps li.skip .st-n,.steps li.skip .st-l{opacity:.4}
