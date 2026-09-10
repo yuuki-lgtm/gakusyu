@@ -256,3 +256,17 @@ test("今日/採点: 「紙を撮る」があり、紙の順番が出る", () =>
   const html = render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade" }).html;
   assert.ok(html.includes("紙を撮る（判定欄を読み取る") && html.includes("紙の1番目"));
 });
+for (const [state, make] of Object.entries(STATES)) for (let st = 0; st < 4; st++) test(`描画: 夜の作業 ${st + 1}/4（${state}）`, () => {
+  m.nightSave(st);
+  try { const { html, errors } = render(m.NightFlow, { d: make(), save: noop, go: noop });
+    assert.equal(errors.length, 0, errors.join(", "));
+    assert.ok(html.includes(`夜の作業 ${st + 1}/4`) && html.includes(st < 3 ? "次へ →" : "終わる"));
+    for (const bad of ["undefined", "NaN"]) assert.ok(!html.includes(bad));
+  } finally { m.nightSave(null); }
+});
+test("最後のページ: 取り込んだ教科・教材ごとに1行。済みの数と最後のページ", () => {
+  const html = render(m.LastPageStep, { d: F.demo(), save: noop }).html;
+  assert.ok(html.includes("数学のワーク") && html.includes("済 1/3（p.10 まで）") && html.includes("数学の教科書") && html.includes("英語の教科書"));
+  assert.ok(!html.includes("数学のテスト"));
+  assert.ok(render(m.LastPageStep, { d: F.empty(), save: noop }).html.includes("取り込んだ教科がありません"));
+});

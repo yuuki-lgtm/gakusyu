@@ -484,6 +484,8 @@ function nextActions(d) {
   else {
     const noProg = SUBJECTS.filter((sub) => d.units.some((u) => u.subject === sub) && !d.units.some((u) => u.subject === sub && u.learnedOn));
     if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
+    const ns = nightLoad();
+    A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×登録 → 最後のページ → 明日の分）", why: "1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。", tab: "night", t: "5分" });
     if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: "grade", t: "1枚2分" });
     if (!weekend && d.units.length > 0) A.push({ k: "wb", title: "今日のワークの×を登録", why: "ページを開いて×だった問題をタップするだけ。明日の「今日」に出ます。", tab: "reg", mode: "item", t: "2分" });
     const pendN = d.items.filter((i) => i.pending?.d === t).length;
@@ -873,6 +875,7 @@ function App() {
       <main className="main">
         {tab === "home" && <HomeTab d={d} go={go} />}
         {tab === "today" && <TodayTab d={d} save={save} initial={mode} />}
+        {tab === "night" && <NightFlow d={d} save={save} go={go} />}
         {tab === "week" && <WeekTab d={d} save={save} initial={mode} />}
         {tab === "reg" && <RegTab d={d} save={save} initial={mode} />}
         {tab === "ana" && <AnaTab d={d} />}
@@ -902,7 +905,7 @@ function HomeTab({ d, go }) {
       {nx && <div><div className="hm-k">{nx.name || "定期"}</div><div className="hm-v" style={{ color: left <= 14 ? "#8E3830" : "inherit" }}>D-{left}</div></div>}</div>
       <div className="heat sm">{days.map((dd) => (<span key={dd} className={d.log[dd] ? "on" : ""} />))}</div></div>
     <div className="blk"><h3>1週間の流れ</h3><ol className="flow">
-      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て「自分の判定」に印 → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> 昨日の紙を「採点」→「印刷」で明日の分を1枚に → ワークの×をタップで登録</li><li><b>土曜</b> ワークの×を登録 → 5教科作る → 印刷 → 解く → 採点 → 撮る</li><li><b>日曜</b> 読解1本・記述1本 → 撮る</li><li><b>週1</b> 「依頼文」をコピーして相談</li><li><b>返却時</b> 「登録」で答案を撮って項目に。「定期」で実点を入れる</li></ol></div>
+      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て「自分の判定」に印 → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> ホームの「夜の作業」を押して、採点 → ×登録 → 最後のページ → 明日の分、の順に「次へ」</li><li><b>土曜</b> ワークの×を登録 → 5教科作る → 印刷 → 解く → 採点 → 撮る</li><li><b>日曜</b> 読解1本・記述1本 → 撮る</li><li><b>週1</b> 「依頼文」をコピーして相談</li><li><b>返却時</b> 「登録」で答案を撮って項目に。「定期」で実点を入れる</li></ol></div>
   </div>);
 }
 
@@ -1129,6 +1132,41 @@ function ItemCard({ item: i, unit: u, onConfirm, onStore, ctx }) {
       </div>
     </div>
   );
+}
+
+/* ---- 夜の作業（採点 → ×登録 → 最後のページ → 明日の分。1画面ずつ「次へ」。途中で閉じても今日の分は続きから） ---- */
+const NIGHT_KEY = "night_step";
+const NIGHT_STEPS = [["grade", "採点", "昨日の紙を撮るか、行ごとに押して「まとめて確定」"], ["items", "×の登録", "今日のワークの×をページでタップして「まとめて登録」"], ["last", "最後のページ", "今日やった最後のページまでを「やった」に"], ["print", "明日の分", "類題を作って1つのPDFに。印刷して机へ"]];
+const nightLoad = () => { try { const v = JSON.parse(localStorage.getItem(NIGHT_KEY) || "null"); return v && v.d === today() && v.step >= 0 && v.step < NIGHT_STEPS.length ? v.step : 0; } catch { return 0; } };
+const nightSave = (step) => { try { if (step === null) localStorage.removeItem(NIGHT_KEY); else localStorage.setItem(NIGHT_KEY, JSON.stringify({ d: today(), step })); } catch {} };
+function NightFlow({ d, save, go }) {
+  const [step, setStep] = useState(nightLoad);
+  const move = (n) => { setStep(n); nightSave(n); try { window.scrollTo(0, 0); } catch {} };
+  const finish = () => { nightSave(null); go("home"); };
+  const [k, title, hint] = NIGHT_STEPS[step];
+  return (<div className="pane">
+    <div className="night-h"><span>夜の作業 {step + 1}/{NIGHT_STEPS.length}</span><strong>{title}</strong><em>{hint}</em></div>
+    <div className="night-steps">{NIGHT_STEPS.map(([kk, t], i) => (<span key={kk} className={i === step ? "on" : i < step ? "done" : ""}>{t}</span>))}</div>
+    {k === "grade" && <TodayGrade d={d} save={save} />}
+    {k === "items" && <ItemReg d={d} save={save} />}
+    {k === "last" && <LastPageStep d={d} save={save} />}
+    {k === "print" && <TodayMake d={d} save={save} />}
+    <div className="night-nav">{step > 0 ? <button className="btn-sm" onClick={() => move(step - 1)}>← 戻る</button> : <span />}{step < NIGHT_STEPS.length - 1 ? <button className="btn-main" onClick={() => move(step + 1)}>次へ →</button> : <button className="btn-main" onClick={finish}>終わる</button>}</div>
+  </div>);
+}
+/* 今日やった最後のページ（教科・教材ごとに1行）。ワーク・教科書を取り込んだ教科だけ */
+function LastPageStep({ d, save }) {
+  const rows = SUBJECTS.flatMap((s) => BOOK_KINDS.map((k) => ({ s, k, ms: matsOf(d, s, k) })).filter((x) => x.ms.length));
+  const [pg, setPg] = useState({}); const [msg, setMsg] = useState("");
+  const lastDone = (x) => (x.ms.filter((mt) => mt.doneOn).slice(-1)[0] || {}).page;
+  const val = (x) => pg[x.s + x.k] ?? String(lastDone(x) || x.ms[0].page);
+  const mark = (x) => { const page = parseInt(val(x), 10); if (!page) return; const n = x.ms.filter((mt) => mt.page <= page && !mt.doneOn).length; save(applyAutoProgress(markDoneUpTo({ ...d, log: { ...d.log, [today()]: true } }, x.s, x.k, page))); setMsg(n ? `${x.s}の${x.k} p.${page} までの ${n} ページを「やった」にしました` : `${x.s}の${x.k} p.${page} までは「やった」になっています`); setTimeout(() => setMsg(""), 3000); };
+  return (<section className="sec">
+    <p className="lead">今日やった最後のページ番号を入れて「ここまで」。そのページまでが「やった」になり、進度も進みます。×を登録したページは済んでいます。やっていない教科は飛ばして「次へ」。</p>
+    {rows.length === 0 && <p className="empty">ワーク・教科書を取り込んだ教科がありません。「次へ」。</p>}
+    {rows.map((x) => (<div className="lp-row" key={x.s + x.k}><Dot s={x.s} /><span className="lp-n">{x.s}の{x.k}</span><span className="lp-d">済 {x.ms.filter((mt) => mt.doneOn).length}/{x.ms.length}{lastDone(x) ? `（p.${lastDone(x)} まで）` : ""}</span><input className="num" type="number" inputMode="numeric" value={val(x)} onChange={(e) => setPg((p) => ({ ...p, [x.s + x.k]: e.target.value }))} /><button className="btn-sm" onClick={() => mark(x)}>ここまで</button></div>))}
+    {msg && <p className="msg">{msg}</p>}
+  </section>);
 }
 
 /* ---- テスト ---- */
@@ -1884,6 +1922,10 @@ const CSS = `
 .ver{margin-left:auto;font-size:10px;color:var(--ink3);opacity:.7;white-space:nowrap}
 .ctr{text-align:center;cursor:pointer}.sql{background:#1E2321;color:#D8DED8;font-size:10px;line-height:1.6;padding:10px;border-radius:3px;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;margin:0 0 12px;white-space:pre}
 .msg.fixed{position:sticky;bottom:8px;background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
+.night-h{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}.night-h span{font-size:11px;color:var(--ink3)}.night-h strong{font-size:18px}.night-h em{font-style:normal;font-size:12px;color:var(--ink2)}
+.night-steps{display:flex;gap:4px;margin-bottom:12px}.night-steps span{flex:1;text-align:center;font-size:11px;padding:5px 2px;border:1px solid var(--line);border-radius:3px;color:var(--ink3);background:var(--card)}.night-steps span.on{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700}.night-steps span.done{color:#2F6F5E;border-color:#2F6F5E}
+.night-nav{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}.night-nav .btn-main{flex:1;margin-top:0}
+.lp-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.lp-row:last-of-type{border-bottom:none}.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}
 .grow{padding:10px 0;border-bottom:1px solid var(--line)}.grow:last-of-type{border-bottom:none}.grow.done{background:#F3F6F3;margin:0 -13px;padding:10px 13px}.grow.skip .c-label{color:var(--ink3);text-decoration:line-through}
 .grow-r{display:flex;align-items:center;gap:8px;margin-top:5px}.grow-r .j-who{flex:0 0 40px;margin:0}.grow-r .j-btns{flex:1}.j-btns.sm button{padding:7px 2px;font-size:11px}.gskip{margin-left:auto;background:none;border:1px solid var(--line);border-radius:2px;font-size:10px;color:var(--ink3);padding:1px 6px;cursor:pointer;font-family:inherit}
 .mat-sum{font-size:12px;color:var(--ink2);line-height:1.8;margin:-4px 0 10px}.mat-sum b{color:var(--ink);margin-right:4px}

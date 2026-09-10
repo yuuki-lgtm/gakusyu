@@ -1057,3 +1057,23 @@ describe("紙を撮って判定欄を読む", () => {
     } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
   });
 });
+
+describe("夜の作業（続きから再開）", () => {
+  test("nightSave/nightLoad: 今日の分だけ復元。範囲外や壊れた値は 0。null で消す", () => {
+    m.nightSave(2); assert.equal(m.nightLoad(), 2);
+    m.nightSave(null); assert.equal(m.nightLoad(), 0);
+    m.stubs.localStorage.setItem("night_step", JSON.stringify({ d: day(-1), step: 3 })); assert.equal(m.nightLoad(), 0, "昨日の続きは最初から");
+    m.stubs.localStorage.setItem("night_step", JSON.stringify({ d: T, step: 9 })); assert.equal(m.nightLoad(), 0);
+    m.stubs.localStorage.setItem("night_step", "{broken"); assert.equal(m.nightLoad(), 0);
+    m.stubs.localStorage.removeItem("night_step");
+    assert.equal(m.NIGHT_STEPS.length, 4); assert.deepEqual(m.NIGHT_STEPS.map((x) => x[0]), ["grade", "items", "last", "print"]);
+  });
+  test("ホーム: 初期設定が済んでいれば「夜の作業」が先頭。続きがあれば続きの表示", () => {
+    const d = F.demo();
+    assert.equal(m.nextActions(d).A[0].k, "night");
+    m.nightSave(1); try { assert.ok(m.nextActions(d).A[0].title.includes("続き（2/4 ×の登録）")); } finally { m.nightSave(null); }
+    assert.equal(m.nextActions(F.empty()).A[0].k, "units");
+    const noProg = { ...d, units: d.units.map((u) => ({ ...u, learnedOn: null, learnedBy: undefined })) };
+    assert.equal(m.nextActions(noProg).A[0].k, "prog"); assert.equal(m.nextActions(noProg).A[1].k, "night");
+  });
+});
