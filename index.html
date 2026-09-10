@@ -1311,6 +1311,7 @@ function untouchedPages(d, unitIds) {
   return out;
 }
 /* ページの問題番号の索引を AI で作る。{ns:["1","2(1)",…], at} */
+const _idxTried = new Set(); // このセッションで索引を作りにいったページ（成功・失敗とも）
 async function buildIndex(mt, model = null) {
   const b64 = await stGet(mt.path);
   const t = await callAI([imgBlock(b64), { type: "text", text: `添付は中学1年${mt.subject}の${mt.kind} p.${mt.page}。このページにある問題の番号を、上から順にすべて書き出してください。小問があれば「2(1)」のように親の番号を付けて1つずつ。` }],
@@ -1363,10 +1364,10 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
   const allOk = () => { if (!cur) return; save(applyAutoProgress(markDone({ ...d, log: { ...d.log, [today()]: true } }, [cur.path]))); setMsg(`p.${page} を「やった」にしました`); setTimeout(() => setMsg(""), 3000); };
-  // 裏で問題番号の索引を作る（テスト前の「手つかず」検出用。無くても登録と類題には影響しない）
-  useEffect(() => { if (!cur || cur.idx || !hasKey()) return; let alive = true; const path = cur.path;
-    buildIndex(cur).then((idx) => { if (alive) save((c) => ({ ...c, materials: (c.materials || []).map((mt) => (mt.path === path ? { ...mt, idx, updatedAt: now() } : mt)) })); }).catch(() => {});
-    return () => { alive = false; }; }, [cur && cur.path]);
+  // 裏で問題番号の索引を作る（テスト前の「手つかず」検出用。無くても登録と類題には影響しない）。1ページ1回だけ。失敗したページはこのセッションでは再試行しない
+  useEffect(() => { if (!cur || cur.idx || !hasKey() || _idxTried.has(cur.path)) return; const path = cur.path; _idxTried.add(path);
+    buildIndex(cur).then((idx) => save((c) => ({ ...c, materials: (c.materials || []).map((mt) => (mt.path === path ? { ...mt, idx, updatedAt: now() } : mt)) }))).catch(() => {});
+  }, [cur && cur.path]);
   if (!kinds.length) return null;
   const byPage = {}; taps.forEach((t) => { byPage[`${t.kind} p.${t.page}`] = (byPage[`${t.kind} p.${t.page}`] || 0) + 1; });
   return (<div className="matpick">
@@ -1449,7 +1450,8 @@ function MaterialReg({ d, save }) {
       const page = s0 + k; setBusy(`保存中 ${k + 1}/${total}`);
       await stUpload(matPath(subject, kind, page), b64ToBlob(b64));
       const old = (d.materials || []).find((m) => m.subject === subject && m.kind === kind && m.page === page);
-      recs.push({ id: old ? old.id : uid(), subject, kind, page, path: matPath(subject, kind, page), updatedAt: now() });
+      // 入れ直しでも「やった」は引き継ぐ。索引は画像が変わるので作り直す
+      recs.push({ id: old ? old.id : uid(), subject, kind, page, path: matPath(subject, kind, page), doneOn: old ? old.doneOn || null : null, updatedAt: now() });
     };
     try {
       if (isPdf) await pdfToJpegs(files[0], (b64, n, total) => put(b64, n - 1, total));
