@@ -1541,7 +1541,12 @@ describe("名前を付け直す", () => {
       const a = saved.items.find((x) => x.id === "a"); assert.deepEqual([a.label, a.note, a.named], ["係数が分数の一次方程式", "3x/2=6 を解く", true]);
       assert.ok(sent.includes("既存の項目") && !sent.includes("ワーク p.11 の×"), "既存の一覧に自分自身は入れない");
       globalThis.fetch = async (url) => (url.includes("/storage/") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer } : { ok: false, status: 500, text: async () => "x" });
-      assert.ok((await m.nameAndApply(d, [d.items[0]], "数学", () => null, save)).startsWith("項目名を付けられませんでした"));
+      const m2 = await m.nameAndApply(d, [d.items[0]], "数学", () => null, save);
+      assert.ok(m2.startsWith("項目名を付けられませんでした") && m2.includes("ワーク p.11: AI の呼び出しに失敗"), m2);
+      globalThis.fetch = async (url) => ({ ok: false, status: 404, text: async () => "no" });
+      const m3 = await m.nameAndApply(d, [{ ...d.items[0], id: "z", src: { ...src, path: "fam/math/wb/99.jpg", page: 99 } }], "数学", () => null, save); assert.ok(m3.includes("ワーク p.99: 教材の画像を読み込めません"), m3 + "（画像はメモリに残るので別のページで確かめる）");
+      globalThis.fetch = async (url, opts) => (url.includes("/storage/") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer } : { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: JSON.stringify({ items: [] }) }] }) });
+      const m4 = await m.nameAndApply(d, [d.items[0]], "数学", () => null, save); assert.ok(m4.includes("AI が印 1 の問題を特定できませんでした"), m4);
     } finally { globalThis.fetch = orig; for (const k of ["sb_url", "sb_key", "anthropic_api_key"]) m.stubs.localStorage.removeItem(k); }
   });
 });

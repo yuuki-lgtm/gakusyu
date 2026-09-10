@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 22:35"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 22:38"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -632,21 +632,25 @@ async function genForItem(i, u, ctx, prev = "なし", model = null) {
 }
 /* 座標つきで登録された項目に、AI が名前と形式を付ける。ページごとに1回。失敗したページは仮の名前のまま。戻り値は {id: {label, fmt, note, named}} */
 async function nameItems(items, unitOf, model = null, meta = {}, existing = []) {
-  const out = {}; meta.listening = [];
+  const out = {}; meta.listening = []; meta.errors = []; // errors: 付けられなかった理由（ページごと）。画面の文に出す
+  const fail = (s0, why) => meta.errors.push(`${s0.src.kind} ${s0.src.kind === "テスト" ? "答案" : "p."}${s0.src.page}: ${why}`);
   const exList = existing.slice(0, 40); model = model || (exList.length ? OPUS : SONNET); /* 同じ技能かの判定があるときは Opus */ const exText = exList.length ? `\n既存の未定着項目:\n${exList.map((e, k) => `${k + 1}) ${e.label}`).join("\n")}\n印の問題が既存の項目と同じ技能（後日その一点を聞き直せば同時に確かめられる）なら same にその番号を入れる。迷えば 0。` : "";
   const byPath = {}; items.filter((i) => hasPos(i.src) && !i.named).forEach((i) => { (byPath[i.src.path] = byPath[i.src.path] || []).push(i); });
   for (const path of Object.keys(byPath)) {
     const group = byPath[path]; const s0 = group[0];
     const u = unitOf(s0.unitId);
+    let stage = "画像";
     try {
       const b64 = await annotateB64(await stGet(path), group.map((i) => ({ x: i.src.x, y: i.src.y })));
       const qb64 = s0.src.qpath ? await stGet(s0.src.qpath) : null;
+      stage = "AI";
       const t = await callAI([imgBlock(b64), ...(qb64 ? [{ type: "text", text: "【問題用紙】上の答案に対応する問題用紙" }, imgBlock(qb64)] : []), { type: "text", text: `${qb64 ? `1枚目は中学1年${s0.subject}の定期テストの答案（${s0.src.page}枚目）、2枚目はその問題用紙。答案の青い点の印の位置にある答えに対応する問題を、問題用紙から探して読んでください。` : `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。`}${u ? `単元は「${u.name}」。` : ""}青い小さな点の印（${group.length > 1 ? `1〜${group.length}の番号がそれぞれの点の右横にある` : "1つ"}）の位置にある問題を子どもが間違えました。印は問題文や答えの上に小さく置いてあるので、点のある行の問題を読んでください。紙に元からある赤ペンの ○・×・✓・点数は採点の書き込みなので、印の位置の判断には使わず、青い印の無い問題は挙げないでください。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。${exText}` }],
         `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。音声を聞いて答えるリスニングの問題は fmt を「リスニング」にし、listening_total にこの紙のリスニングの問題数（小問ごと）を入れる（無ければ 0）。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false,"same":0}],"listening_total":0}`, 1400, model);
-      const parsed = parseJSON(t); const rs = parsed.items || [];
+      stage = "応答"; const parsed = parseJSON(t); const rs = parsed.items || [];
       meta.listening.push({ path, subject: s0.subject, kind: s0.src.kind, page: s0.src.page, total: Number(parsed.listening_total) || 0 });
       group.forEach((i, k) => { const r = rs.find((x) => Number(x.n) === k + 1) || rs[k]; if (r && r.label) { const sm = Number(r.same) > 0 && exList[Number(r.same) - 1] ? exList[Number(r.same) - 1].id : null; out[i.id] = { label: r.label, fmt: FORMATS.includes(r.fmt) ? r.fmt : "", note: r.summary || "", named: true, noWhy: r.rote === true, ...(sm ? { same: sm } : {}) }; } });
-    } catch (e) { /* 仮の名前のまま。類題生成のときにもう一度試す */ }
+      const miss = group.map((i, k) => k + 1).filter((n) => !out[group[n - 1].id]); if (miss.length) fail(s0, `AI が印 ${miss.join("・")} の問題を特定できませんでした（印が問題の上に無い、または答えが判読できない）`);
+    } catch (e) { fail(s0, stage === "画像" ? `教材の画像を読み込めません（${e.message || e}）` : stage === "AI" ? `AI の呼び出しに失敗（${e.message || e}）` : "AI の応答を読めませんでした"); /* 仮の名前のまま。類題生成のときにもう一度試す */ }
   }
   return out;
 }
@@ -1668,7 +1672,8 @@ async function nameAndApply(d, add, subject, unitOf, save) {
   const { ids: lis, tests: lisTests } = splitListening(add, patch, meta.listening);
   let merged = 0;
   if (n) save((cur) => { const withNames = { ...cur, items: cur.items.filter((x) => !lis.includes(x.id)).map((x) => (patch[x.id] ? { ...x, ...patch[x.id], same: undefined, updatedAt: now() } : x)), tests: [...cur.tests, ...lisTests], deleted: [...cur.deleted, ...lis] }; const r = mergeSameSkill(withNames, ids.filter((id) => !lis.includes(id)), patch); merged = r.merged; return r.d; });
-  return n ? `${n - lis.length - merged}件に項目名を付けました${merged ? `。既存の項目と同じ技能 ${merged} 件は統合（回数を増やして明日に）` : ""}${lis.length ? `。リスニング ${lis.length}問は紙で反復できないので、未定着には入れず形式の成績（分析）に記録しました` : ""}` : "項目名を付けられませんでした。類題を作るときにもう一度試します";
+  const why = (meta.errors || []).length ? `。付けられなかった理由 → ${meta.errors.join("、")}` : "";
+  return (n ? `${n - lis.length - merged}件に項目名を付けました${merged ? `。既存の項目と同じ技能 ${merged} 件は統合（回数を増やして明日に）` : ""}${lis.length ? `。リスニング ${lis.length}問は紙で反復できないので、未定着には入れず形式の成績（分析）に記録しました` : ""}` : "項目名を付けられませんでした") + why;
 }
 function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const kinds = MKINDS.filter((k) => matsOf(d, subject, k).length);
