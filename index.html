@@ -26,8 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 10:51";
- // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 10:54"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -179,6 +178,12 @@ async function shareFile(blob, name, type) {
 }
 
 /* ---- 小さな部品 ---- */
+/* クリップボードへコピー。Clipboard API が使えなければ textarea と execCommand で */
+async function copyToClipboard(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select();
+  let ok = true; try { document.execCommand("copy"); } catch { ok = false; } ta.remove(); return ok;
+}
 function useElapsed(busy) {
   const [s, setS] = useState(0);
   useEffect(() => { if (!busy) { setS(0); return; } const t = setInterval(() => setS((x) => x + 1), 1000); return () => clearInterval(t); }, [busy]);
@@ -194,6 +199,8 @@ const Dot = ({ s }) => <span className="dot" style={{ background: HUE[s] }} />;
 /* ==================== 2. データ ==================== */
 
 /* ---- 空データと移行 ---- */
+/* レコードを消して墓標（deleted）に残す。同期で他の端末からも消えるように */
+const removeRec = (d, key, ids) => { const set = new Set([].concat(ids)); return { ...d, [key]: d[key].filter((x) => !set.has(x.id)), deleted: [...d.deleted, ...set] }; };
 const blank = () => ({ v: 3, updatedAt: now(), units: [], items: [], tests: [], papers: [], log: {}, exams: [], writing: [], materials: [], deleted: [] });
 /* v2 → v3 移行。既存データを引き継ぐ */
 function migrate(d) {
@@ -268,6 +275,7 @@ function parsePages(s) {
   }
   return [...out].sort((a, b) => a - b);
 }
+const unitById = (d, id) => d.units.find((u) => u.id === id);
 const unitPages = (u, kind) => parsePages(kind === "ワーク" ? u.wbPages : u.pages);
 const unitForPage = (units, kind, page) => units.find((u) => unitPages(u, kind).includes(page)) || null;
 const unitPageLabel = (u) => [u.pages ? `教科書 ${u.pages}` : "", u.wbPages ? `ワーク ${u.wbPages}` : ""].filter(Boolean).join(" ／ ");
@@ -302,6 +310,8 @@ function pickUnits(d, subject, max = 3) {
 }
 
 /* ---- 間隔反復と学力の指標 ---- */
+/* 落とした項目を1件作る。今日 × で登録し、明日に出る。f で上書きできる */
+const newItem = (f) => ({ id: uid(), note: "", fmt: "", createdOn: today(), history: [{ d: today(), r: "x", etype: f.etype || "" }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now(), ...f });
 function applyJudgment(item, r) {
   const t = today();
   let level = item.level || 0, failCount = item.failCount || 0;
@@ -365,8 +375,7 @@ function tapsToItems(taps, subject, us, fallbackUnitId = "") {
   return taps.map((t) => {
     const u = unitForPage(us, t.kind, t.page);
     const k = (perPage[t.path] = (perPage[t.path] || 0) + 1);
-    return { id: uid(), subject, unitId: u ? u.id : fallbackUnitId || "", label: `${t.kind} p.${t.page} の×（${k}）`, named: false, note: "", fmt: "", etype: ETYPES[0], createdOn: today(),
-      history: [{ d: today(), r: "x", etype: ETYPES[0] }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", src: { path: t.path, kind: t.kind, page: t.page, x: t.x, y: t.y }, updatedAt: now() };
+    return newItem({ subject, unitId: u ? u.id : fallbackUnitId || "", label: `${t.kind} p.${t.page} の×（${k}）`, named: false, etype: ETYPES[0], src: { path: t.path, kind: t.kind, page: t.page, x: t.x, y: t.y } });
   });
 }
 const hasPos = (s) => !!(s && s.path && typeof s.x === "number" && typeof s.y === "number");
@@ -771,7 +780,7 @@ function TodayTab({ d, save, initial }) {
   </div>);
 }
 function TodayMake({ d, save }) {
-  const unitOf = (id) => d.units.find((u) => u.id === id);
+  const unitOf = (id) => unitById(d, id);
   const set = printSet(d); const printed = gradeSet(d);
   const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [log, setLog] = useState([]);
   const sec = useElapsed(busy);
@@ -813,7 +822,7 @@ function TodayMake({ d, save }) {
   </>);
 }
 function TodayGrade({ d, save }) {
-  const unitOf = (id) => d.units.find((u) => u.id === id);
+  const unitOf = (id) => unitById(d, id);
   const set = gradeSet(d);
   const [dc, setDc] = useState({});
   const [msg, setMsg] = useState("");
@@ -847,7 +856,7 @@ function TodayGrade({ d, save }) {
 }
 function TodayCards({ d, save }) {
   const [showAll, setShowAll] = useState(false);
-  const unitOf = (id) => d.units.find((u) => u.id === id);
+  const unitOf = (id) => unitById(d, id);
   const due = d.items.filter((i) => i.nextDue <= today()).sort((a, b) => ((b.pending?.d === today()) - (a.pending?.d === today())) || b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
   const pendN = d.items.filter((i) => i.pending?.d === today()).length;
   const shown = showAll ? [...d.items].sort((a, b) => (a.nextDue < b.nextDue ? -1 : 1)) : due;
@@ -1080,7 +1089,7 @@ function PaperRow({ p, d, save }) {
     <span className="pr-t">{p.date.slice(5)} {p.subject} {p.kind} {p.questions.length}問 <em className="code">{p.code}</em></span>
     <span className={"st " + (p.status === "graded" ? "g" : "")}>{p.status === "graded" ? "採点済" : "未採点"}</span></div>
     {open && (<div className="pr-body"><PrintSheet paper={p} />
-      <button className="btn-x wide-x" onClick={() => save({ ...d, papers: d.papers.filter((x) => x.id !== p.id), deleted: [...d.deleted, p.id] })}>このテストを削除</button></div>)}</div>);
+      <button className="btn-x wide-x" onClick={() => save(removeRec(d, "papers", p.id))}>このテストを削除</button></div>)}</div>);
 }
 function PrintSheet({ paper: p }) {
   const [pdfBusy, setPdfBusy] = useState(0);
@@ -1091,8 +1100,7 @@ function PrintSheet({ paper: p }) {
   const share = async () => { setState(""); let res = {}; try { res = await resolveRefs(p); } catch {} const blob = new Blob([fileHTML(p, res)], { type: "text/html" }); const name = `${p.subject}_${p.code}.html`;
     if (await shareFile(blob, name, "text/html")) return;
     try { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); } catch {} };
-  const copyText = async () => { const t = paperText(p); try { await navigator.clipboard.writeText(t); setState("copied"); return; } catch {}
-    const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); setState("copied"); } catch { setState("failed"); } ta.remove(); };
+  const copyText = async () => { setState((await copyToClipboard(paperText(p))) ? "copied" : "failed"); };
   return (<>
     <button className="btn-main" onClick={makePdf} disabled={!!pdfBusy}>{pdfBusy ? `PDFを作成中… ${pdfBusy}` : "PDFにする"}</button>
     {pdfErr && <div className="errbox"><p>{pdfErr}</p></div>}
@@ -1140,7 +1148,7 @@ function GradeFlow({ d, save }) {
     const rlist = Object.values(rows);
     const total = rlist.reduce((p, c) => p + c.total, 0), correct = rlist.reduce((p, c) => p + c.correct, 0);
     const test = { id: uid(), subject: paper.subject, date: today(), kind: paper.kind, source: `自作 ${paper.code}`, rows: rlist, total, correct, unitIds: paper.unitIds, paperId: paper.id, updatedAt: now() };
-    const newItems = paper.questions.filter((qq) => checked[qq.n]).map((qq) => ({ id: uid(), subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "", createdOn: today(), history: [{ d: today(), r: "x", etype: etypes[qq.n] || "" }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }));
+    const newItems = paper.questions.filter((qq) => checked[qq.n]).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" }));
     save({ ...d, tests: [...d.tests, test], items: [...d.items, ...newItems], papers: d.papers.map((p) => (p.id === paper.id ? { ...p, status: "graded", updatedAt: now() } : p)), log: { ...d.log, [today()]: true } });
     setMarks(null); setPid(pending.filter((p) => p.id !== paper.id)[0]?.id || "");
   };
@@ -1228,7 +1236,7 @@ function WritingFlow({ d, save }) {
   const commit = () => {
     const unit = d.units.find((u) => u.subject === subject);
     const kinds = {}; (rev?.errors || []).forEach((e, i) => { if (addItems[i]) kinds[e.kind] = (kinds[e.kind] || 0) + 1; });
-    const newItems = Object.keys(kinds).map((k) => ({ id: uid(), subject, unitId: unit?.id || "", label: `${subject === "英語" ? "英作文" : "記述"}での${k}の誤り`, note: (rev.errors || []).filter((e) => e.kind === k).slice(0, 3).map((e) => `${e.where}→${e.fix}`).join("、"), fmt: subject === "英語" ? "英作文" : "記述・作文", etype: "分かっていたが間違えた", createdOn: today(), history: [{ d: today(), r: "x", etype: "分かっていたが間違えた" }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }));
+    const newItems = Object.keys(kinds).map((k) => newItem({ subject, unitId: unit?.id || "", label: `${subject === "英語" ? "英作文" : "記述"}での${k}の誤り`, note: (rev.errors || []).filter((e) => e.kind === k).slice(0, 3).map((e) => `${e.where}→${e.fix}`).join("、"), fmt: subject === "英語" ? "英作文" : "記述・作文", etype: "分かっていたが間違えた" }));
     const merged = newItems.filter((n) => !d.items.some((i) => i.label === n.label && i.status === "active"));
     const bumped = d.items.map((i) => (newItems.some((n) => n.label === i.label) && i.status === "active" ? { ...i, failCount: i.failCount + 1, level: 0, nextDue: addDays(today(), 1), history: [...i.history, { d: today(), r: "x", etype: i.etype }], updatedAt: now() } : i));
     save({ ...d, writing: [...d.writing, { id: uid(), date: today(), subject, ...sc, note: task?.prompt?.slice(0, 30) || "", updatedAt: now() }], items: [...bumped, ...merged], log: { ...d.log, [today()]: true } });
@@ -1340,7 +1348,7 @@ function UnitReg({ d, save }) {
         {edit && edit.id === u.id ? (<div className="u-edit"><div className="u-name">{u.name}</div><div className="grid2"><Fld label="教科書"><input value={edit.pages} onChange={(e) => setEdit({ ...edit, pages: e.target.value })} placeholder="p.48-52" /></Fld><Fld label="ワーク"><input value={edit.wbPages} onChange={(e) => setEdit({ ...edit, wbPages: e.target.value })} placeholder="p.20-23" /></Fld></div><div className="q-btns"><button className="btn-sm" onClick={saveEdit}>保存</button><button className="btn-sm" onClick={() => setEdit(null)}>やめる</button></div></div>)
         : (<><div><div className="u-name">{u.name}</div><button className="u-pg" onClick={() => setEdit({ id: u.id, pages: u.pages || "", wbPages: u.wbPages || "" })}>{unitPageLabel(u) || "ページ未設定"}</button><div className="u-meta">{taught(u) ? (u.lastTestedOn ? `最終出題 ${u.lastTestedOn.slice(5)}` : <span className="never">未出題</span>) : "まだ習っていない"}{u.learnedBy === "auto" ? " · ワークから自動" : ""}</div></div>
         <div className="u-btns">{!taught(u) && <button className="btn-sm" onClick={() => save({ ...d, units: d.units.map((x) => (x.subject === subject && us.indexOf(x) <= idx && !x.learnedOn ? { ...x, learnedOn: today(), updatedAt: now() } : x)) })}>ここまで</button>}
-          <button className="btn-x" onClick={() => save({ ...d, units: d.units.filter((x) => x.id !== u.id), deleted: [...d.deleted, u.id] })}>×</button></div></>)}</div>))}</section>
+          <button className="btn-x" onClick={() => save(removeRec(d, "units", u.id))}>×</button></div></>)}</div>))}</section>
   </>);
 }
 function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
@@ -1422,7 +1430,7 @@ function ItemReg({ d, save }) {
   const us = d.units.filter((u) => u.subject === subject);
   useEffect(() => { setUnitId(us.length ? us[us.length - 1].id : ""); }, [subject, d.units.length]);
   const add = () => { if (!label.trim() || !unitId) { setMsg("単元と項目を入れてください"); return; }
-    save({ ...d, items: [...d.items, { id: uid(), subject, unitId, label: label.trim(), note: note.trim(), fmt, etype, createdOn: today(), history: [{ d: today(), r: "x", etype }], level: 0, failCount: 1, nextDue: addDays(today(), 1), status: "active", updatedAt: now() }], log: { ...d.log, [today()]: true } });
+    save({ ...d, items: [...d.items, newItem({ subject, unitId, label: label.trim(), note: note.trim(), fmt, etype })], log: { ...d.log, [today()]: true } });
     setLabel(""); setNote(""); setMsg("追加しました。明日の「今日」に出ます"); setTimeout(() => setMsg(""), 2000); };
   return (<section className="sec">
     <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて×だった問題をタップし、最後に「まとめて登録」。項目名はAIがあとで付けます。翌日の「今日」に出ます。" : "その日のワークの×を、その夜に登録します。「登録→教材」でワークを取り込んでおくと、ページを開いて×をタップするだけで登録できます。取り込むまでは下の手入力で。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
@@ -1438,12 +1446,12 @@ function ItemReg({ d, save }) {
   </section>);
 }
 function ItemList({ d, save }) {
-  const unitOf = (id) => d.units.find((u) => u.id === id);
+  const unitOf = (id) => unitById(d, id);
   return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
         {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
-          <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select></div><button className="btn-x" onClick={() => save({ ...d, items: d.items.filter((x) => x.id !== i.id), deleted: [...d.deleted, i.id] })}>×</button></div>); })}</div>); })}</>);
+          <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select></div><button className="btn-x" onClick={() => save(removeRec(d, "items", i.id))}>×</button></div>); })}</div>); })}</>);
 }
 function MaterialReg({ d, save }) {
   const [subject, setSubject] = useState("数学");
@@ -1500,7 +1508,7 @@ function MaterialReg({ d, save }) {
   const delTargets = delPages.trim() ? (() => { const ps = new Set(parsePages(delPages)); return mine.filter((m) => ps.has(m.page)); })() : mine;
   const remove = async (targets) => {
     setBusy("削除中"); setErr(""); setMsg("");
-    try { await stRemove(targets.map((m) => m.path)); const ids = new Set(targets.map((m) => m.id)); save({ ...d, materials: d.materials.filter((m) => !ids.has(m.id)), deleted: [...d.deleted, ...ids] }); setMsg(`${targets.length}ページを削除しました`); setDelPages(""); }
+    try { await stRemove(targets.map((m) => m.path)); save(removeRec(d, "materials", targets.map((m) => m.id))); setMsg(`${targets.length}ページを削除しました`); setDelPages(""); }
     catch (e) { setErr(e.message || "削除できませんでした"); }
     setBusy("");
   };
@@ -1620,7 +1628,7 @@ function ExamCard({ ex, d, save }) {
   const stuck = rangeItems.filter((i) => i.failCount >= 3);
   const predicted = (s) => { const c = d.tests.filter((t) => t.subject === s && t.kind === "累積" && t.date <= ex.date).sort((a, b) => (a.date < b.date ? 1 : -1))[0]; return c ? pct(c.correct, c.total) : null; };
   return (<div className="blk">
-    <div className="ex-h"><strong>{ex.name || "テスト"}</strong> {ex.date} {!past && <em className={"cnt-b" + (left <= 14 ? " near" : "")}>D-{left}</em>}<button className="btn-x" onClick={() => save({ ...d, exams: d.exams.filter((e) => e.id !== ex.id), deleted: [...d.deleted, ex.id] })}>×</button></div>
+    <div className="ex-h"><strong>{ex.name || "テスト"}</strong> {ex.date} {!past && <em className={"cnt-b" + (left <= 14 ? " near" : "")}>D-{left}</em>}<button className="btn-x" onClick={() => save(removeRec(d, "exams", ex.id))}>×</button></div>
     <Fld label="出題範囲"><div className="chips">{d.units.map((u) => (<button key={u.id} className={"chip" + (ex.unitIds.includes(u.id) ? " on" : "")} style={ex.unitIds.includes(u.id) ? { background: HUE[u.subject] } : {}} onClick={() => upd({ unitIds: ex.unitIds.includes(u.id) ? ex.unitIds.filter((x) => x !== u.id) : [...ex.unitIds, u.id] })}>{u.subject}・{u.name}</button>))}</div></Fld>
     {!past && ex.unitIds.length > 0 && (<>
       <div className={"count" + (left <= 14 ? " near" : "")}><div className="cn-n">あと {left} 日</div><div className="cn-s">範囲内の未定着 <strong>{rangeItems.length}</strong> 件{left <= 14 && " · 新しいことはやらず、これだけを潰す"}</div></div>
@@ -1637,7 +1645,7 @@ function ExamCard({ ex, d, save }) {
 }
 function ExportTab({ d }) {
   const [ask, setAsk] = useState("上記をふまえて、次にやるべきことを提案してください。");
-  const unitOf = (id) => d.units.find((u) => u.id === id);
+  const unitOf = (id) => unitById(d, id);
   const text = useMemo(() => {
     const L = [`【学習状況 ${today()}】`];
     const nx = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
@@ -1656,7 +1664,7 @@ function ExportTab({ d }) {
     const rd = d.items.filter((i) => i.fmt === "長文読解" && i.status === "active"); if (rd.length) L.push("", "■ 読解で落としている技能: " + rd.map((i) => i.label).join("、"));
     if (d.writing.length) { const w = d.writing.slice(-5); L.push("", "■ 記述の基準点（字数/構成/表面）: " + w.map((x) => `${x.date.slice(5)} ${x.len}/${x.structure}/${x.surface}`).join("、")); }
     L.push("", "■ 依頼", ask); return L.join("\n"); }, [d, ask]);
-  const copy = () => { const ta = document.getElementById("expta"); ta.select(); document.execCommand("copy"); };
+  const copy = () => { document.getElementById("expta").select(); copyToClipboard(text); };
   return (<div className="pane"><p className="lead">週1回程度、これを貼って相談してください。読解教材の作成、記述の添削、3回以上落ちた項目の対応は、こちらで扱います。</p>
     <Fld label="依頼内容"><textarea rows={2} value={ask} onChange={(e) => setAsk(e.target.value)} /></Fld><textarea id="expta" className="exp" readOnly rows={18} value={text} /><button className="btn-main" onClick={copy}>コピーする</button></div>);
 }
@@ -1672,7 +1680,7 @@ function Settings({ d, save, setSync }) {
   const backup = () => { const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `gakushu_${today()}.json`; document.body.appendChild(a); a.click(); a.remove(); };
   const restore = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const p = JSON.parse(r.result); if (!p.items || !p.units) throw new Error(); save(mergeData(d, migrate(p))); say("統合しました"); } catch { say("読み込めませんでした"); } }; r.readAsText(f); };
   const [paste, setPaste] = useState("");
-  const copyLink = async () => { saveSync(); localStorage.setItem(AKEY, key.trim()); const link = cfgLink(window.location.href); try { await navigator.clipboard.writeText(link); say("リンクをコピーしました。LINE やメールで自分に送ってください"); } catch { const ta = document.createElement("textarea"); ta.value = link; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); say("リンクをコピーしました"); } catch { say("コピーできませんでした"); } ta.remove(); } };
+  const copyLink = async () => { saveSync(); localStorage.setItem(AKEY, key.trim()); const link = cfgLink(window.location.href); say((await copyToClipboard(link)) ? "リンクをコピーしました。LINE やメールで自分に送ってください" : "コピーできませんでした"); };
   const doImport = () => { const n = importCfg(paste); if (!n) { say("読み取れませんでした。リンク全体を貼ってください"); return; } setUrl(LS(SB_URL)); setAnon(LS(SB_KEY)); setRoom(LS(SB_ROOM)); setKey(LS(AKEY)); setPaste(""); say(`${n}件を取り込みました。「接続して同期」を押してください`); };
   return (<div className="pane">
     <section className="sec"><h3 className="s-h">設定を別の端末に渡す</h3>

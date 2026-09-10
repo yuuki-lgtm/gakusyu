@@ -13,7 +13,7 @@ const EXPORTS = [
   // 日付など
   "today", "addDays", "diffDays", "pct", "blank",
   // 中核ロジック
-  "migrate", "mergeData", "sbFetch", "cfgLink", "importCfg", "matPath", "stUpload", "stGet", "stRemove", "pagesToRanges", "isSpreadShape", "assignPages", "splitSpread", "findGutter", "parsePages", "unitPages", "unitForPage", "applyTOC", "unitPageLabel", "materialsForUnits", "matsLabel", "b64ToBlob", "bufToB64", "matsOf", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "parseJSON", "genContent", "srcLabel", "annotateB64", "hasPos", "markDesc", "nameItems", "applyGen", "printSet", "gradeSet", "judgeAll", "ctxFor", "itemContext", "SELF_LINE",
+  "migrate", "mergeData", "removeRec", "newItem", "unitById", "sbFetch", "cfgLink", "importCfg", "matPath", "stUpload", "stGet", "stRemove", "pagesToRanges", "isSpreadShape", "assignPages", "splitSpread", "findGutter", "parsePages", "unitPages", "unitForPage", "applyTOC", "unitPageLabel", "materialsForUnits", "matsLabel", "b64ToBlob", "bufToB64", "matsOf", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "parseJSON", "genContent", "srcLabel", "annotateB64", "hasPos", "markDesc", "nameItems", "applyGen", "printSet", "gradeSet", "judgeAll", "ctxFor", "itemContext", "SELF_LINE",
   // 印刷
   "escHTML", "safeSvg", "paperHTML", "needBlank", "pdfName", "paperFigs", "usedFigs", "resolveRefs", "fileHTML", "paperText", "genToPaper", "isIOS",
   // 画面

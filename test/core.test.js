@@ -758,3 +758,25 @@ describe("見開きの綴じ目の推定", () => {
     assert.equal(m.findGutter(img(w, h, () => null), w, h) > 0.4 && m.findGutter(img(w, h, () => null), w, h) < 0.6, true, "全面が白なら中央付近の帯の中心");
   });
 });
+
+describe("共通処理（整理で切り出したもの）", () => {
+  test("removeRec: 指定の配列から消し、墓標に足す。複数 id も", () => {
+    const d = { ...m.blank(), items: [{ id: "a" }, { id: "b" }, { id: "c" }], deleted: ["z"] };
+    const r = m.removeRec(d, "items", "b");
+    assert.deepEqual(r.items.map((x) => x.id), ["a", "c"]); assert.deepEqual(r.deleted, ["z", "b"]);
+    const r2 = m.removeRec(d, "items", ["a", "c"]);
+    assert.deepEqual(r2.items.map((x) => x.id), ["b"]); assert.deepEqual(r2.deleted, ["z", "a", "c"]);
+    assert.deepEqual(d.items.length, 3, "元は触らない");
+  });
+  test("newItem: 今日 × で登録、明日に出る。渡した値で上書き", () => {
+    const i = m.newItem({ subject: "数学", unitId: "u", label: "L", etype: "知らなかった" });
+    assert.deepEqual([i.subject, i.unitId, i.label, i.note, i.fmt, i.level, i.failCount, i.status, i.nextDue, i.createdOn], ["数学", "u", "L", "", "", 0, 1, "active", day(1), T]);
+    assert.deepEqual(i.history, [{ d: T, r: "x", etype: "知らなかった" }]);
+    assert.ok(i.id && i.updatedAt);
+    assert.equal(m.newItem({ label: "x" }).history[0].etype, "");
+    assert.equal(m.newItem({ label: "x", fmt: "計算", named: false }).named, false);
+  });
+  test("unitById", () => {
+    const d = F.demo(); assert.equal(m.unitById(d, "u2").name, "文字と式"); assert.equal(m.unitById(d, "nope"), undefined);
+  });
+});
