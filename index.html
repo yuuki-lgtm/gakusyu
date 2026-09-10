@@ -624,8 +624,13 @@ const mocksFor = (d, ex) => (d.papers || []).filter((p) => p.kind === "模試" &
 
 /* 段階4で日程を決める。ここでは「14日以内なら 14・7・3 のうち最も近い回」 */
 const mockRound = (left) => (left === null || left < 0 || left > 14 ? null : [3, 7, 14].find((r) => r >= left));
-/* 段階3で返却テストの答案を参考画像にする。ここでは無し */
-const refSheets = async (d, subject) => [];
+/* 返却された定期テストの答案（教材種別「テスト」）を、形式の参考として渡す。新しいものから最大4枚 */
+const testSheets = (d, subject, max = 4) => matsOf(d, subject, "テスト").slice(-max);
+async function refSheets(d, subject) {
+  const out = [];
+  for (const mt of testSheets(d, subject)) { try { out.push({ label: `返却された定期テストの答案 ${mt.page}枚目（形式の参考。問題文は写さない）`, b64: await stGet(mt.path) }); } catch {} }
+  return out;
+}
 
 /* ==================== 4. 印刷 ==================== */
 
@@ -1180,7 +1185,7 @@ function MockMaker({ d, save, preset }) {
     <section className="sec">
       <p className="lead">定期テストの範囲で、本番と同じ形式（50分・100点満点・配点つき・大問構成）の模試を1教科ずつ作ります。返却されたテストが取り込んであれば、その形式に寄せます。50分で解かせ、赤ペンで採点して「撮る」で読み取ると、100点換算で記録され、×は未定着に入ります。</p>
       {exams.length > 1 && <Fld label="どの定期テストか"><select value={ex.id} onChange={(e) => setExId(e.target.value)}>{exams.map((e) => (<option key={e.id} value={e.id}>{e.name || "テスト"} {e.date}</option>))}</select></Fld>}
-      <p className="ph-note">{ex.name || "テスト"} {ex.date}（D-{left}）。{mockRound(left) ? `${mockRound(left)}日前の回。` : "14日前から、14・7・3日前の3回に分けて作るのが目安です。"}1日1〜2教科まで。</p>
+      <p className="ph-note">{ex.name || "テスト"} {ex.date}（D-{left}）。{mockRound(left) ? `${mockRound(left)}日前の回。` : "14日前から、14・7・3日前の3回に分けて作るのが目安です。"}1日1〜2教科まで。{sel.map((s) => { const n = testSheets(d, s).length; return n ? `${s}は返却テスト${n}枚を形式の参考にします。` : ""; }).join("")}</p>
       <div className="chips mb">{subjects.map((s) => { const done = mocks.some((p) => p.subject === s && p.round === mockRound(left)); return (<button key={s} className={"chip" + (sel.includes(s) ? " on" : "")} style={sel.includes(s) ? { background: HUE[s] } : {}} onClick={() => toggle(s)}>{s}{done && "✓"}</button>); })}</div>
       <button className="btn-main" onClick={make} disabled={!!busy || !sel.length || !ex}>{busy ? `${busy} を作成中… ${sec}秒` : `模試を作る（${sel.map((s) => s).join("・") || "教科を選ぶ"}）`}</button>
       {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}

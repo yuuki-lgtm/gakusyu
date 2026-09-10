@@ -942,3 +942,23 @@ describe("模試（段階2: 本番の形式）", () => {
     assert.ok(m.mockPromptFor("英語", 2).includes("参考") && m.mockPromptFor("英語", 2).includes("英作文"));
   });
 });
+
+describe("模試（段階3: 返却テストを形式の参考に）", () => {
+  test("testSheets: その教科の「テスト」の答案を新しいものから最大4枚", () => {
+    const d = F.demo();
+    assert.deepEqual(m.testSheets(d, "数学").map((x) => x.page), [1]);
+    assert.deepEqual(m.testSheets(d, "英語"), []);
+    const many = { ...d, materials: [...d.materials, ...[2, 3, 4, 5, 6].map((pg) => ({ id: "t" + pg, subject: "数学", kind: "テスト", page: pg, path: "p" + pg }))] };
+    assert.deepEqual(m.testSheets(many, "数学").map((x) => x.page), [3, 4, 5, 6]);
+  });
+  test("refSheets: 読めた答案だけを参考画像にする", async () => {
+    const orig = globalThis.fetch;
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k");
+    globalThis.fetch = async (url) => (url.includes("/ts/1.jpg") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([7]).buffer } : { ok: false, status: 404 });
+    try {
+      const r = await m.refSheets(F.demo(), "数学");
+      assert.equal(r.length, 1); assert.ok(r[0].label.includes("1枚目")); assert.equal(r[0].b64, Buffer.from([7]).toString("base64"));
+      assert.deepEqual(await m.refSheets(F.demo(), "英語"), []);
+    } finally { globalThis.fetch = orig; ["sb_url", "sb_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+});
