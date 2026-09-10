@@ -656,9 +656,9 @@ describe("印の位置を AI に渡す（項目名・類題）", () => {
         { id: "d", subject: "数学", unitId: "u", named: false, src: { ...src, path: "bad.jpg" } },
         { id: "e", subject: "数学", unitId: "u", named: true, src }, { id: "f", subject: "数学", unitId: "u", named: false }];
       const r = await m.nameItems(items, () => ({ name: "正負の数" }));
-      assert.deepEqual(r.a, { label: "一番", fmt: "知識・用語", note: "s1", named: true });
-      assert.deepEqual(r.b, { label: "二番", fmt: "計算", note: "s2", named: true });
-      assert.deepEqual(r.c, { label: "単独", fmt: "", note: "", named: true });
+      assert.deepEqual(r.a, { label: "一番", fmt: "知識・用語", note: "s1", named: true, noWhy: false });
+      assert.deepEqual(r.b, { label: "二番", fmt: "計算", note: "s2", named: true, noWhy: false });
+      assert.deepEqual(r.c, { label: "単独", fmt: "", note: "", named: true, noWhy: false });
       assert.equal(r.d, undefined); assert.equal(r.e, undefined); assert.equal(r.f, undefined);
       assert.equal(calls.filter((u) => u.includes("anthropic")).length, 2, "ページごとに1回");
     } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
@@ -1122,5 +1122,34 @@ describe("元の問題の回の判定（A-2）", () => {
     assert.equal(nd.items[1].printedOrig, null); assert.equal(nd.items[1].printedOn, null);
     const n2 = m.judgeAll({ ...m.blank(), items: [item({ id: "c", printedOn: day(-1), history: [] })] }, { c: { r: "o" } }).d.items[0];
     assert.equal(n2.history[0].orig, undefined);
+  });
+});
+
+describe("説明不要の印（B-1）", () => {
+  test("needsWhy: 用語と noWhy は説明を求めない", () => {
+    assert.equal(m.needsWhy({ fmt: "計算" }), true); assert.equal(m.needsWhy({ fmt: "知識・用語" }), false); assert.equal(m.needsWhy({ fmt: "計算", noWhy: true }), false);
+  });
+  test("判定: noWhy の項目は「解けた」だけで7日から先へ進む", () => {
+    assert.equal(m.applyJudgment(item({ level: 3, noWhy: true, history: [] }), "o").level, 4);
+    assert.equal(m.applyJudgment(item({ level: 3, history: [] }), "o").level, 3);
+  });
+  test("類題の紙: noWhy の項目には説明の問いを付けない。採点の読み取りで oo は o に", () => {
+    const u = { id: "u", name: "x" };
+    const p = m.genToPaper([{ id: "1", subject: "英語", unitId: "u", label: "A", fmt: "英作文", noWhy: true, gen: { problems: [{ q: "q", a: "a" }], why: "w" } }], () => u);
+    assert.equal(p.questions.length, 1); assert.ok(p.questions[0].q.endsWith(m.SELF_LINE));
+    assert.equal(m.applySelfMarks([item({ id: "a", noWhy: true, history: [] })], { 1: "oo" }).a.r, "o");
+  });
+  test("名前付け: AI の rote で noWhy が付く。類題生成でも同じ", async () => {
+    const orig = globalThis.fetch;
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url) => (url.includes("/storage/") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer } : { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"items":[{"n":1,"label":"英単語 apple のつづり","fmt":"知識・用語","rote":true},{"n":2,"label":"分配法則","fmt":"計算","rote":false}]}' }] }) });
+    try {
+      const src = { path: "p.jpg", kind: "ワーク", page: 1, x: 0.2, y: 0.2 };
+      const r = await m.nameItems([{ id: "a", subject: "英語", unitId: "u", named: false, src }, { id: "b", subject: "英語", unitId: "u", named: false, src: { ...src, x: 0.8 } }], () => null);
+      assert.equal(r.a.noWhy, true); assert.equal(r.b.noWhy, false);
+    } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+    const g = m.applyGen({ named: false, src: { path: "p", kind: "ワーク", page: 1, x: 0.1, y: 0.1 }, fmt: "" }, { problems: [], label: "年号", fmt: "知識・用語", rote: true });
+    assert.equal(g.noWhy, true);
+    assert.equal(m.applyGen({ named: false, src: { path: "p", kind: "ワーク", page: 1, x: 0.1, y: 0.1 }, fmt: "" }, { problems: [], label: "x", fmt: "計算" }).noWhy, undefined);
   });
 });
