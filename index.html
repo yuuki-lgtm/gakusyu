@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 18:08"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 18:19"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -985,13 +985,15 @@ function App() {
   const daily = pickDaily(d); const due = daily.chosen;
   const nextExam = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
   const left = nextExam ? diffDays(today(), nextExam.date) : null;
-  const tabs = [["home", "ホーム"], ["today", `今日${due.length ? ` (${due.length})` : ""}`], ["week", "テスト"], ["reg", "登録"], ["ana", "分析"], ["exam", left !== null ? `定期 D-${left}` : "定期"], ["export", "依頼文"], ["set", "設定"]];
+  // 下のバーは頻度で3つ。毎日＝ホーム（夜の作業・朝の印刷・今日）、週1＝週末（テスト・模試・定期）、たまに＝その他（登録・分析・依頼文・設定）
+  const tabs = [["home", "ホーム"], ["week", left !== null && left <= 14 ? `週末 D-${left}` : "週末"], ["more", "その他"]];
+  const group = { home: "home", today: "home", night: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more" }[tab] || "home";
 
   return (
     <div className="root"><style>{CSS}</style>
       <header className="hd"><div className="hd-t">学習ループ<span className="ver">v{VERSION}</span></div>
         <div className="hd-s">未定着 {active.length} · 今日 {due.length}件{daily.rest.length ? `（繰り越し ${daily.rest.length}件）` : ""} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}</div></header>
-      <nav className="tabs">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => go(k)}>{l}</button>))}</nav>
+      <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => go(k)}>{l}</button>))}</nav>
       <main className="main">
         {tab === "home" && <HomeTab d={d} go={go} />}
         {tab === "today" && <TodayTab d={d} save={save} initial={mode} />}
@@ -999,7 +1001,8 @@ function App() {
         {tab === "week" && <WeekTab d={d} save={save} initial={mode} />}
         {tab === "reg" && <RegTab d={d} save={save} initial={mode} />}
         {tab === "ana" && <AnaTab d={d} />}
-        {tab === "exam" && <ExamTab d={d} save={save} />}
+        {tab === "exam" && <WeekTab d={d} save={save} initial="exam" />}
+        {tab === "more" && <MoreTab d={d} go={go} />}
         {tab === "export" && <ExportTab d={d} />}
         {tab === "set" && <Settings d={d} save={save} setSync={setSync} />}
         {toast && <p className="msg fixed">{toast}</p>}
@@ -1221,23 +1224,25 @@ function LastPageStep({ d, save }) {
 
 /* ---- テスト ---- */
 function WeekTab({ d, save, initial }) {
-  const asMode = (m) => (m === "cum" ? "make" : m && m.startsWith("mock") ? "mock" : m); // cum＝累積テストを作る、mock:数学,英語＝模試を教科を選んだ状態で
+  // cum＝累積テストを作る、mock:数学,英語＝模試を教科を選んだ状態で、read/write＝読解・記述の画面、manual＝作るの下の手入力
+  const asMode = (m) => (m === "cum" || m === "manual" ? "make" : m && m.startsWith("mock") ? "mock" : m === "read" || m === "write" ? "rw" : m);
   const preset = initial && initial.startsWith("mock:") ? initial.slice(5).split(",").filter(Boolean) : null;
   const [mode, setMode] = useState(asMode(initial) || "make");
-  useEffect(() => { if (initial) setMode(asMode(initial)); }, [initial]);
+  const [rw, setRw] = useState(initial === "write" ? "write" : "read");
+  useEffect(() => { if (initial) { setMode(asMode(initial)); if (initial === "write") setRw("write"); if (initial === "read") setRw("read"); } }, [initial]);
   return (
     <div className="pane">
-      <p className="tabhint">週末の作業。作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。</p>
-      <div className="seg"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>テストを作る</button>
+      <p className="tabhint">週末の作業。作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。定期テストの登録と範囲もここ。</p>
+      <div className="seg"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>作る</button>
+        <button className={mode === "exam" ? "on" : ""} onClick={() => setMode("exam")}>定期</button>
         <button className={mode === "mock" ? "on" : ""} onClick={() => setMode("mock")}>模試</button>
-        <button className={mode === "read" ? "on" : ""} onClick={() => setMode("read")}>読解</button>
-        <button className={mode === "write" ? "on" : ""} onClick={() => setMode("write")}>記述</button>
-        <button className={mode === "manual" ? "on" : ""} onClick={() => setMode("manual")}>手入力</button></div>
-      {mode === "make" && <MakePapers d={d} save={save} initialKind={initial === "cum" ? "累積" : "週次"} />}
+        <button className={mode === "rw" ? "on" : ""} onClick={() => setMode("rw")}>読解・記述</button></div>
+      {mode === "make" && (<><MakePapers d={d} save={save} initialKind={initial === "cum" ? "累積" : "週次"} />
+        <details className="det" open={initial === "manual"}><summary>手入力（学校のワークや問題集の結果）</summary><ManualTest d={d} save={save} /></details></>)}
+      {mode === "exam" && <ExamTab d={d} save={save} />}
       {mode === "mock" && <MockMaker d={d} save={save} preset={preset} />}
-      {mode === "read" && <ReadingMaker d={d} save={save} />}
-      {mode === "write" && <WritingFlow d={d} save={save} />}
-      {mode === "manual" && <ManualTest d={d} save={save} />}
+      {mode === "rw" && (<><div className="seg sm"><button className={rw === "read" ? "on" : ""} onClick={() => setRw("read")}>読解</button><button className={rw === "write" ? "on" : ""} onClick={() => setRw("write")}>記述</button></div>
+        {rw === "read" ? <ReadingMaker d={d} save={save} /> : <WritingFlow d={d} save={save} />}</>)}
     </div>
   );
 }
@@ -1812,6 +1817,21 @@ function MaterialReg({ d, save }) {
   </>);
 }
 
+/* ---- その他（たまに使う画面のメニュー） ---- */
+function MoreTab({ d, go }) {
+  const last = (arr) => (arr && arr.length ? arr.map((x) => x.updatedAt || "").sort().pop() : "");
+  const rows = [
+    ["reg", "登録", "単元・教材の取り込み・未定着一覧。学期の初めと、項目名を直すとき。", last(d.units)],
+    ["ana", "分析", "保持率・形式別・一致率・問題が変。見るだけ。月1の振り返りに。", ""],
+    ["export", "依頼文", "学習状況を文章にしてコピー。週1の相談に。", ""],
+    ["set", "設定", "同期・APIキー・今日の分の上限・バックアップ・バージョン。", d.backupOn || ""],
+  ];
+  return (<div className="pane">
+    <p className="tabhint">たまにしか使わない画面。毎日の操作はホーム、週末の作業は「週末」にあります。</p>
+    {rows.map(([k, t, w, when]) => (<button className="nxt" key={k} onClick={() => go(k)}><span className="nxt-t">{t}</span><span className="nxt-w">{w}{when ? `　最終 ${String(when).slice(0, 10)}` : ""}</span></button>))}
+  </div>);
+}
+
 /* ---- 分析・定期・依頼文・設定 ---- */
 function AnaTab({ d }) {
   const ret = retention(d.items);
@@ -1885,8 +1905,8 @@ function ExamTab({ d, save }) {
   const [name, setName] = useState(""); const [date, setDate] = useState("");
   const exams = [...d.exams].sort((a, b) => (a.date < b.date ? 1 : -1));
   const add = () => { if (!date) return; save({ ...d, exams: [...d.exams, { id: uid(), name: name.trim(), date, unitIds: [], actual: {}, updatedAt: now() }] }); setName(""); setDate(""); };
-  return (<div className="pane">
-    <p className="tabhint">学校の定期テストを登録し、範囲を選ぶ。返却されたら実点を入れる。</p>
+  return (<div className="sub">
+    <p className="lead">学校の定期テストを登録し、範囲を選ぶ。範囲を選ぶと、14日前から模試とやることが決まる。返却されたら実点を入れる。</p>
     <section className="sec"><div className="grid2"><Fld label="テスト名"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：2学期中間" /></Fld><Fld label="実施日"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Fld></div><button className="btn-sm" onClick={add}>追加</button></section>
     {exams.length === 0 && <p className="empty">定期テストを追加してください。範囲を選ぶと、やることが確定します。</p>}
     {exams.map((ex) => (<ExamCard key={ex.id} ex={ex} d={d} save={save} />))}
@@ -2040,7 +2060,8 @@ const CSS = `
  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
 .root *{box-sizing:border-box}
 .hd{padding:18px 16px 10px}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em}.hd-s{font-size:12px;line-height:18px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;align-items:center}
-.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto}.tabs.three .tab{flex:1;text-align:center;font-size:14px;padding:11px 4px}
+.sub .lead{margin-top:2px}
 .tab{flex:0 0 auto;background:none;border:none;padding:9px 11px;font-size:13px;color:var(--ink3);cursor:pointer;border-bottom:2px solid transparent;font-family:inherit;white-space:nowrap}
 .tab.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:700}
 .main{padding:16px 12px 60px}.pane{max-width:620px;margin:0 auto}

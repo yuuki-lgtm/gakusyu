@@ -27,6 +27,8 @@ const SCREENS = (d) => [
   ["テスト/模試", m.WeekTab, { d, save: noop, initial: "mock" }],
   ["テスト/模試(教科指定)", m.WeekTab, { d, save: noop, initial: "mock:数学" }],
   ["テスト/既定", m.WeekTab, { d, save: noop, initial: null }],
+  ["テスト/定期", m.WeekTab, { d, save: noop, initial: "exam" }],
+  ["その他", m.MoreTab, { d, go: noop }],
   ["登録/単元", m.RegTab, { d, save: noop, initial: "unit" }],
   ["登録/項目", m.RegTab, { d, save: noop, initial: "item" }],
   ["登録/一覧", m.RegTab, { d, save: noop, initial: "list" }],
@@ -191,9 +193,10 @@ test("デモ: 教材の取り込みと×の登録に「テスト」の種別が�
   assert.ok(unit.includes("教科書の目次") && unit.includes("ワークの目次") && !unit.includes("テストの目次"));
 });
 test("テスト/作る を cum で開くと累積が選ばれている", () => {
-  const html = render(m.WeekTab, { d: F.demo(), save: noop, initial: "cum" }).html;
+  const html = render(m.MakePapers, { d: F.demo(), save: noop, initialKind: "累積" }).html;
   assert.ok(/class="on">累積</.test(html) && !/class="on">週次</.test(html));
-  assert.ok(/class="on">週次</.test(render(m.WeekTab, { d: F.demo(), save: noop, initial: "make" }).html));
+  assert.ok(/class="on">週次</.test(render(m.MakePapers, { d: F.demo(), save: noop }).html));
+  assert.ok(/class="on">累積</.test(render(m.WeekTab, { d: F.demo(), save: noop, initial: "cum" }).html));
 });
 test("デモ: ×の登録に「p.N までやった」の1タップが出る", () => {
   const html = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html;
@@ -268,7 +271,7 @@ test("用紙の行を開くと、未採点なら「この用紙の答案を撮�
   const d = F.demo(); const p1 = d.papers.find((p) => p.id === "p1"), p2 = d.papers.find((p) => p.id === "p2");
   assert.ok(render(m.PaperGrade, { p: p1, d, save: noop }).html.includes("この用紙の答案を撮る（0909数）"));
   const w = render(m.WeekTab, { d, save: noop, initial: null }).html;
-  assert.ok(!w.includes("採点した答案を撮る") && w.includes("テストを作る"));
+  assert.ok(!w.includes("採点した答案を撮る") && w.includes(">作る<"));
   assert.equal(p2.status, "graded");
 });
 test("設定: SQL は未設定なら開き、設定済みなら畳む", () => {
@@ -333,4 +336,14 @@ test("採点の展開: 診断の各手順に「この手順を項目として登
   const done = { ...i2, diag: { ...i2.diag, steps: i2.diag.steps.map((s2, k) => (k === 0 ? { ...s2, itemId: "i3" } : s2)) } };
   const h2 = render(m.GradeRowDetail, { i: done, d, save: noop }).html;
   assert.equal((h2.match(/この手順を項目として登録/g) || []).length, 1); assert.ok(h2.includes("項目として登録済み"));
+});
+test("下のバーは3つ。週末に作る／定期／模試／読解・記述。手入力は作るの下。その他はメニュー", () => {
+  const w = render(m.WeekTab, { d: F.demo(), save: noop, initial: null }).html;
+  assert.ok(w.includes(">作る<") && w.includes(">定期<") && w.includes(">模試<") && w.includes(">読解・記述<") && w.includes("手入力（学校のワークや問題集の結果）"));
+  assert.ok(!w.includes(">採点した答案を撮る<"));
+  const ex = render(m.WeekTab, { d: F.demo(), save: noop, initial: "exam" }).html; assert.ok(ex.includes("2学期中間") && ex.includes("出題範囲"));
+  const rd = render(m.WeekTab, { d: F.demo(), save: noop, initial: "read" }).html; assert.ok(rd.includes("読解問題を作る"));
+  const wr = render(m.WeekTab, { d: F.demo(), save: noop, initial: "write" }).html; assert.ok(wr.includes("課題を作る"));
+  const mn = render(m.WeekTab, { d: F.demo(), save: noop, initial: "manual" }).html; assert.ok(mn.includes("形式ごとの成績") && /<details class="det" open=""/.test(mn));
+  const more = render(m.MoreTab, { d: F.demo(), go: noop }).html; for (const t of ["登録", "分析", "依頼文", "設定"]) assert.ok(more.includes(`<span class="nxt-t">${t}</span>`), t);
 });
