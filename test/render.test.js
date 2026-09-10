@@ -414,7 +414,7 @@ test("ホーム: 数字カード（連続・未定着・安定・マス目）は
   const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
   assert.ok(!h.includes("hm-row") && !h.includes('class="heat sm"') && !h.includes(">連続<"));
   assert.ok(/class="blk exam-line"/.test(h) && /あと\d+日/.test(h) && !/D-\d+/.test(h) && h.includes("範囲の未定着 "));
-  const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(e.includes("exam-line") && e.includes(">未定着<") && e.includes("0件") && !e.includes("で登録"), "定期テストが無ければ未定着の件数");
+  const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(e.includes("exam-line") && e.includes(">未定着<") && e.includes("0件") && !e.includes("で登録") && !e.includes("安定"), "定期テストが無ければ未定着の件数");
 });
 test("スナックバー: ok は文だけ、err は × 付き。空なら何も出さない", () => {
   const h = render(m.Snacks, { list: [{ id: "1", text: "保存しました", kind: "ok" }, { id: "2", text: "失敗", kind: "err" }], onClose: noop }).html;
@@ -433,4 +433,12 @@ test("ホーム: 「いまやること」と「そのあと」はカード全体
   const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
   assert.ok(h.includes('<button class="hero press">') && h.includes('<button class="nxt press">') && (h.match(/class="chev"/g) || []).length >= 2);
   assert.ok(!h.includes("開く →"));
+});
+test("ホーム: 定期テストが無いときの未定着の行に、教科ごとの内訳（件数のある教科だけ、色の丸つき）。安定は出さない", () => {
+  const d = F.demo(); d.exams = [];
+  const h = render(m.HomeTab, { d, go: noop }).html;
+  const act = d.items.filter((i) => i.status === "active"); const subs = [...new Set(act.map((i) => i.subject))];
+  assert.ok(h.includes('class="ex-n bysub"') && !h.includes("安定"));
+  for (const sb of subs) assert.ok(h.includes(`${sb} ${act.filter((i) => i.subject === sb).length}</span>`), sb);
+  assert.equal((h.match(/class="dot"/g) || []).length, subs.length);
 });
