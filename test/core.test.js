@@ -1153,3 +1153,47 @@ describe("説明不要の印（B-1）", () => {
     assert.equal(m.applyGen({ named: false, src: { path: "p", kind: "ワーク", page: 1, x: 0.1, y: 0.1 }, fmt: "" }, { problems: [], label: "x", fmt: "計算" }).noWhy, undefined);
   });
 });
+
+describe("テストの問題用紙と答案の対応づけ", () => {
+  const mt = (page, role, extra = {}) => ({ id: "t" + role + page, subject: "数学", kind: "テスト", page, role, path: `fam/math/ts/${role === "qa" ? "" : role}${page}.jpg`, ...extra });
+  test("matPath: テストは q/a を番号の前に付ける。同じ紙は従来どおり。ワークは変わらない", () => {
+    m.stubs.localStorage.setItem("sb_room", "fam");
+    try {
+      assert.equal(m.matPath("数学", "テスト", 2, "q"), "fam/math/ts/q2.jpg"); assert.equal(m.matPath("数学", "テスト", 2, "a"), "fam/math/ts/a2.jpg");
+      assert.equal(m.matPath("数学", "テスト", 2, "qa"), "fam/math/ts/2.jpg"); assert.equal(m.matPath("数学", "テスト", 2), "fam/math/ts/2.jpg");
+      assert.equal(m.matPath("数学", "ワーク", 2, "q"), "fam/math/wb/2.jpg");
+    } finally { m.stubs.localStorage.removeItem("sb_room"); }
+  });
+  test("roleOf / answerSheets / pairSheet: 役割なしは同じ紙。タップするのは答案と同じ紙。答案には同じ番号の問題用紙が対", () => {
+    const d = { ...m.blank(), materials: [mt(1, "q"), mt(1, "a"), mt(2, "q"), mt(3, "a"), mt(4, "qa"), { id: "old", subject: "数学", kind: "テスト", page: 5, path: "fam/math/ts/5.jpg" }] };
+    assert.equal(m.roleOf(d.materials[5]), "qa"); assert.equal(m.roleOf({ kind: "ワーク" }), "");
+    assert.deepEqual(m.answerSheets(d, "数学").map((x) => x.id), ["ta1", "ta3", "tqa4", "old"]);
+    assert.equal(m.pairSheet(d, mt(1, "a")).id, "tq1");
+    assert.equal(m.pairSheet(d, mt(3, "a")), null, "問題用紙3枚目が無い");
+    assert.equal(m.pairSheet(d, mt(4, "qa")), null, "同じ紙は対を持たない");
+  });
+  test("tapsToItems: 対の問題用紙があれば src.qpath に持つ", () => {
+    const its = m.tapsToItems([{ path: "a1", kind: "テスト", page: 1, x: 0.5, y: 0.5, qpath: "q1" }, { path: "a2", kind: "テスト", page: 2, x: 0.5, y: 0.5 }], "数学", [], "u1");
+    assert.equal(its[0].src.qpath, "q1"); assert.equal(its[1].src.qpath, undefined);
+  });
+  test("genContent: 問題用紙があれば先頭に付く", () => {
+    const c = m.genContent({ src: { path: "a1", kind: "テスト", page: 1, x: 0.5, y: 0.5, qpath: "q1" } }, "ANS", "本文", "QQ");
+    assert.equal(c.length, 5); assert.ok(c[0].text.includes("問題用紙")); assert.equal(c[1].source.data, "QQ"); assert.equal(c[3].source.data, "ANS");
+    assert.equal(m.genContent({ src: { path: "a1" } }, "ANS", "本文", null).length, 3);
+  });
+  test("nameItems: 答案と問題用紙の2枚を渡し、問題用紙から探す指示になる", async () => {
+    const orig = globalThis.fetch; const sent = [];
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => { if (url.includes("/storage/")) return { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([url.includes("q1") ? 9 : 1]).buffer }; sent.push(JSON.parse(opts.body)); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"items":[{"n":1,"label":"L","fmt":"計算"}]}' }] }) }; };
+    try {
+      const r = await m.nameItems([{ id: "a", subject: "数学", unitId: "u", named: false, src: { path: "fam/math/ts/a1.jpg", kind: "テスト", page: 1, x: 0.5, y: 0.5, qpath: "fam/math/ts/q1.jpg" } }], () => null);
+      assert.equal(r.a.label, "L");
+      const content = sent[0].messages[0].content; assert.equal(content.filter((c) => c.type === "image").length, 2);
+      assert.ok(content.some((c) => c.type === "text" && c.text.includes("問題用紙から探して")));
+    } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+  test("元の問題の印刷: 問題用紙があればそのページ全体を図にする", () => {
+    const p = m.genToPaper([{ id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", gen: null, printedOrig: true, src: { path: "a1", kind: "テスト", page: 1, x: 0.5, y: 0.5, qpath: "q1" } }], () => null);
+    assert.deepEqual(p.refs, [{ n: 1, kind: "テスト", page: 1, path: "q1" }]);
+  });
+});

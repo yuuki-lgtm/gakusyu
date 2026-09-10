@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 11:59"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 13:14"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -234,7 +234,14 @@ function mergeData(a, b) {
 
 /* ---- 教材画像（Supabase Storage） ---- */
 const MBUCKET = "materials";
-const matPath = (subject, kind, page) => `${LS(SB_ROOM)}/${SUBJ_CODE[subject]}/${KIND_CODE[kind]}/${page}.jpg`;
+const matPath = (subject, kind, page, role = "") => `${LS(SB_ROOM)}/${SUBJ_CODE[subject]}/${KIND_CODE[kind]}/${kind === "テスト" && (role === "q" || role === "a") ? role : ""}${page}.jpg`;
+/* テストの紙の役割。qa＝問題と答案が同じ紙、q＝問題用紙、a＝答案。同じ番号の q と a が対になる */
+const TEST_ROLES = [["qa", "問題と答案が同じ紙"], ["q", "問題用紙"], ["a", "答案"]];
+const roleOf = (mt) => (mt.kind === "テスト" ? mt.role || "qa" : "");
+/* ×をタップする紙（答案。問題と答案が同じ紙も含む） */
+const answerSheets = (d, subject) => matsOf(d, subject, "テスト").filter((mt) => roleOf(mt) !== "q");
+/* 答案に対応する問題用紙（同じ番号の q）。無ければ null */
+const pairSheet = (d, mt) => (roleOf(mt) === "a" ? matsOf(d, mt.subject, "テスト").find((x) => roleOf(x) === "q" && x.page === mt.page) || null : null);
 const stBase = () => `${LS(SB_URL).replace(/\/$/, "")}/storage/v1`;
 const stHeaders = () => ({ apikey: LS(SB_KEY), Authorization: `Bearer ${LS(SB_KEY)}` });
 async function stUpload(path, blob) {
@@ -420,7 +427,7 @@ function tapsToItems(taps, subject, us, fallbackUnitId = "") {
   return taps.map((t) => {
     const u = unitForPage(us, t.kind, t.page);
     const k = (perPage[t.path] = (perPage[t.path] || 0) + 1);
-    return newItem({ subject, unitId: u ? u.id : fallbackUnitId || "", label: `${t.kind} p.${t.page} の×（${k}）`, named: false, etype: ETYPES[0], src: { path: t.path, kind: t.kind, page: t.page, x: t.x, y: t.y } });
+    return newItem({ subject, unitId: u ? u.id : fallbackUnitId || "", label: `${t.kind} p.${t.page} の×（${k}）`, named: false, etype: ETYPES[0], src: { path: t.path, kind: t.kind, page: t.page, x: t.x, y: t.y, ...(t.qpath ? { qpath: t.qpath } : {}) } });
   });
 }
 const hasPos = (s) => !!(s && s.path && typeof s.x === "number" && typeof s.y === "number");
@@ -543,22 +550,22 @@ const imgBlock = (b64) => ({ type: "image", source: { type: "base64", media_type
 /* ---- 類題・項目名・索引 ---- */
 const ctxFor = (d, i) => ({ siblings: d.items.filter((x) => x.unitId === i.unitId && x.status === "active" && x.id !== i.id).map((x) => x.label), stable: d.items.filter((x) => x.subject === i.subject && x.status === "stable").map((x) => x.label), units: d.units.filter((x) => x.subject === i.subject).map((x) => x.name) });
 const itemContext = (i, u, ctx) => `教科: ${i.subject}\n単元: ${u ? u.name : "不明"}\n未定着項目: ${i.label}\n${i.note ? "間違え方: " + i.note : ""}\n出題形式: ${i.fmt || "不明"} / 誤答の種類: ${i.etype || "不明"}\n落とした回数: ${i.failCount}\n履歴: ${(i.history || []).map((h) => `${h.d}:${h.r}`).join(" ") || "なし"}\n同単元の他の未定着: ${ctx.siblings.join(" / ") || "なし"}\n安定している項目: ${ctx.stable.slice(0, 12).join(" / ") || "なし"}\n習った範囲: ${ctx.units.join(" / ")}`;
-function genContent(item, b64, text) {
+function genContent(item, b64, text, qb64 = null) {
   if (!b64 || !item.src) return text;
-  return [{ type: "text", text: `【元の問題】${markDesc(item.src)} — 子どもが落とした問題。同じ考え方・同じ形式を問い、数値や設定は変える。問題文をそのまま写さない。${item.named === false ? "あわせて、この問題を解くのに必要な「身についていないと解けない一点」を label に（後日その一点だけを聞き直せる粒度）、形式を fmt に（" + FORMATS.join("／") + " から）、暗記もの（単純計算・つづり・年号・公式や用語の暗記など、説明する内容がないもの）なら rote を true に入れる。" : ""}` }, imgBlock(b64), { type: "text", text }];
+  return [...(qb64 ? [{ type: "text", text: "【問題用紙】次の答案に対応する問題用紙。答案の印の位置の答えに対応する問題を、ここから探して読む。" }, imgBlock(qb64)] : []), { type: "text", text: `【元の問題】${markDesc(item.src)} — 子どもが落とした問題。同じ考え方・同じ形式を問い、数値や設定は変える。問題文をそのまま写さない。${item.named === false ? "あわせて、この問題を解くのに必要な「身についていないと解けない一点」を label に（後日その一点だけを聞き直せる粒度）、形式を fmt に（" + FORMATS.join("／") + " から）、暗記もの（単純計算・つづり・年号・公式や用語の暗記など、説明する内容がないもの）なら rote を true に入れる。" : ""}` }, imgBlock(b64), { type: "text", text }];
 }
 /* 1項目ぶんの類題（3問＋説明の問い）。用語は記述形式。元の問題の画像があれば渡す */
 async function genForItem(i, u, ctx, prev = "なし", model = null) {
   const context = itemContext(i, u, ctx);
   const isRead = i.fmt === "長文読解", isWrite = i.fmt === "記述・作文" || i.fmt === "英作文", isTerm = i.fmt === "知識・用語", noWhy = !needsWhy(i);
-  let b64 = null; if (i.src && i.src.path) { try { b64 = await stGet(i.src.path); if (hasPos(i.src)) b64 = await annotateB64(b64, [{ x: i.src.x, y: i.src.y }]); } catch { b64 = null; } } // 読めなければ画像なしで続ける
+  let b64 = null, qb64 = null; if (i.src && i.src.path) { try { b64 = await stGet(i.src.path); if (hasPos(i.src)) b64 = await annotateB64(b64, [{ x: i.src.x, y: i.src.y }]); if (i.src.qpath) qb64 = await stGet(i.src.qpath); } catch { b64 = null; qb64 = null; } } // 読めなければ画像なしで続ける
   const t = isRead
-    ? await callAI(genContent(i, b64, `${context}\n直前の問題（重複させない）: ${prev}\n\nこの読解技能だけを問う練習問題を。150〜250字のオリジナルの短い文章を1つ書き、その文章についてこの技能を問う設問を2問。`),
+    ? await callAI(genContent(i, b64, `${context}\n直前の問題（重複させない）: ${prev}\n\nこの読解技能だけを問う練習問題を。150〜250字のオリジナルの短い文章を1つ書き、その文章についてこの技能を問う設問を2問。`, qb64),
         `日本の中学1年生向け。文章は完全オリジナルで既存作品の引用をしない。設問の解答には根拠の箇所を示す。whyは「どこを見て、どう判断したか」を子どもに言わせる問い。\nJSONのみ: {"passage":"","problems":[{"q":"","a":""}],"why":"","point":"","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2600, model)
     : isWrite
-    ? await callAI(genContent(i, b64, `${context}\n\nこの誤りの種類だけを練習する短い課題を3問。各問は1〜2文を書かせる程度の分量にし、この種類の誤りが起きやすい場面を意図的に含める。`),
+    ? await callAI(genContent(i, b64, `${context}\n\nこの誤りの種類だけを練習する短い課題を3問。各問は1〜2文を書かせる程度の分量にし、この種類の誤りが起きやすい場面を意図的に含める。`, qb64),
         `日本の中学1年生向け。aは模範解答と、この誤りが起きやすい箇所の指摘。whyは「書いたあと何を確認するか」を子どもに言わせる問い。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2400, model)
-    : await callAI(genContent(i, b64, `${context}\n直前に出した問題（重複させない）: ${prev}\n\n${isTerm ? "この用語だけを狙った問題を3問。3問とも「〜を何といいますか。書きなさい」「〜を書きなさい」の記述形式（選択肢・穴埋めのヒントなし）。1問目は用語そのものを書かせる、2問目は意味や使い方、3問目は別の聞き方。whyは空でよい。" : "この項目だけを狙った練習問題を3問。1問目は最も基本の形、2問目は本題、3問目は同じ考え方を別の見た目で。" + (noWhy ? "暗記ものなので説明の問いは不要（why は空）。" : "あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。")}`),
+    : await callAI(genContent(i, b64, `${context}\n直前に出した問題（重複させない）: ${prev}\n\n${isTerm ? "この用語だけを狙った問題を3問。3問とも「〜を何といいますか。書きなさい」「〜を書きなさい」の記述形式（選択肢・穴埋めのヒントなし）。1問目は用語そのものを書かせる、2問目は意味や使い方、3問目は別の聞き方。whyは空でよい。" : "この項目だけを狙った練習問題を3問。1問目は最も基本の形、2問目は本題、3問目は同じ考え方を別の見た目で。" + (noWhy ? "暗記ものなので説明の問いは不要（why は空）。" : "あわせて、子どもに「なぜそうなるか」を説明させるための問いを1つ。")}`, qb64),
         `日本の中学1年生を教える講師。厳守: 中1範囲を超えない／習った範囲から逸脱しない／直前の問題と同じ数値・設定にしない／ヒントや選択肢を付けず白紙から解かせる／数学は途中式を書かせる／安定している項目は既知として扱ってよい／未定着の項目を前提にしない。\nwhyは「なぜその手順になるのか」を子どもの言葉で言わせる問い。scriptは採点後の声かけ。できている点を先に述べ、直す点は1つだけ。専門用語なし。\nJSONのみ: {"problems":[{"q":"","a":""}],"why":"","point":"落とし続ける原因の推定","script":""${i.named === false ? ',"label":"","fmt":""' : ""}}`, 2600, model);
   return parseJSON(t);
 }
@@ -571,7 +578,8 @@ async function nameItems(items, unitOf, model = null) {
     const u = unitOf(s0.unitId);
     try {
       const b64 = await annotateB64(await stGet(path), group.map((i) => ({ x: i.src.x, y: i.src.y })));
-      const t = await callAI([imgBlock(b64), { type: "text", text: `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。${u ? `単元は「${u.name}」。` : ""}赤い印（${group.length > 1 ? `①〜${group.length}の番号つき` : "1つ"}）の位置にある問題を子どもが間違えました。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。` }],
+      const qb64 = s0.src.qpath ? await stGet(s0.src.qpath) : null;
+      const t = await callAI([imgBlock(b64), ...(qb64 ? [{ type: "text", text: "【問題用紙】上の答案に対応する問題用紙" }, imgBlock(qb64)] : []), { type: "text", text: `${qb64 ? `1枚目は中学1年${s0.subject}の定期テストの答案（${s0.src.page}枚目）、2枚目はその問題用紙。答案の赤い印の位置にある答えに対応する問題を、問題用紙から探して読んでください。` : `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。`}${u ? `単元は「${u.name}」。` : ""}赤い印（${group.length > 1 ? `①〜${group.length}の番号つき` : "1つ"}）の位置にある問題を子どもが間違えました。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。` }],
         `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false}]}`, 1200, model);
       const rs = parseJSON(t).items || [];
       group.forEach((i, k) => { const r = rs.find((x) => Number(x.n) === k + 1) || rs[k]; if (r && r.label) out[i.id] = { label: r.label, fmt: FORMATS.includes(r.fmt) ? r.fmt : "", note: r.summary || "", named: true, noWhy: r.rote === true }; });
@@ -767,7 +775,7 @@ function genToPaper(items, unitOf) {
   const qs = []; let n = 0; const refs = [];
   items.forEach((i) => { const g = i.gen; const u = unitOf(i.unitId);
     if ((!g || !g.problems || !g.problems.length) && i.printedOrig && hasPos(i.src)) { // 類題が作れなかった項目: 元の問題を資料に載せてもう一度解かせる
-      const fig = refs.length + 1; refs.push({ n: fig, kind: i.src.kind, page: i.src.page, path: i.src.path, crop: { x: i.src.x, y: i.src.y } });
+      const fig = refs.length + 1; refs.push(i.src.qpath ? { n: fig, kind: i.src.kind, page: i.src.page, path: i.src.qpath } : { n: fig, kind: i.src.kind, page: i.src.page, path: i.src.path, crop: { x: i.src.x, y: i.src.y } });
       n++; qs.push({ n, q: `【${i.subject}・${u ? u.name : ""}】元の問題（図${fig}）をもう一度解き、なぜそうなるかを説明する。\n${SELF_LINE}`, a: "（元の問題の解答はワークの解答で確認。この回は「説明もできた」でのみ先へ進む）", label: i.label, aim: "元の問題", fmt: i.fmt, svg: "", fig });
       return; }
     if (!g || !g.problems || !g.problems.length) return; const isTerm = !needsWhy(i);
@@ -1478,7 +1486,8 @@ function UnitReg({ d, save }) {
 function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const kinds = MKINDS.filter((k) => matsOf(d, subject, k).length);
   const [kind, setKind] = useState(kinds[0] || MKINDS[0]);
-  const ms = matsOf(d, subject, kinds.includes(kind) ? kind : kinds[0]);
+  const kindNow = kinds.includes(kind) ? kind : kinds[0];
+  const ms = kindNow === "テスト" ? answerSheets(d, subject) : matsOf(d, subject, kindNow);
   const pages = ms.map((m) => m.page);
   const [page, setPage] = useState(pages[0] || 1);
   const [img, setImg] = useState(null); const [imgErr, setImgErr] = useState("");
@@ -1505,7 +1514,8 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     if (hn >= 0) { const t = here[hn]; setTaps((ts) => ts.filter((z) => z !== t)); setSel(null); return; } // もう一度タップで取り消し
     const ho = tapHit(old.map((i) => i.src), x, y, r.width, r.height);
     if (ho >= 0) { setSel(old[ho].id === sel ? null : old[ho].id); return; }
-    setSel(null); setTaps((ts) => [...ts, { path: cur.path, kind, page, x, y }]);
+    const pair = pairSheet(d, cur);
+    setSel(null); setTaps((ts) => [...ts, { path: cur.path, kind, page, x, y, ...(pair ? { qpath: pair.path } : {}) }]);
   };
   const commit = () => {
     if (!taps.length) return;
@@ -1529,7 +1539,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   return (<div className="matpick">
     <div className="seg sm">{kinds.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
     <div className="pnav"><button className="btn-sm" onClick={() => step(-1)} disabled={pages.indexOf(page) <= 0}>←</button>
-      <span className="pcur">p.<input className="pnum" type="number" inputMode="numeric" value={page} onChange={(e) => setPage(parseInt(e.target.value, 10) || 0)} /> {unit ? unit.name : <em className="nv">単元と未対応</em>}{cur && cur.doneOn && <em className="pg"> 済</em>}</span>
+      <span className="pcur">{kind === "テスト" ? "答案 " : "p."}<input className="pnum" type="number" inputMode="numeric" value={page} onChange={(e) => setPage(parseInt(e.target.value, 10) || 0)} />{kind === "テスト" ? "枚目 " : " "}{kind === "テスト" ? (cur && roleOf(cur) === "a" ? (pairSheet(d, cur) ? <em className="pg">問題用紙あり</em> : <em className="nv">問題用紙 {page}枚目が未取り込み</em>) : null) : unit ? unit.name : <em className="nv">単元と未対応</em>}{cur && cur.doneOn && <em className="pg"> 済</em>}</span>
       <button className="btn-sm" onClick={() => step(1)} disabled={pages.indexOf(page) < 0 || pages.indexOf(page) >= pages.length - 1}>→</button></div>
     <div className="zoom-row"><span>拡大</span>{[1, 2, 3].map((z) => (<button key={z} className={"btn-sm" + (zoom === z ? " on" : "")} onClick={() => setZoom(z)}>{z}倍</button>))}{zoom > 1 && <em className="pg">枠の中を指でずらして、×をタップ</em>}</div>
     {cur ? (img ? (<div className={"mscroll" + (zoom > 1 ? " z" : "")}><div className="mwrap" onClick={onTap} style={{ width: `${zoom * 100}%` }}><img src={img} alt={`${kind} p.${page}`} draggable="false" />
@@ -1587,6 +1597,7 @@ function MaterialReg({ d, save }) {
   const [start, setStart] = useState("1");
   const [files, setFiles] = useState([]);
   const [rightFirst, setRightFirst] = useState(false); // 右ページが先（右綴じ・縦書き）
+  const [role, setRole] = useState("qa"); // テストの紙の役割
   const [shapes, setShapes] = useState([]); // 選んだ画像ごとの形（spread/single）。PDF は保存時に判定
   useEffect(() => { setRightFirst(subject === "国語"); }, [subject]);
   const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [msg, setMsg] = useState("");
@@ -1607,10 +1618,11 @@ function MaterialReg({ d, save }) {
     setErr(""); setMsg(""); setBusy("準備中");
     const recs = [];
     const putPage = async (page, b64) => {
-      await stUpload(matPath(subject, kind, page), b64ToBlob(b64));
-      const old = (d.materials || []).find((m) => m.subject === subject && m.kind === kind && m.page === page);
+      const r = kind === "テスト" ? role : "";
+      await stUpload(matPath(subject, kind, page, r), b64ToBlob(b64));
+      const old = (d.materials || []).find((m) => m.subject === subject && m.kind === kind && m.page === page && (kind !== "テスト" || roleOf(m) === role));
       // 入れ直しでも「やった」は引き継ぐ。索引は画像が変わるので作り直す
-      recs.push({ id: old ? old.id : uid(), subject, kind, page, path: matPath(subject, kind, page), doneOn: old ? old.doneOn || null : null, updatedAt: now() });
+      recs.push({ id: old ? old.id : uid(), subject, kind, page, path: matPath(subject, kind, page, r), doneOn: old ? old.doneOn || null : null, ...(kind === "テスト" ? { role } : {}), updatedAt: now() });
     };
     // k 枚目の画像。横長なら見開きとして左右に切って2ページ、縦長なら1ページ。番号は順に進む
     let next = s0;
@@ -1646,7 +1658,9 @@ function MaterialReg({ d, save }) {
       <p className="lead">ワークと教科書を一度だけ取り込みます。以後は作問と×の登録で写真を撮らずに済みます。返却された定期テストの答案も「テスト」として取り込めば、同じように×をタップで登録できます。画像は共有先（Supabase）にだけ置き、この端末には残しません。家庭内の私的使用に限ります。</p>
       <SubjRow value={subject} onChange={(s) => { setSubject(s); setFiles([]); setMsg(""); }} />
       <div className="seg sm">{MKINDS.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setFiles([]); setMsg(""); }}>{k}</button>))}</div>
-      <div className="mat-sum">{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）` : "なし"}</div>); })}</div>
+      <div className="mat-sum">{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? (k === "テスト" ? TEST_ROLES.map(([r, l]) => { const xs = ms.filter((m) => roleOf(m) === r); return xs.length ? `${l} ${xs.length}枚` : ""; }).filter(Boolean).join("、") : `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）`) : "なし"}</div>); })}</div>
+      {kind === "テスト" && (<><div className="seg sm">{TEST_ROLES.map(([r, l]) => (<button key={r} className={role === r ? "on" : ""} onClick={() => setRole(r)}>{l}</button>))}</div>
+        <p className="ph-note">問題用紙と答案が別の紙なら、問題用紙を1枚目から、答案も1枚目から、同じ順で入れます。同じ番号同士が対になり、答案の×をタップすると問題用紙も一緒にAIに渡ります。</p></>)}
       <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>左ページが若い番号（横書き）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>右ページが若い番号（国語など縦書き）</button></div>
       <Fld label={kind === "テスト" ? "最初の番号（答案の1枚目なら 1。前に取り込んだ分に続けるならその次の番号）" : "最初のページ番号（横長の画像は見開きとして2ページ、縦長は1ページとして順に振ります）"}><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
       <label className="ph-btn">{busy ? `${busy}… ${sec}秒` : "PDF か ページの画像（複数可）を選ぶ"}<input type="file" accept="image/*,application/pdf" multiple hidden disabled={!!busy} onChange={pick} /></label>

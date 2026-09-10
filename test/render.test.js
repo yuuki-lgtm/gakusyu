@@ -290,3 +290,9 @@ test("説明不要の切り替え: 未定着一覧と×登録のポップアッ�
   const ana = render(m.AnaTab, { d }).html;
   assert.ok(ana.includes("説明不要の項目") && ana.includes("用語 0、印あり 1"));
 });
+test("×の登録: テストは答案だけをめくり、問題用紙の有無が出る", () => {
+  const d = F.demo(); d.materials = [...d.materials, { id: "tq1", subject: "理科", kind: "テスト", page: 1, role: "q", path: "fam-demo/sci/ts/q1.jpg" }, { id: "ta1", subject: "理科", kind: "テスト", page: 1, role: "a", path: "fam-demo/sci/ts/a1.jpg" }, { id: "ta2", subject: "理科", kind: "テスト", page: 2, role: "a", path: "fam-demo/sci/ts/a2.jpg" }];
+  const html = render(m.TapReg, { d, subject: "理科", us: [], save: noop, fallbackUnitId: "" }).html;
+  assert.ok(html.includes("答案 ") && html.includes("枚目") && html.includes("問題用紙あり"));
+  assert.ok(!html.includes("p.1 は取り込まれていません"));
+});
