@@ -379,6 +379,14 @@ function predictFor(d, ex, subject) {
   return c ? { pct: pct(c.correct, c.total), src: "累積" } : null;
 }
 
+/* 週次テストに混ぜた繰り越しの再出題を、答案の○×で判定する（○＝解けた、×・空欄＝できなかった。? は触らない） */
+function judgeCarried(d, paper, marks, etypes = {}) {
+  const t = today(); const dec = {};
+  paper.questions.forEach((qq) => { const mk = marks[qq.n]; if (!qq.itemId || !mk || mk === "unknown") return; dec[qq.itemId] = mk === "o" ? { r: "o", via: "週次" } : { r: "x", etype: etypes[qq.n] || (mk === "blank" ? ETYPES[3] : ETYPES[0]), via: "週次" }; });
+  const items = d.items.map((i) => { const dc = dec[i.id]; if (!dc) return i; const next = applyJudgment(i, dc.r); next.history = [...(i.history || []), { d: t, r: dc.r, self: "", etype: dc.r === "x" ? dc.etype : "", etypeSelf: "", via: "週次" }]; if (dc.r === "x") next.etype = dc.etype; return next; });
+  return { ...d, items };
+}
+
 /* ---- 紙で回す（印刷セット・採点セット・一括確定） ---- */
 /* 明日までに期日が来る未印刷の項目（子どもが判定中のものは除く） */
 /* 1日の上限（今日の分に入れる件数）。設定タブで変える。既定6 */
@@ -637,8 +645,11 @@ async function buildIndex(mt, model = null) {
 /* ---- 作問（週次・累積・模試で共通） ---- */
 /* 用紙を1枚作る。units は出題範囲。opts: kind, n（問題数）, onStep（進捗表示）, images（参考画像 [{label, b64}]）, fields（用紙に足す項目） */
 async function genPaper(d, subject, units, opts) {
-  const { kind, n = "10", onStep = () => {}, images = [], fields = {} } = opts;
+  const { kind, onStep = () => {}, images = [], fields = {} } = opts;
   if (!units.length) throw new Error(`${subject}：出題範囲の単元がありません`);
+  // 上限から溢れた再出題（繰り越し）は週次テストに1問ずつ混ぜる。問題数はそのぶん増やす（上限30）
+  const carry = kind === "週次" ? pickDaily(d).rest.filter((i) => i.subject === subject) : [];
+  const n = kind === "週次" ? Math.min(30, (parseInt(opts.n, 10) || 10) + carry.length) : opts.n || "10";
   const stuck = d.items.filter((i) => i.subject === subject && i.status === "active" && units.some((u) => u.id === i.unitId));
   const stable = d.items.filter((i) => i.subject === subject && i.status === "stable").map((i) => i.label);
   // 単元に結びついた教材ページを共有先から読む。読めなくても作問は続ける
@@ -647,7 +658,7 @@ async function genPaper(d, subject, units, opts) {
   onStep(subject);
   const matDesc = matsLabel(matImgs.map((x) => x.m));
   const mock = kind === "模試";
-  const prompt = `教科: ${subject}\n種別: ${mock ? "定期テスト前の模試（本番と同じ形式）" : kind + "テスト"}\n出題範囲:\n${units.map((u) => `・${u.name}${unitPageLabel(u) ? "（" + unitPageLabel(u) + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}\n\n安定している項目（確認として少数混ぜてよい）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}\n\n${mock ? mockPromptFor(subject, images.length) : `${n}問作ってください。`}${matImgs.length ? `\n添付の図1〜図${matImgs.length}（${matDesc}）は、出題範囲のワーク・教科書の実物。用語・記号・表現・扱われ方と難易度をこれに合わせ、ワークがあればワークの問題に近い形式で出す。本文や設問をそのまま写さない。地形図・実験装置・グラフ・英語の本文など自分で描けないものを使う問題は、「図3の地図を見て」のように図番号で参照して出題してよい（参照した図は資料として問題用紙と一緒に印刷される。参照は必要な問題だけにし、fig にその番号を入れる）。` : ""}`;
+  const prompt = `教科: ${subject}\n種別: ${mock ? "定期テスト前の模試（本番と同じ形式）" : kind + "テスト"}\n出題範囲:\n${units.map((u) => `・${u.name}${unitPageLabel(u) ? "（" + unitPageLabel(u) + "）" : ""}${u.lastTestedOn ? " 最終出題 " + u.lastTestedOn : " 未出題"}`).join("\n")}\n\n未定着項目（必ず含める。落とした回数が多いほど手厚く）:\n${stuck.length ? stuck.map((i) => `・${i.label}（${i.failCount}回${i.note ? "／" + i.note : ""}${i.etype ? "／" + i.etype : ""}）`).join("\n") : "（なし）"}${carry.length ? `\n\n繰り越しの再出題（必ず1問ずつ。その項目そのものを白紙から解かせる問題にし、item にその id を入れる）:\n${carry.map((i) => `・${i.label}（id: ${i.id}${i.note ? "／" + i.note : ""}）`).join("\n")}` : ""}\n\n安定している項目（確認として少数混ぜてよい）:\n${stable.slice(0, 15).join(" / ") || "（なし）"}\n\n${mock ? mockPromptFor(subject, images.length) : `${n}問作ってください。`}${matImgs.length ? `\n添付の図1〜図${matImgs.length}（${matDesc}）は、出題範囲のワーク・教科書の実物。用語・記号・表現・扱われ方と難易度をこれに合わせ、ワークがあればワークの問題に近い形式で出す。本文や設問をそのまま写さない。地形図・実験装置・グラフ・英語の本文など自分で描けないものを使う問題は、「図3の地図を見て」のように図番号で参照して出題してよい（参照した図は資料として問題用紙と一緒に印刷される。参照は必要な問題だけにし、fig にその番号を入れる）。` : ""}`;
   const system = `日本の中学1年生向けの、白紙から解かせる${kind === "累積" ? "累積（過去範囲を混ぜた）" : mock ? "定期テストの模試（本番と同じ形式）" : ""}テストを作る。厳守:
 - 中1範囲を超えない。指定範囲から逸脱しない
 - 未出題の単元があれば必ず数問出す
@@ -655,7 +666,7 @@ async function genPaper(d, subject, units, opts) {
 - 難易度は${mock ? "学校の定期テスト相当（基本7割、応用3割）" : "学校のワーク相当"}
 - 図を使ってよい。描ける図（座標平面、数直線、平面図形、表、簡単な模式図）は svg にSVGコードを1行で入れる（viewBox必須、幅400以下、stroke="#111" fill="none" 基本、文字13px以上、色なし）。描けない図は添付の図番号を参照し fig に入れる（参照しなければ 0）。どちらも無理なら図なしの問題にする
 - 各問に単元名・形式・ねらい・項目名をつける。形式は次から: ${FORMATS.join("／")}。項目名は「後日その一点だけを聞き直せる粒度」で書く（例:「係数が分数の一次方程式」）
-${mock ? MOCK_JSON : 'JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":"","fig":0}]}'}`;
+${mock ? MOCK_JSON : 'JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":"","fig":0' + (carry.length ? ',"item":"繰り越しの再出題なら id、それ以外は空"' : "") + '}]}'}`;
   const parts = [...images.flatMap((im) => [{ type: "text", text: `【参考】${im.label}` }, imgBlock(im.b64)]), ...matImgs.flatMap((x, k) => [{ type: "text", text: `【図${k + 1}】${x.m.kind} p.${x.m.page}` }, imgBlock(x.b64)])];
   const content = parts.length ? [...parts, { type: "text", text: prompt }] : prompt;
   const t = await callAI(content, system, mock ? 9000 : 6000);
@@ -663,7 +674,8 @@ ${mock ? MOCK_JSON : 'JSONのみ: {"questions":[{"q":"問題文","a":"解答（�
   const raw = mock ? flattenSections(parsed) : (parsed.questions || []).map((x) => ({ ...x, sec: "" }));
   const qs = raw.map((x, i) => {
     const u = units.find((uu) => uu.name === x.unit) || units.find((uu) => (x.unit || "").includes(uu.name) || uu.name.includes(x.unit || "")) || units[0];
-    return { n: i + 1, q: x.q || "", a: x.a || "", unitId: u.id, fmt: FORMATS.includes(x.fmt) ? x.fmt : FORMATS[0], aim: x.aim || "", label: x.label || x.aim || "", svg: x.svg || "", fig: Number(x.fig) || 0, ...(mock ? { sec: x.sec || "", pts: Number(x.pts) || 0 } : {}) };
+    const ci = carry.find((c) => c.id === x.item);
+    return { n: i + 1, q: x.q || "", a: x.a || "", unitId: ci ? ci.unitId : u.id, fmt: FORMATS.includes(x.fmt) ? x.fmt : FORMATS[0], aim: x.aim || "", label: ci ? ci.label : x.label || x.aim || "", svg: x.svg || "", fig: Number(x.fig) || 0, ...(ci ? { itemId: ci.id } : {}), ...(mock ? { sec: x.sec || "", pts: Number(x.pts) || 0 } : {}) };
   });
   if (!qs.length) throw new Error(`${subject}：問題を生成できませんでした`);
   if (mock) normalizePts(qs, 100);
@@ -671,7 +683,7 @@ ${mock ? MOCK_JSON : 'JSONのみ: {"questions":[{"q":"問題文","a":"解答（�
   const used = usedFigs(qs);
   const refs = matImgs.map((x, k) => ({ n: k + 1, kind: x.m.kind, page: x.m.page, path: x.m.path })).filter((r) => used.has(r.n));
   const paper = { id: uid(), code: `${today().slice(5).replace("-", "")}${subject[0]}${mock ? "模" : ""}`, subject, date: today(), kind, unitIds: units.map((u) => u.id), questions: qs, imgs: [], refs, status: "printed", model: usedLabel(), ...(mock ? { minutes: 50, maxScore: 100 } : {}), ...fields, updatedAt: now() };
-  return { paper, note: matNote || (matDesc ? `教材 ${matDesc} を参照${refs.length ? `、資料 ${refs.length}ページ` : ""}` : "教材なし") };
+  return { paper, note: `${matNote || (matDesc ? `教材 ${matDesc} を参照${refs.length ? `、資料 ${refs.length}ページ` : ""}` : "教材なし")}${carry.length ? `、繰り越し ${qs.filter((q) => q.itemId).length}/${carry.length} 件を再出題` : ""}` };
 }
 /* 模試の形式。本番の定期テストに寄せる: 50分・100点満点・各問に配点・大問は 知識→計算→応用→記述 の順 */
 const MOCK_SECTIONS = { 数学: "【1】用語・基本事項 →【2】計算 →【3】応用（文章題・図形・関数）→【4】記述（考え方や理由を説明）", 英語: "【1】単語・文法の知識 →【2】書きかえ・並べかえ →【3】読解（本文は自作）→【4】英作文", 国語: "【1】漢字・語句・文法 →【2】読解（本文は自作の短文）→【3】応用（要旨・心情）→【4】記述（字数指定）", 社会: "【1】用語 →【2】年代・地名・数値 →【3】資料・地図の読み取り →【4】記述（理由や影響を説明）", 理科: "【1】用語 →【2】計算 →【3】実験・観察・グラフの読み取り →【4】記述（理由を説明）" };
@@ -1201,6 +1213,7 @@ function MakePapers({ d, save, initialKind = "週次" }) {
       <div className="seg sm">{["週次", "累積"].map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div>
       <div className="chips mb">{SUBJECTS.map((s) => (<button key={s} className={"chip" + (sel.includes(s) ? " on" : "")} style={sel.includes(s) ? { background: HUE[s] } : {}} onClick={() => toggle(s)}>{s}</button>))}</div>
       <Fld label="1教科あたりの問題数"><input type="number" value={n} onChange={(e) => setN(e.target.value)} /></Fld>
+      {kind === "週次" && pickDaily(d).rest.length > 0 && <p className="ph-note">「今日の分」から溢れた繰り越し {pickDaily(d).rest.length} 件（{SUBJECTS.map((s) => { const c = pickDaily(d).rest.filter((i) => i.subject === s).length; return c ? `${s} ${c}` : ""; }).filter(Boolean).join("・")}）を、その教科のテストに1問ずつ混ぜます。問題数はそのぶん増えます（上限30）。答案を撮ると、その問題の○×で項目を判定します。</p>}
       <details className="det"><summary>単元を手で選ぶ（任意）</summary>
         {sel.map((s) => (<div className="det-s" key={s}><div className="det-h" style={{ color: HUE[s] }}>{s}</div>
           <div className="chips">{d.units.filter((u) => u.subject === s).map((u) => { const on = (customUnits[s] || []).includes(u.id); return (
@@ -1321,8 +1334,9 @@ function PaperGrade({ p: paper, d, save }) {
     if (!paper || !marks) return;
     const r = gradeResult(paper, marks);
     const test = { id: uid(), subject: paper.subject, date: today(), kind: paper.kind, source: `自作 ${paper.code}`, ...r, unitIds: paper.unitIds, paperId: paper.id, ...(paper.kind === "模試" ? { examId: paper.examId } : {}), updatedAt: now() };
-    const newItems = spreadDue(paper.questions.filter((qq) => checked[qq.n]).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" })), d);
-    save({ ...d, tests: [...d.tests, test], items: [...d.items, ...newItems], papers: d.papers.map((p) => (p.id === paper.id ? { ...p, status: "graded", updatedAt: now() } : p)), log: { ...d.log, [today()]: true } });
+    const newItems = spreadDue(paper.questions.filter((qq) => checked[qq.n] && !qq.itemId).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" })), d);
+    const judged = judgeCarried(d, paper, marks, etypes);
+    save({ ...judged, tests: [...d.tests, test], items: [...judged.items, ...newItems], papers: d.papers.map((p) => (p.id === paper.id ? { ...p, status: "graded", updatedAt: now() } : p)), log: { ...d.log, [today()]: true } });
     setMarks(null);
   };
 
@@ -1337,7 +1351,8 @@ function PaperGrade({ p: paper, d, save }) {
         <p className="ph-note">読み取りが違っていたら番号をタップして直せます（○→×→空欄→?の順）。「?」は集計から外れます。</p>
         {paper.kind === "模試" && (() => { const r = gradeResult(paper, marks); return <p className="ph-note">模試の得点: {r.score} / {r.maxScore}（100点換算 {pct(r.score, r.maxScore) ?? "—"}点）。「?」の問題は除いています。</p>; })()}
         <div className="cand-h">未定着リストに入れる項目</div>
-        {paper.questions.filter((qq) => marks[qq.n] === "x" || marks[qq.n] === "blank").map((qq) => (
+        {paper.questions.filter((qq) => qq.itemId).length > 0 && <p className="ph-note">再出題の問題（{paper.questions.filter((qq) => qq.itemId).map((qq) => `問${qq.n}`).join("・")}）は、○なら「解けた」、×なら「できなかった」として元の項目を判定します。</p>}
+        {paper.questions.filter((qq) => (marks[qq.n] === "x" || marks[qq.n] === "blank") && !qq.itemId).map((qq) => (
           <div className={"cand2" + (checked[qq.n] ? " on" : "")} key={qq.n}>
             <label className="cand2-l"><input type="checkbox" checked={!!checked[qq.n]} onChange={(e) => setChecked((c) => ({ ...c, [qq.n]: e.target.checked }))} /><span>問{qq.n}　{qq.label}</span></label>
             <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (etypes[qq.n] === e ? " on" : "")} onClick={() => setEtypes((x) => ({ ...x, [qq.n]: e }))}>{e}</button>))}</div></div>))}

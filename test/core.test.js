@@ -1307,3 +1307,30 @@ describe("同じ技能の統合（積み上がり防止）", () => {
     } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
   });
 });
+
+describe("溢れた再出題を土曜のテストに混ぜる", () => {
+  const it = (o) => item({ history: [], ...o });
+  test("genPaper（週次）: 繰り越しを1問ずつ混ぜ、問題数を増やし、itemId を付ける", async () => {
+    const d = F.demo(); d.items = [...d.items, ...Array.from({ length: 7 }, (_, k) => it({ id: "c" + k, subject: "数学", unitId: "u1", label: "繰越" + k, nextDue: T, failCount: 0 }))];
+    const rest = m.pickDaily(d).rest; assert.ok(rest.length >= 2, "溢れがある");
+    const orig = globalThis.fetch; let sent = null; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => { if (url.includes("/storage/")) return { ok: false, status: 404 }; sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: JSON.stringify({ questions: [{ q: "q1", a: "a", unit: "正負の数", fmt: "計算", label: "x", item: rest[0].id }, { q: "q2", a: "a", unit: "正負の数", fmt: "計算", label: "y", item: "" }] }) }] }) }; };
+    try {
+      const { paper, note } = await m.genPaper(d, "数学", d.units.filter((u) => u.id === "u1"), { kind: "週次", n: "10" });
+      assert.equal(paper.questions[0].itemId, rest[0].id); assert.equal(paper.questions[0].label, rest[0].label); assert.equal(paper.questions[1].itemId, undefined);
+      const txt = JSON.stringify(sent); assert.ok(txt.includes("繰り越しの再出題") && txt.includes(`${10 + rest.filter((i) => i.subject === "数学").length}問作って`));
+      assert.ok(note.includes("繰り越し 1/"));
+      const cum = await m.genPaper(d, "数学", d.units.filter((u) => u.id === "u1"), { kind: "累積", n: "10" });
+      assert.ok(!JSON.stringify(sent).includes("繰り越しの再出題"), "累積には混ぜない"); assert.equal(cum.paper.kind, "累積");
+    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+  test("judgeCarried: ○は解けた、×と空欄はできなかった、? は触らない。新しい項目は作らない", () => {
+    const d = { ...m.blank(), items: [it({ id: "a", level: 1, failCount: 1 }), it({ id: "b", level: 1, failCount: 1 }), it({ id: "c", level: 1 })] };
+    const paper = { questions: [{ n: 1, itemId: "a", fmt: "計算" }, { n: 2, itemId: "b", fmt: "計算" }, { n: 3, itemId: "c", fmt: "計算" }, { n: 4, fmt: "計算" }] };
+    const r = m.judgeCarried(d, paper, { 1: "o", 2: "blank", 3: "unknown", 4: "x" }, {});
+    const [a, b, c] = r.items;
+    assert.deepEqual([a.level, a.nextDue, a.history[0].r, a.history[0].via], [2, day(7), "o", "週次"]);
+    assert.deepEqual([b.level, b.failCount, b.nextDue, b.history[0].etype], [0, 2, day(1), "時間切れ・空欄"]);
+    assert.equal(c.history.length, 0); assert.equal(r.items.length, 3);
+  });
+});
