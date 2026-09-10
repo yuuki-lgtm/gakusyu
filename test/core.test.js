@@ -546,11 +546,13 @@ describe("紙で回す（印刷セット・採点セット・一括確定）", (
       { id: "3", subject: "国語", unitId: "u", label: "C", fmt: "計算", gen: null }];
     const p = m.genToPaper(items, () => u);
     assert.equal(p.questions.length, 4);
-    assert.ok(m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].q.startsWith("【英語】q"), "単元が無ければ教科だけ");
-    assert.ok(p.questions[0].q.startsWith("【数学・正負の数】q1") && !p.questions[0].q.includes(m.SELF_LINE));
+    assert.ok(m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].sec === "" && m.genToPaper([{ id: "9", subject: "英語", unitId: "", label: "L", fmt: "計算", gen: { problems: [{ q: "q", a: "a" }] } }], () => null).questions[0].q.startsWith("q\n"), "1教科で単元が無ければ見出しなし");
+    assert.ok(p.questions[0].q === "q1" && p.questions[0].sec === "数学・正負の数" && !p.questions[0].q.includes(m.SELF_LINE), "複数教科なら「教科・単元」の小見出し");
     assert.equal(p.questions[1].q, "q2");
     assert.ok(p.questions[2].q.startsWith("説明：なぜ符号が変わるか") && p.questions[2].q.endsWith(m.SELF_LINE) && p.questions[2].a.includes("説明もできた"));
-    assert.ok(p.questions[3].q.startsWith("【社会・正負の数】t1") && p.questions[3].q.endsWith(m.SELF_LINE), "用語は最後の問題に判定欄");
+    assert.ok(p.questions[3].q.startsWith("t1") && p.questions[3].sec === "社会・正負の数" && p.questions[3].q.endsWith(m.SELF_LINE), "用語は最後の問題に判定欄");
+    assert.ok(m.paperHTML(p).includes('class="sech">数学・正負の数') && m.paperHTML(p).includes('class="sech">社会・正負の数'));
+    const one = m.genToPaper([items[0]], () => u); assert.equal(one.questions[0].sec, "正負の数", "1教科なら単元だけ");
     assert.equal(p.questions[3].n, 4); assert.equal(p.subject, "回収");
     assert.ok(m.paperHTML(p).includes("自分の判定"));
   });
@@ -1099,7 +1101,7 @@ describe("類題が作れない項目は元の問題を印刷（A-1）", () => {
       { id: "3", subject: "数学", unitId: "u", label: "C", fmt: "計算", gen: null, src }];
     const p = m.genToPaper(items, () => u);
     assert.equal(p.questions.length, 3, "元の問題1＋類題1＋説明1。printedOrig が無い C は出ない");
-    assert.ok(p.questions[0].q.startsWith("【数学・正負の数】元の問題（図1）をもう一度解き") && p.questions[0].q.endsWith(m.SELF_LINE) && p.questions[0].fig === 1);
+    assert.ok(p.questions[0].q.startsWith("元の問題（図1）をもう一度解き") && p.questions[0].sec === "正負の数" && p.questions[0].q.endsWith(m.SELF_LINE) && p.questions[0].fig === 1);
     assert.deepEqual(p.refs, [{ n: 1, kind: "ワーク", page: 11, path: "fam/math/wb/11.jpg", crop: { x: 0.3, y: 0.4 } }]);
     const h = m.paperHTML(p); assert.ok(h.includes("図1（ワーク p.11・元の問題）") && h.includes("class=\"sheet\" data-part=\"q\"") && h.includes("PDF生成時に教材のページを読み込みます"));
     const h2 = m.paperHTML(p, { "fam/math/wb/11.jpg#0.3,0.4": TINY_JPEG }); assert.ok(h2.includes("data:image/jpeg;base64,"));

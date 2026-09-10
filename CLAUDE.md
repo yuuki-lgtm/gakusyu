@@ -113,7 +113,7 @@
 - 廃止したもの: 「答案の写真から候補を出す」、「問題番号の入力」。手入力の1件追加は残す。
 
 ## 印刷（PDF）
-- `paperHTML(p, res)` で用紙HTML。シートは `data-part="q"`（資料・問題）と `"a"`（解答）。`genToPaper(items)` は類題を用紙にする（項目ごとに教科・単元の見出し、説明の問い、「自分の判定」の欄）。
+- `paperHTML(p, res)` で用紙HTML。シートは `data-part="q"`（資料・問題）と `"a"`（解答）。`genToPaper(items)` は類題を用紙にする（項目の区切りに小見出し `sec`: 教科が複数あれば「教科・単元」、1教科なら単元だけ、単元が無く1教科なら無し。問題文の中には入れない。説明の問い、「自分の判定」の欄）。
 - `buildPDF(papers)` は用紙の配列を受け、html2canvas + jsPDF でA4に詰める（ブロックごとに画像化、境目で切らない）。各用紙の「資料＋問題」を先に並べ、用紙ごとに奇数ページなら白紙を足して偶数にし、解答は全用紙ぶんを最後に教科で改ページせず詰める。両面印刷1回で解答が必ず別の紙になる。今日の類題PDFも5教科の確認テストも同じ経路。
 - `exportPDF()`: iOS は `navigator.share` で共有シート、それ以外はダウンロード。「HTMLで保存」は予備で、白紙の調整は入らない。
 - 既知の問題: html2canvas は oklab/oklch を読めないので独立 iframe 内で描画。html2canvas は詰め（`font-feature-settings: palt`）やカーニングがあると「【」「」」や数字がずれて消えるので、iframe 内では詰め・カーニング・字間をすべて切る（画面のプレビューだけ palt）。文字は A4 に対して本文 12.5px（約9.5pt）、解答 12px、罫線の間隔 21px（2026-09-10 に iPhone で確認して決めた）。iOS Safari は画面より広い iframe の文字を自動で拡大する（text-size-adjust）ので、iframe に viewport meta と `-webkit-text-size-adjust:none` を入れている（これが無いと iPhone だけ文字が1.5倍ほどになる。Chrome では再現しない）。実ブラウザで確認すること。2026-09-10 に Windows Chrome で 2教科6ページと類題3ページ（問題＋白紙＋解答）を確認済み。

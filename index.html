@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 14:39"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 14:42"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -844,16 +844,19 @@ function paperText(p) {
 }
 function genToPaper(items, unitOf) {
   const qs = []; let n = 0; const refs = [];
+  // 項目の区切りの小見出し。教科が複数あれば「教科・単元」、1教科だけなら単元だけ。単元が無く1教科なら見出しなし
+  const multi = new Set(items.map((i) => i.subject)).size > 1;
+  const secOf = (i, u) => (multi ? `${i.subject}${u ? "・" + u.name : ""}` : u ? u.name : "");
   items.forEach((i) => { const g = i.gen; const u = unitOf(i.unitId);
     if ((!g || !g.problems || !g.problems.length) && i.printedOrig && hasPos(i.src)) { // 類題が作れなかった項目: 元の問題を資料に載せてもう一度解かせる
       const fig = refs.length + 1; refs.push(i.src.qpath ? { n: fig, kind: i.src.kind, page: i.src.page, path: i.src.qpath } : { n: fig, kind: i.src.kind, page: i.src.page, path: i.src.path, crop: { x: i.src.x, y: i.src.y } });
-      n++; qs.push({ n, q: `【${i.subject}${u ? "・" + u.name : ""}】元の問題（図${fig}）をもう一度解き、なぜそうなるかを説明する。\n${SELF_LINE}`, a: "（元の問題の解答はワークの解答で確認。この回は「説明もできた」でのみ先へ進む）", label: i.label, aim: "元の問題", fmt: i.fmt, svg: "", fig });
+      n++; qs.push({ n, sec: secOf(i, u), q: `元の問題（図${fig}）をもう一度解き、なぜそうなるかを説明する。\n${SELF_LINE}`, a: "（元の問題の解答はワークの解答で確認。この回は「説明もできた」でのみ先へ進む）", label: i.label, aim: "元の問題", fmt: i.fmt, svg: "", fig });
       return; }
     if (!g || !g.problems || !g.problems.length) return; const isTerm = !needsWhy(i);
-    const head = `【${i.subject}${u ? "・" + u.name : ""}】${g.passage ? "\n" + g.passage + "\n" : ""}`;
+    const head = g.passage ? g.passage + "\n" : ""; const sec = secOf(i, u);
     const why = !isTerm && g.why ? g.why : "";
-    g.problems.forEach((p, k) => { n++; const last = k === g.problems.length - 1 && !why; qs.push({ n, q: `${k === 0 ? head : ""}${p.q}${last ? "\n" + SELF_LINE : ""}`, a: p.a, label: i.label, aim: "", fmt: i.fmt, svg: "" }); });
-    if (why) { n++; qs.push({ n, q: `説明：${why}\n${SELF_LINE}`, a: "（手順の理由が自分の言葉で言えていれば「説明もできた」）", label: i.label, aim: "説明させる問い", fmt: i.fmt, svg: "" }); } });
+    g.problems.forEach((p, k) => { n++; const last = k === g.problems.length - 1 && !why; qs.push({ n, sec, q: `${k === 0 ? head : ""}${p.q}${last ? "\n" + SELF_LINE : ""}`, a: p.a, label: i.label, aim: "", fmt: i.fmt, svg: "" }); });
+    if (why) { n++; qs.push({ n, sec, q: `説明：${why}\n${SELF_LINE}`, a: "（手順の理由が自分の言葉で言えていれば「説明もできた」）", label: i.label, aim: "説明させる問い", fmt: i.fmt, svg: "" }); } });
   const subj = items.length === 1 ? items[0].subject : "回収";
   return { subject: subj, code: today().slice(5).replace("-", "") + "回", kind: "類題", questions: qs, imgs: [], refs };
 }
