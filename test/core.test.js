@@ -1197,3 +1197,25 @@ describe("テストの問題用紙と答案の対応づけ", () => {
     assert.deepEqual(p.refs, [{ n: 1, kind: "テスト", page: 1, path: "q1" }]);
   });
 });
+
+describe("リスニングは形式の弱点として記録（未定着に入れない）", () => {
+  const it = (id, path, page = 1) => ({ id, subject: "英語", unitId: "u", named: false, src: { path, kind: "テスト", page, x: 0.5, y: 0.5 } });
+  test("splitListening: リスニングの項目を外し、紙ごとに出題数と正答数の記録を作る", () => {
+    const items = [it("a", "ts/a1.jpg"), it("b", "ts/a1.jpg"), it("c", "ts/a1.jpg"), it("d", "ts/a2.jpg", 2)];
+    const patch = { a: { fmt: "リスニング", label: "l" }, b: { fmt: "リスニング", label: "l" }, c: { fmt: "英作文", label: "w" }, d: { fmt: "リスニング", label: "l" } };
+    const r = m.splitListening(items, patch, [{ path: "ts/a1.jpg", total: 6 }, { path: "ts/a2.jpg", total: 0 }]);
+    assert.deepEqual(r.ids, ["a", "b", "d"]);
+    assert.equal(r.tests.length, 2);
+    const t1 = r.tests.find((t) => t.source.includes("1枚目")); assert.deepEqual([t1.subject, t1.kind, t1.total, t1.correct, t1.rows], ["英語", "定期", 6, 4, [{ fmt: "リスニング", total: 6, correct: 4 }]]);
+    const t2 = r.tests.find((t) => t.source.includes("2枚目")); assert.deepEqual([t2.total, t2.correct], [1, 0], "数えられなければ×の数を出題数に");
+    assert.deepEqual(m.splitListening(items, { c: { fmt: "英作文" } }, []), { ids: [], tests: [] });
+  });
+  test("nameItems: meta に紙ごとのリスニングの問題数が入る", async () => {
+    const orig = globalThis.fetch;
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url) => (url.includes("/storage/") ? { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer } : { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"items":[{"n":1,"label":"対話の内容","fmt":"リスニング"}],"listening_total":5}' }] }) });
+    try { const meta = {}; const r = await m.nameItems([it("a", "ts/a1.jpg")], () => null, null, meta);
+      assert.equal(r.a.fmt, "リスニング"); assert.deepEqual(meta.listening, [{ path: "ts/a1.jpg", subject: "英語", kind: "テスト", page: 1, total: 5 }]);
+    } finally { globalThis.fetch = orig; ["sb_url", "sb_key", "anthropic_api_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+});

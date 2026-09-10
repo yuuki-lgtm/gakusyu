@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 13:14"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 13:37"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -435,6 +435,15 @@ const hasPos = (s) => !!(s && s.path && typeof s.x === "number" && typeof s.y ==
 const srcLabel = (s) => (s && s.path ? `${s.kind} p.${s.page}${s.q ? ` 「${s.q}」` : ""}` : "");
 /* 印の位置にある問題の説明（AIへ渡す文） */
 const markDesc = (s, n = null) => (hasPos(s) ? `${n ? `赤い${n}の印` : "赤い○印"}の位置にある問題（${s.kind} p.${s.page}）` : srcLabel(s));
+/* リスニングは紙で反復できないので、未定着には入れず形式の弱点として記録する（設計思想10）。
+   patch のうち fmt が「リスニング」の項目を外し、紙ごとに「出題数（AIが数えた数、×の数より少なければ×の数）・正答数＝出題数−×」の記録を作る */
+function splitListening(items, patch, listening = []) {
+  const ids = items.filter((i) => patch[i.id] && patch[i.id].fmt === "リスニング").map((i) => i.id);
+  const byPath = {}; items.filter((i) => ids.includes(i.id)).forEach((i) => { (byPath[i.src.path] = byPath[i.src.path] || []).push(i); });
+  const tests = Object.keys(byPath).map((path) => { const g = byPath[path]; const s0 = g[0]; const lt = listening.find((x) => x.path === path); const total = Math.max(g.length, lt ? lt.total : 0);
+    return { id: uid(), subject: s0.subject, date: today(), kind: "定期", source: `返却テスト（${s0.src.kind} ${s0.src.page}${s0.src.kind === "テスト" ? "枚目" : "ページ"}）リスニング`, rows: [{ fmt: "リスニング", total, correct: total - g.length }], total, correct: total - g.length, unitIds: [], updatedAt: now() }; });
+  return { ids, tests };
+}
 /* 類題の生成結果を項目に反映する。名前が仮のままなら、AI が返した label / fmt も採用 */
 function applyGen(item, g) {
   const patch = { gen: g, genOn: today() };
@@ -570,8 +579,8 @@ async function genForItem(i, u, ctx, prev = "なし", model = null) {
   return parseJSON(t);
 }
 /* 座標つきで登録された項目に、AI が名前と形式を付ける。ページごとに1回。失敗したページは仮の名前のまま。戻り値は {id: {label, fmt, note, named}} */
-async function nameItems(items, unitOf, model = null) {
-  const out = {};
+async function nameItems(items, unitOf, model = null, meta = {}) {
+  const out = {}; meta.listening = [];
   const byPath = {}; items.filter((i) => hasPos(i.src) && !i.named).forEach((i) => { (byPath[i.src.path] = byPath[i.src.path] || []).push(i); });
   for (const path of Object.keys(byPath)) {
     const group = byPath[path]; const s0 = group[0];
@@ -580,8 +589,9 @@ async function nameItems(items, unitOf, model = null) {
       const b64 = await annotateB64(await stGet(path), group.map((i) => ({ x: i.src.x, y: i.src.y })));
       const qb64 = s0.src.qpath ? await stGet(s0.src.qpath) : null;
       const t = await callAI([imgBlock(b64), ...(qb64 ? [{ type: "text", text: "【問題用紙】上の答案に対応する問題用紙" }, imgBlock(qb64)] : []), { type: "text", text: `${qb64 ? `1枚目は中学1年${s0.subject}の定期テストの答案（${s0.src.page}枚目）、2枚目はその問題用紙。答案の赤い印の位置にある答えに対応する問題を、問題用紙から探して読んでください。` : `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。`}${u ? `単元は「${u.name}」。` : ""}赤い印（${group.length > 1 ? `①〜${group.length}の番号つき` : "1つ"}）の位置にある問題を子どもが間違えました。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。` }],
-        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false}]}`, 1200, model);
-      const rs = parseJSON(t).items || [];
+        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。音声を聞いて答えるリスニングの問題は fmt を「リスニング」にし、listening_total にこの紙のリスニングの問題数（小問ごと）を入れる（無ければ 0）。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false}],"listening_total":0}`, 1200, model);
+      const parsed = parseJSON(t); const rs = parsed.items || [];
+      meta.listening.push({ path, subject: s0.subject, kind: s0.src.kind, page: s0.src.page, total: Number(parsed.listening_total) || 0 });
       group.forEach((i, k) => { const r = rs.find((x) => Number(x.n) === k + 1) || rs[k]; if (r && r.label) out[i.id] = { label: r.label, fmt: FORMATS.includes(r.fmt) ? r.fmt : "", note: r.summary || "", named: true, noWhy: r.rote === true }; });
     } catch (e) { /* 仮の名前のまま。類題生成のときにもう一度試す */ }
   }
@@ -1522,10 +1532,11 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     const add = tapsToItems(taps, subject, us, fallbackUnitId);
     save(applyAutoProgress(markDone({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }, taps.map((t) => t.path))));
     setTaps([]); setMsg(`${add.length}件を登録しました。明日の「今日」に出ます${hasKey() ? "。項目名をAIが付けています…" : ""}`);
-    if (hasKey()) { setNaming(true); nameItems(add, (id) => us.find((u) => u.id === id)).then((patch) => {
+    if (hasKey()) { setNaming(true); const meta = {}; nameItems(add, (id) => us.find((u) => u.id === id), null, meta).then((patch) => {
       const n = Object.keys(patch).length;
-      if (n) save((cur) => ({ ...cur, items: cur.items.map((x) => (patch[x.id] ? { ...x, ...patch[x.id], updatedAt: now() } : x)) }));
-      setMsg(n ? `${n}件に項目名を付けました` : "項目名を付けられませんでした。類題を作るときにもう一度試します"); setNaming(false); setTimeout(() => setMsg(""), 5000); }); }
+      const { ids: lis, tests: lisTests } = splitListening(add, patch, meta.listening);
+      if (n) save((cur) => ({ ...cur, items: cur.items.filter((x) => !lis.includes(x.id)).map((x) => (patch[x.id] ? { ...x, ...patch[x.id], updatedAt: now() } : x)), tests: [...cur.tests, ...lisTests], deleted: [...cur.deleted, ...lis] }));
+      setMsg(n ? `${n - lis.length}件に項目名を付けました${lis.length ? `。リスニング ${lis.length}問は紙で反復できないので、未定着には入れず形式の成績（分析）に記録しました` : ""}` : "項目名を付けられませんでした。類題を作るときにもう一度試します"); setNaming(false); setTimeout(() => setMsg(""), 7000); }); }
     else setTimeout(() => setMsg(""), 4000);
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
