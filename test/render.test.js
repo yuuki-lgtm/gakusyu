@@ -19,7 +19,6 @@ const SCREENS = (d) => [
   ["ホーム", m.HomeTab, { d, go: noop }],
   ["今日/採点", m.TodayTab, { d, save: noop, initial: "grade" }],
   ["今日/印刷", m.TodayTab, { d, save: noop, initial: "print" }],
-  ["今日/カード", m.TodayTab, { d, save: noop, initial: "cards" }],
   ["今日/既定", m.TodayTab, { d, save: noop, initial: null }],
   ["テスト/作る", m.WeekTab, { d, save: noop, initial: "make" }],
   ["テスト/撮る", m.WeekTab, { d, save: noop, initial: "grade" }],
@@ -89,13 +88,7 @@ test("空データ: ホームは単元登録を促す", () => {
 test("空データ: 今日は採点待ちも印刷待ちもなし、分析は保持率なし", () => {
   assert.ok(render(m.TodayTab, { d: F.empty(), save: noop, initial: null }).html.includes("明日の分はありません"));
   assert.ok(render(m.TodayTab, { d: F.empty(), save: noop, initial: "grade" }).html.includes("採点待ちはありません"));
-  assert.ok(render(m.TodayTab, { d: F.empty(), save: noop, initial: "cards" }).html.includes("今日の回収はありません"));
   assert.ok(render(m.AnaTab, { d: F.empty() }).html.includes("まだ30日以上あけた再出題がありません"));
-});
-test("デモ: 今日/カード に期日の項目が出て、3回落ちた警告が出る", () => {
-  const { html } = render(m.TodayTab, { d: F.demo(), save: noop, initial: "cards" });
-  assert.ok(html.includes("負の数のかけ算"));
-  assert.ok(html.includes("3回以上落ちている項目が 1 件"));
 });
 test("デモ: 今日/採点 に昨日印刷した項目が並び、既定は採点。今日/印刷 には未印刷の期日項目", () => {
   const g = render(m.TodayTab, { d: F.demo(), save: noop, initial: null }).html;
@@ -118,10 +111,6 @@ test("デモ: 分析に保持率が出る", () => {
   const { html } = render(m.AnaTab, { d: F.demo() });
   assert.ok(html.includes("保持率"));
   assert.ok(!html.includes("まだ30日以上あけた再出題がありません"));
-});
-test("pending: 今日/カード に子どもの判定件数が出る", () => {
-  const { html } = render(m.TodayTab, { d: F.pending(), save: noop, initial: "cards" });
-  assert.ok(html.includes("子どもの判定が 3 件保存されています"));
 });
 test("デモ: テスト/撮る に未採点の用紙が選ばれる", () => {
   const { html } = render(m.WeekTab, { d: F.demo(), save: noop, initial: "grade" });
@@ -172,10 +161,6 @@ test("TapReg: 単元と対応しないページはその旨を出す。教材が
 test("デモ: 未定着一覧で誤答の種類を変えられる", () => {
   const { html } = render(m.RegTab, { d: F.demo(), save: noop, initial: "list" });
   assert.ok(html.includes("et-sel") && html.includes("ワーク p.11"));
-});
-test("デモ: 今日のカードに元の問題（教材のページと番号）が出る", () => {
-  const { html } = render(m.TodayTab, { d: F.demo(), save: noop, initial: "cards" });
-  assert.ok(html.includes("元 ワーク p.11"));
 });
 test("デモ: 用紙のプレビューは教材ページの枠を出し、画像は持たない", () => {
   const p = F.demo().papers.find((x) => x.id === "p1");
@@ -274,4 +259,13 @@ test("ホーム: 採点待ちの類題があれば「今日の分を印刷する
   assert.ok(render(m.HomeTab, { d: F.demo(), go: noop }).html.includes("今日の分を印刷する（1件・PDFだけ）"));
   assert.ok(!render(m.HomeTab, { d: F.empty(), go: noop }).html.includes("PDFだけ"));
   assert.equal(render(m.MorningPrint, { d: F.empty() }).html, "");
+});
+test("今日/採点: 行をタップで類題と解答、3回落ちていれば診断が出る", () => {
+  const d = F.demo(); d.items = d.items.map((i) => (i.id === "i2" ? { ...i, printedOn: F.day(-1), printedAs: 2, gen: { problems: [{ q: "Q1", a: "A1" }], why: "W" } } : i));
+  const list = render(m.TodayGrade, { d, save: noop }).html;
+  assert.ok(list.includes("類題・診断 ▸") && list.includes("類題 ▸") && !list.includes("cards"));
+  const det = render(m.GradeRowDetail, { i: d.items.find((i) => i.id === "i2"), d, save: noop }).html;
+  assert.ok(det.includes("Q1") && !det.includes("A1") && det.includes("解答を見る") && det.includes("分数の意味があいまい"), "診断済みなら結果を出す");
+  const det1 = render(m.GradeRowDetail, { i: d.items.find((i) => i.id === "i1"), d, save: noop }).html;
+  assert.ok(det1.includes("(−2)×(+5)") && !det1.includes("診断"), "3回未満は診断なし");
 });

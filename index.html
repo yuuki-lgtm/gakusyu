@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 11:23"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 11:31"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -488,8 +488,6 @@ function nextActions(d) {
     A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×登録 → 最後のページ → 明日の分）", why: "1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。", tab: "night", t: "5分" });
     if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: "grade", t: "1枚2分" });
     if (!weekend && d.units.length > 0) A.push({ k: "wb", title: "今日のワークの×を登録", why: "ページを開いて×だった問題をタップするだけ。明日の「今日」に出ます。", tab: "reg", mode: "item", t: "2分" });
-    const pendN = d.items.filter((i) => i.pending?.d === t).length;
-    if (pendN) A.push({ k: "confirm", title: `子どもの判定 ${pendN} 件を確定する`, why: "机の紙と照らして、親の確定を押す。ここで初めて次回の日程が決まります。", tab: "today", mode: "cards", t: "5分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
     if (toGrade.length) A.push({ k: "mark", title: `昨日の分を採点する（${toGrade.length}件）`, why: "紙を見て、項目ごとに「できなかった／解けた／説明もできた」を押し、まとめて確定。", tab: "today", mode: "grade", t: "3分" });
     const mx = upcomingExams(d)[0]; const md = mx ? mockDue(d, mx, t) : null;
@@ -501,7 +499,7 @@ function nextActions(d) {
     const cum = lastCumOn(d);
     if (d.items.length > 0 && d.units.some(taught) && (!cum || diffDays(cum, t) >= 30)) A.push({ k: "cum", title: cum ? `累積テストを作る（前回から ${diffDays(cum, t)} 日）` : "累積テストを作る", why: "過去の範囲を混ぜて初見で測る。学力の推移はこれで見る。月1回。", tab: "week", mode: "cum", t: "生成3分＋印刷" });
     if (left !== null && left <= 14 && left >= 0) A.push({ k: "exam", title: `定期テストまで ${left} 日。範囲の未定着だけやる`, why: "新しいことはやらない期間です。未出題の範囲があれば最優先。", tab: "exam", t: "" });
-    if (stuck.length) A.push({ k: "stuck", title: `3回以上落ちている ${stuck.length} 件を診断する`, why: "反復では解決しません。前提に戻る手順を出します。", tab: "today", mode: "cards", t: "" });
+    if (stuck.length) A.push({ k: "stuck", title: `3回以上落ちている ${stuck.length} 件を診断する`, why: "反復では解決しません。採点の行を開いて「診断」を押すと、前提に戻る手順が出ます。", tab: "today", mode: "grade", t: "" });
     if (d.items.length > 0 && (!d.backupOn || diffDays(d.backupOn, t) >= 30)) A.push({ k: "backup", title: d.backupOn ? `バックアップを書き出す（前回から ${diffDays(d.backupOn, t)} 日）` : "バックアップを書き出す", why: "月1回。「設定」の「書き出す」でファイルに残す。同期先が消えても戻せる。", tab: "set", t: "1分" });
   }
   return { A, due, left, nx };
@@ -645,6 +643,12 @@ function normalizePts(qs, total = 100) {
   return qs;
 }
 
+/* 3回以上落ちた項目の診断。抜けている前提と、戻って積み上げ直す手順 */
+async function diagnose(i, u, ctx, model = null) {
+  const t = await callAI(`${itemContext(i, u, ctx)}\n\n同じ項目を${i.failCount}回落としています。反復では解決しないと判断しました。抜けている前提を特定し、そこまで戻って積み上げ直す手順を。`,
+    `日本の中学1年生を教える講師。causeは最も可能性が高い原因1つ。prereqは戻るべき前提の単元（小学校範囲でも可）。stepsは3〜4段階、各段階は「何をやらせるか」だけ短く。checkは通過の判定方法。\nJSONのみ: {"cause":"","prereq":"","steps":[{"do":"","check":""}]}`, 2000, model);
+  return parseJSON(t);
+}
 /* 「今日の分」の紙を撮って、各項目の「自分の判定」の印（□ できなかった／□ 解けた／□ 説明もできた）を読む。戻り値は {n: "x"|"o"|"oo"|""} */
 async function readSelfMarks(files, items, unitOf, model = null) {
   const imgs = []; for (const f of files) imgs.push(imgBlock(await compressImage(f, 1600, 0.8)));
@@ -924,14 +928,12 @@ function TodayTab({ d, save, initial }) {
   const gs = gradeSet(d);
   const [mode, setMode] = useState(initial || (gs.length ? "grade" : "print"));
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
-  const pendN = d.items.filter((i) => i.pending?.d === today()).length;
   const ps = printSet(d).length;
   return (<div className="pane">
-    <p className="tabhint">夜の2ステップ。昨日の紙を見て「採点」→「印刷」で明日の分を1枚に。子どもは紙に解き、解答を見て自分の判定を書く。</p>
-    <div className="seg"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>印刷{ps ? ` (${ps})` : ""}</button><button className={mode === "cards" ? "on" : ""} onClick={() => setMode("cards")}>カード{pendN ? ` (${pendN})` : ""}</button></div>
+    <p className="tabhint">夜の2ステップ。昨日の紙を見て「採点」→「印刷」で明日の分を1枚に。子どもは紙に解き、解答を見て自分の判定を書く。行をタップすると類題と解答が見えます。</p>
+    <div className="seg"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>印刷{ps ? ` (${ps})` : ""}</button></div>
     {mode === "grade" && <TodayGrade d={d} save={save} />}
     {mode === "print" && <TodayMake d={d} save={save} />}
-    {mode === "cards" && <TodayCards d={d} save={save} />}
   </div>);
 }
 function TodayMake({ d, save }) {
@@ -976,9 +978,28 @@ function TodayMake({ d, save }) {
     {printed.length > 0 && <section className="sec"><h3 className="s-h">採点待ち <span className="cnt">{printed.length}件</span></h3><p className="lead">紙をなくしたときは、同じ内容をもう一度PDFにできます（類題は作り直しません）。</p><button className="btn-sm wide" onClick={reprint} disabled={!!busy}>採点待ちの分をもう一度PDFにする</button></section>}
   </>);
 }
+/* 採点行の展開部: 類題と解答、3回以上落ちていれば診断 */
+function GradeRowDetail({ i, d, save }) {
+  const [showA, setShowA] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const sec = useElapsed(busy);
+  const g = i.gen; const u = unitById(d, i.unitId);
+  const diag = async (model = null) => { setBusy(true); setErr(""); try { const r = await diagnose(i, u, ctxFor(d, i), model); save((cur) => ({ ...cur, items: cur.items.map((x) => (x.id === i.id ? { ...x, diag: r, updatedAt: now() } : x)) })); } catch (e) { setErr(e.message || "失敗"); } setBusy(false); };
+  return (<div className="qbox">
+    {g && g.problems ? (<>{g.passage && <div className="tr">{g.passage}</div>}
+      {g.problems.map((pr, n) => (<div className="qitem" key={n}><div className="q-n">問{n + 1}</div><div className="q-q">{pr.q}</div>{showA && <div className="q-a">{pr.a}</div>}</div>))}
+      {g.why && i.fmt !== "知識・用語" && <div className="q-why">説明させる問い：{g.why}</div>}
+      {showA && g.script && <div className="q-s">声かけ例：{g.script}</div>}
+      <div className="q-btns"><button className="btn-sm" onClick={() => setShowA(!showA)}>{showA ? "解答を隠す" : "解答を見る"}</button></div></>) : <p className="empty">類題はありません。</p>}
+    {i.failCount >= 3 && !i.diag && <button className="btn-ai warn" onClick={() => diag()} disabled={busy}>{busy ? `診断中… ${sec}秒` : "なぜ定着しないのかを診断"}</button>}
+    {err && <div className="errbox"><p>{err}</p><button className="btn-sm" onClick={() => diag(FALLBACK)}>Sonnet 4.6 で診断</button></div>}
+    {i.diag && (<div className="dbox"><div className="d-row"><span>原因</span>{i.diag.cause}</div><div className="d-row"><span>戻る単元</span>{i.diag.prereq}</div>
+      {(i.diag.steps || []).map((st, n) => (<div className="d-step" key={n}><div className="ds-n">{n + 1}</div><div><div className="ds-do">{st.do}</div><div className="ds-ck">通過の目安：{st.check}</div></div></div>))}</div>)}
+  </div>);
+}
 function TodayGrade({ d, save }) {
   const unitOf = (id) => unitById(d, id);
   const set = gradeSet(d);
+  const [open, setOpen] = useState({});
   const [dc, setDc] = useState({});
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [lastFiles, setLastFiles] = useState(null);
@@ -1005,7 +1026,8 @@ function TodayGrade({ d, save }) {
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = i.fmt === "知識・用語"; return (
         <div className={"grow" + (c.skip ? " skip" : c.r ? " done" : "")} key={i.id}>
           <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}<em className="lv">印刷 {i.printedOn.slice(5)}{i.printedAs ? ` · 紙の${i.printedAs}番目` : ""}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
-          <div className="c-label">{i.label}</div>
+          <button className="c-label tap" onClick={() => setOpen((o) => ({ ...o, [i.id]: !o[i.id] }))}>{i.label}<em className="pg"> {open[i.id] ? "閉じる" : i.failCount >= 3 ? "類題・診断 ▸" : "類題 ▸"}</em></button>
+          {open[i.id] && <GradeRowDetail i={i} d={d} save={save} />}
           {!c.skip && (<>
             <div className="grow-r"><span className="j-who">子ども</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.self === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickSelf(i, r)}>{l}</button>))}</div></div>
             <div className="grow-r"><span className="j-who">親</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.r === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickParent(i, r)}>{l}</button>))}</div></div>
@@ -1020,130 +1042,6 @@ function TodayGrade({ d, save }) {
     </>)}
   </section>);
 }
-function TodayCards({ d, save }) {
-  const [showAll, setShowAll] = useState(false);
-  const unitOf = (id) => unitById(d, id);
-  const due = d.items.filter((i) => i.nextDue <= today()).sort((a, b) => ((b.pending?.d === today()) - (a.pending?.d === today())) || b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
-  const pendN = d.items.filter((i) => i.pending?.d === today()).length;
-  const shown = showAll ? [...d.items].sort((a, b) => (a.nextDue < b.nextDue ? -1 : 1)) : due;
-  const stuck = d.items.filter((i) => i.status === "active" && i.failCount >= 3);
-
-  const confirm = (item, selfR, selfE, parentR, parentE) => {
-    const t = today();
-    const next = applyJudgment(item, parentR);
-    next.history = [...(item.history || []), { d: t, r: parentR, self: selfR, etype: parentE || "", etypeSelf: selfE || "" }];
-    next.pending = null; next.printedOn = null;
-    if (parentR === "x" && parentE) next.etype = parentE;
-    save({ ...d, items: d.items.map((x) => (x.id === item.id ? next : x)), log: { ...d.log, [t]: true } });
-  };
-  const store = (id, patch) => save({ ...d, items: d.items.map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now() } : x)) });
-
-  return (<>
-      {pendN > 0 && <p className="ph-note">子どもの判定が {pendN} 件保存されています。紙を見て確定してください。</p>}
-      {stuck.length > 0 && (<div className="alert"><strong>3回以上落ちている項目が {stuck.length} 件</strong><p>反復では解決しません。カードの「診断」を押すか、「依頼文」から相談してください。</p></div>)}
-      {due.length === 0 && !showAll ? (
-        <div className="ok"><p>今日の回収はありません。</p>
-          <p className="sub">{d.items.length ? `${d.items.length} 件が再出題の日を待っています。` : "未定着リストは空です。「週末」か「登録」から入れてください。"}</p>
-          {d.items.length > 0 && <button className="btn-sm" onClick={() => setShowAll(true)}>予定日前の項目も表示</button>}</div>
-      ) : (<>
-        <p className="lead">1件ずつ見たいときはここ。教科書を閉じたまま解かせ、<strong>解けたら「なぜそうなるか」を説明させてください。</strong> まず子どもが自分で判定し、その後に親が確定します。</p>
-        {showAll && <button className="btn-sm mb" onClick={() => setShowAll(false)}>今日の分だけ</button>}
-        {shown.map((i) => (<ItemCard key={i.id} item={i} unit={unitOf(i.unitId)} onConfirm={confirm} onStore={store} ctx={ctxFor(d, i)} />))}
-        <p className="rule">計算・文章題などは、類題3問すべて正解して初めて「解けた」。揃わなければ「別の問題」で続け、それでも揃わなければ今日は「できなかった」。間隔は 1日→3日→7日→14日→30日→60日 と伸びます。「説明もできた」でないと7日から先へ進みません（用語は除く）。30日以上あけて正解した項目が「安定」です。落とすと1日に戻ります。</p>
-      </>)}
-  </>);
-}
-function ItemCard({ item: i, unit: u, onConfirm, onStore, ctx }) {
-  const pend = i.pending && i.pending.d === today() ? i.pending : null;
-  const [selfR, setSelfR] = useState(pend ? pend.self : null);
-  const [selfE, setSelfE] = useState(pend ? pend.selfE || "" : "");
-  const [parentR, setParentR] = useState(pend ? pend.self : null);
-  const [parentE, setParentE] = useState(pend ? pend.selfE || "" : "");
-  const [q, setQ] = useState(i.gen || null);
-  const [diag, setDiag] = useState(i.diag || null);
-  const [showA, setShowA] = useState(false);
-  const [showD, setShowD] = useState(false);
-  const [busy, setBusy] = useState("");
-  const [err, setErr] = useState("");
-  const [pm, setPm] = useState(pend ? pend.pm || {} : {});
-  const sec = useElapsed(busy);
-  const isTerm = i.fmt === "知識・用語";
-  const drill = !!q && !isTerm && i.fmt !== "長文読解";
-  const nProb = q?.problems?.length || 0;
-  const nOk = Object.values(pm).filter((v) => v === "o").length;
-  const allOk = drill && nProb > 0 && nOk === nProb;
-  const drillBlock = drill && !allOk;
-
-  const context = itemContext(i, u, ctx);
-
-  const run = async (kind, model = null) => {
-    setBusy(kind); setErr("");
-    try {
-      if (kind === "gen") {
-        setShowA(false); setPm({});
-        const p = await genForItem(i, u, ctx, q?.problems?.map((x) => x.q).join(" / ") || "なし", model);
-        setQ(p); onStore(i.id, applyGen(i, p));
-      } else {
-        const t = await callAI(`${context}\n\n同じ項目を${i.failCount}回落としています。反復では解決しないと判断しました。抜けている前提を特定し、そこまで戻って積み上げ直す手順を。`,
-          `日本の中学1年生を教える講師。causeは最も可能性が高い原因1つ。prereqは戻るべき前提の単元（小学校範囲でも可）。stepsは3〜4段階、各段階は「何をやらせるか」だけ短く。checkは通過の判定方法。\nJSONのみ: {"cause":"","prereq":"","steps":[{"do":"","check":""}]}`, 2000, model);
-        const p = parseJSON(t); setDiag(p); setShowD(true); onStore(i.id, { diag: p });
-      }
-    } catch (e) { setErr(e.message || "失敗"); }
-    setBusy("");
-  };
-
-  const pick = (who, r) => { if (who === "self") { setSelfR(r); setSelfE(""); setParentR(r); setParentE(""); onStore(i.id, { pending: { d: today(), self: r, selfE: "", pm } }); } else { setParentR(r); } };
-  const pickSelfE = (e) => { setSelfE(e); setParentE(e); onStore(i.id, { pending: { d: today(), self: selfR, selfE: e, pm } }); };
-  const setPmStore = (n, v) => { const np = { ...pm, [n]: v }; setPm(np); if (selfR) onStore(i.id, { pending: { d: today(), self: selfR, selfE, pm: np } }); };
-  const canConfirm = parentR && (parentR !== "x" || parentE || selfE);
-  const agree = selfR && parentR && selfR === parentR;
-
-  return (
-    <div className="card">
-      <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}
-        {i.fmt && <em className="tag">{i.fmt}</em>}
-        {i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}
-        {i.nextDue > today() && <em className="early">予定 {i.nextDue.slice(5)}</em>}
-        <em className="lv">間隔 {INT[i.level || 0]}日</em>
-        {srcLabel(i.src) && <em className="tag">元 {srcLabel(i.src)}</em>}</div>
-      <div className="c-label">{i.label}</div>
-      {i.note && <div className="c-note">{i.note}</div>}
-
-      {!q && <button className="btn-ai" onClick={() => run("gen")} disabled={!!busy}>{busy === "gen" ? `作成中… ${sec}秒` : "類題を作る"}</button>}
-      {i.failCount >= 3 && !diag && <button className="btn-ai warn" onClick={() => run("diag")} disabled={!!busy}>{busy === "diag" ? `診断中… ${sec}秒` : "なぜ定着しないのかを診断"}</button>}
-      {err && <div className="errbox"><p>{err}</p><button className="btn-sm" onClick={() => run("gen", FALLBACK)}>Sonnet 4.6 で作り直す</button></div>}
-
-      {diag && (<div className="dbox"><button className="d-h" onClick={() => setShowD(!showD)}>診断結果 {showD ? "−" : "+"}</button>
-        {showD && (<><div className="d-row"><span>原因</span>{diag.cause}</div><div className="d-row"><span>戻る単元</span>{diag.prereq}</div>
-          {(diag.steps || []).map((s, n) => (<div className="d-step" key={n}><div className="ds-n">{n + 1}</div><div><div className="ds-do">{s.do}</div><div className="ds-ck">通過の目安：{s.check}</div></div></div>))}</>)}</div>)}
-
-      {q && (<div className="qbox">
-        {q.passage && <div className="tr">{q.passage}</div>}
-        {(q.problems || []).map((p, n) => (<div className="qitem" key={n}><div className="q-n">問{n + 1}{drill && <span className="pmk">{["o", "x"].map((v) => (<button key={v} className={"pm " + v + (pm[n] === v ? " on" : "")} onClick={() => setPmStore(n, v)}>{v === "o" ? "○" : "×"}</button>))}</span>}</div><div className="q-q">{p.q}</div>{showA && <div className="q-a">{p.a}</div>}</div>))}
-        {drill && <p className="drill-n">{nOk}/{nProb} 問正解{allOk ? " — 手順が固まりました。説明を聞いてから判定へ" : nOk < nProb && Object.keys(pm).length === nProb ? " — 揃うまで「別の問題」で続けてください。今日は「できなかった」" : ""}</p>}
-        {q.why && !isTerm && <div className="q-why">説明させる問い：{q.why}</div>}
-        {showA && q.point && <div className="q-p">推定：{q.point}</div>}
-        {showA && q.script && <div className="q-s">声かけ例：{q.script}</div>}
-        <div className="q-btns"><button className="btn-sm" onClick={() => setShowA(!showA)}>{showA ? "解答を隠す" : "解答を見る"}</button><button className="btn-sm" onClick={() => run("gen")} disabled={!!busy}>{busy === "gen" ? `${sec}秒` : "別の問題"}</button><button className="btn-sm" onClick={async () => { setBusy("pdf"); setErr(""); try { await exportPDF(genToPaper([i], () => u), () => {}); } catch (e) { setErr(e.message || "PDFを作れませんでした"); } setBusy(""); }} disabled={!!busy}>{busy === "pdf" ? "…" : "PDF"}</button></div>
-        <p className="q-warn">{usedLabel() && `${usedLabel()} が生成。`}内容を確認してから解かせてください。</p></div>)}
-
-      <div className="judge">
-        <div className="j-who">子ども</div>
-        <div className="j-btns">{JUDGE.map(([r, l, c]) => (<button key={r} className={c + (selfR === r ? " on" : "")} disabled={drillBlock && r !== "x"} onClick={() => pick("self", r)}>{l}</button>))}</div>
-        {drillBlock && <p className="drill-w">類題3問がすべて○になるまで「解けた」は押せません。</p>}
-        {selfR === "x" && (<div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selfE === e ? " on" : "")} onClick={() => pickSelfE(e)}>{e}</button>))}</div>)}
-        {selfR && pend && <p className="pend-n">子どもの判定は保存されています。夜に紙を見て、下で確定してください。</p>}
-        {selfR && (<>
-          <div className="j-who">親の確定 {agree && <em className="agree">一致</em>}</div>
-          <div className="j-btns">{JUDGE.map(([r, l, c]) => (<button key={r} className={c + (parentR === r ? " on" : "")} disabled={drillBlock && r !== "x"} onClick={() => pick("parent", r)}>{l}</button>))}</div>
-          {parentR === "x" && (<div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (parentE === e ? " on" : "")} onClick={() => setParentE(e)}>{e}</button>))}</div>)}
-          <button className="btn-main" disabled={!canConfirm} onClick={() => onConfirm(i, selfR, selfE, parentR, parentE || selfE)}>確定{parentR === "oo" || (parentR === "o" && isTerm) ? `（次回 ${INT[Math.min((i.level || 0) + 1, INT.length - 1)]}日後）` : parentR === "o" ? `（次回 ${INT[Math.min((i.level || 0) + 1, 3)]}日後）` : parentR === "x" ? "（明日また）" : ""}</button>
-        </>)}
-      </div>
-    </div>
-  );
-}
-
 /* ---- 夜の作業（採点 → ×登録 → 最後のページ → 明日の分。1画面ずつ「次へ」。途中で閉じても今日の分は続きから） ---- */
 const NIGHT_KEY = "night_step";
 const NIGHT_STEPS = [["grade", "採点", "昨日の紙を撮るか、行ごとに押して「まとめて確定」"], ["items", "×の登録", "今日のワークの×をページでタップして「まとめて登録」"], ["last", "最後のページ", "今日やった最後のページまでを「やった」に"], ["print", "明日の分", "類題を作って1つのPDFに。印刷して机へ"]];
@@ -1937,6 +1835,7 @@ const CSS = `
 .night-steps{display:flex;gap:4px;margin-bottom:12px}.night-steps span{flex:1;text-align:center;font-size:11px;padding:5px 2px;border:1px solid var(--line);border-radius:3px;color:var(--ink3);background:var(--card)}.night-steps span.on{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700}.night-steps span.done{color:#2F6F5E;border-color:#2F6F5E}
 .night-nav{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}.night-nav .btn-main{flex:1;margin-top:0}
 .lp-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.lp-row:last-of-type{border-bottom:none}.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}
+.c-label.tap{display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;color:var(--ink);cursor:pointer}
 .grow{padding:10px 0;border-bottom:1px solid var(--line)}.grow:last-of-type{border-bottom:none}.grow.done{background:#F3F6F3;margin:0 -13px;padding:10px 13px}.grow.skip .c-label{color:var(--ink3);text-decoration:line-through}
 .grow-r{display:flex;align-items:center;gap:8px;margin-top:5px}.grow-r .j-who{flex:0 0 40px;margin:0}.grow-r .j-btns{flex:1}.j-btns.sm button{padding:7px 2px;font-size:11px}.gskip{margin-left:auto;background:none;border:1px solid var(--line);border-radius:2px;font-size:10px;color:var(--ink3);padding:1px 6px;cursor:pointer;font-family:inherit}
 .mat-sum{font-size:12px;color:var(--ink2);line-height:1.8;margin:-4px 0 10px}.mat-sum b{color:var(--ink);margin-right:4px}

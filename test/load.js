@@ -17,7 +17,7 @@ const EXPORTS = [
   // 印刷
   "escHTML", "safeSvg", "paperHTML", "needBlank", "pdfName", "paperFigs", "usedFigs", "resolveRefs", "fileHTML", "paperText", "genToPaper", "isIOS",
   // 画面
-  "App", "HomeTab", "MorningPrint", "NightFlow", "LastPageStep", "NIGHT_STEPS", "nightLoad", "nightSave", "TodayTab", "TodayMake", "TodayGrade", "TodayCards", "ItemCard", "WeekTab", "MakePapers", "MockMaker", "PaperRow", "GradeFlow", "ReadingMaker", "WritingFlow", "ManualTest",
+  "App", "HomeTab", "MorningPrint", "NightFlow", "LastPageStep", "NIGHT_STEPS", "nightLoad", "nightSave", "TodayTab", "TodayMake", "TodayGrade", "GradeRowDetail", "diagnose", "WeekTab", "MakePapers", "MockMaker", "PaperRow", "GradeFlow", "ReadingMaker", "WritingFlow", "ManualTest",
   "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "MaterialReg", "TapReg", "tapHit", "marksOn", "tapsToItems", "markDone", "markDoneUpTo", "applyAutoProgress", "untouchedPages", "buildIndex", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",
 ];
 
