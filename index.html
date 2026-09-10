@@ -485,14 +485,12 @@ function nextActions(d) {
     const noProg = SUBJECTS.filter((sub) => d.units.some((u) => u.subject === sub) && !d.units.some((u) => u.subject === sub && u.learnedOn));
     if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
     const ns = nightLoad();
-    A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×登録 → 最後のページ → 明日の分）", why: "1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。", tab: "night", t: "5分" });
+    const toGrade0 = d.items.filter((i) => i.printedOn && i.printedOn < t).length, toPrint0 = printSet(d).length;
+    A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×登録 → 最後のページ → 明日の分）", why: `${toGrade0 ? `採点 ${toGrade0} 件。` : ""}${toPrint0 ? `明日の分 ${toPrint0} 件。` : ""}1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。`, tab: "night", t: "5分" });
     if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと、「テスト」の一覧で用紙を開いて撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: pending.some((p) => p.kind === "模試") && pending.every((p) => p.kind === "模試") ? "mock" : "make", t: "1枚2分" });
-    if (!weekend && d.units.length > 0) A.push({ k: "wb", title: "今日のワークの×を登録", why: "ページを開いて×だった問題をタップするだけ。明日の「今日」に出ます。", tab: "reg", mode: "item", t: "2分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
-    if (toGrade.length) A.push({ k: "mark", title: `昨日の分を採点する（${toGrade.length}件）`, why: "紙を見て、項目ごとに「できなかった／解けた／説明もできた」を押し、まとめて確定。", tab: "today", mode: "grade", t: "3分" });
     const mx = upcomingExams(d)[0]; const md = mx ? mockDue(d, mx, t) : null;
     if (md && md.subjects.length) A.push({ k: "mock", title: `模試を作る（${md.subjects.join("・")}）D-${md.left}`, why: `${md.round}日前の回。本番と同じ形式で50分。赤ペンで採点して「撮る」で読み取る。1日1〜2教科。`, tab: "week", mode: `mock:${md.subjects.join(",")}`, t: "生成3分＋印刷" });
-    if (toPrint.length) A.push({ k: "print", title: `今日の分を印刷する（${toPrint.length}件）`, why: "類題を自動で作って1枚のPDFに。明日、机に置く。", tab: "today", mode: "print", t: "生成＋印刷で5分" });
     if (d.items.length === 0 && !pending.length) A.push({ k: "first", title: "最初の項目を入れる", why: "返却されたテストの答案を撮るのが最良の入口。なければ週末のテストから。", tab: "reg", mode: "item", t: "20分" });
     if (weekend && !paperThisWeek && !pending.length && d.items.length > 0) A.push({ k: "prog2", title: "「今週どこまで進んだ？」を聞いて進度を更新", why: "作問の前に。子どもに聞いて、該当の単元で「ここまで」を押すだけ。", tab: "reg", mode: "unit", t: "1分" });
     if (weekend && !paperThisWeek && !pending.length && d.items.length > 0) A.push({ k: "make", title: "今週のテストを作って印刷する", why: "5教科まとめて1タップ。単元は自動で選ばれます。", tab: "week", mode: "make", t: "生成3分＋印刷" });

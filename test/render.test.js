@@ -98,13 +98,12 @@ test("デモ: 今日/採点 に昨日印刷した項目が並び、既定は採�
   assert.ok(!p.includes('ir-label">負の数のかけ算'), "印刷済みは印刷に出ない");
   assert.ok(p.includes("採点待ちの分をもう一度PDFにする"));
 });
-test("デモ: ホームは「昨日の分を採点 → 今日の分を印刷」の順", () => {
+test("デモ: ホームは「夜の作業」が先頭で、その中身（採点・印刷・×登録）は別の行に並べない", () => {
   const { A } = m.nextActions(F.demo());
   const ks = A.map((a) => a.k);
-  assert.ok(ks.indexOf("mark") >= 0 && ks.indexOf("print") > ks.indexOf("mark"), ks.join(","));
-  assert.ok(A.find((a) => a.k === "mark").title.includes("1件") && A.find((a) => a.k === "print").title.includes("3件"));
-  assert.equal(A.find((a) => a.k === "mark").mode, "grade"); assert.equal(A.find((a) => a.k === "print").mode, "print");
-  assert.ok(!ks.includes("today"));
+  assert.equal(ks[0], "night");
+  for (const k of ["mark", "print", "wb", "today", "confirm"]) assert.ok(!ks.includes(k), k + " は並べない");
+  assert.ok(A[0].why.includes("採点 1 件") && A[0].why.includes("明日の分 3 件"));
 });
 test("デモ: 分析に保持率が出る", () => {
   const { html } = render(m.AnaTab, { d: F.demo() });
