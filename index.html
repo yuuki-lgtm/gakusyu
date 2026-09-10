@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 13:57"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 14:07"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -391,9 +391,9 @@ function judgeCarried(d, paper, marks, etypes = {}) {
 
 /* ---- 紙で回す（印刷セット・採点セット・一括確定） ---- */
 /* 明日までに期日が来る未印刷の項目（子どもが判定中のものは除く） */
-/* 1日の上限（今日の分に入れる件数）。設定タブで変える。既定6 */
+/* 1日の上限（今日の分に入れる問題数。3問の項目も1問の項目も問題数で合計）。設定タブで変える。既定18問 */
 const DAILY_MAX_KEY = "daily_max";
-const dailyMax = () => { const v = parseInt(LS(DAILY_MAX_KEY), 10); return v >= 1 && v <= 30 ? v : 6; };
+const dailyMax = () => { const v = parseInt(LS(DAILY_MAX_KEY), 10); return v >= 1 && v <= 60 ? v : 18; };
 /* 直近の定期テスト（範囲あり）の範囲の単元 id */
 const examRangeIds = (d) => new Set((upcomingExams(d)[0] || { unitIds: [] }).unitIds);
 /* 明日までに期日が来る未印刷の項目（候補）。優先順: 定期テストの範囲内 → 落とした回数 → 期日が古い */
@@ -404,12 +404,17 @@ function printSet(d) {
 }
 /* 一度に多数を登録したとき（今日の登録が上限の2倍以上）、初回の期日を翌日から上限ずつ後ろにずらす。全部が翌日に集中しないように */
 function spreadDue(newItems, d, max = dailyMax()) {
+  const perDay = Math.max(3, Math.round(max / 3)); // 新しい項目は3問なので、1日の問題数の上限を3で割った件数
   const t = today(); const already = (d.items || []).filter((i) => i.createdOn === t).length;
-  if (already + newItems.length < max * 2) return newItems;
-  return newItems.map((i, k) => ({ ...i, nextDue: addDays(t, 1 + Math.floor((already + k) / max)) }));
+  if (already + newItems.length < perDay * 2) return newItems;
+  return newItems.map((i, k) => ({ ...i, nextDue: addDays(t, 1 + Math.floor((already + k) / perDay)) }));
 }
 /* 候補のうち上限までを「今日の分」に、残りは繰り越し */
-function pickDaily(d, max = dailyMax()) { const all = printSet(d); return { chosen: all.slice(0, max), rest: all.slice(max), all }; }
+function pickDaily(d, max = dailyMax()) {
+  const all = printSet(d); const chosen = []; let problems = 0;
+  for (const i of all) { const c = problemCount(i); if (chosen.length && problems + c > max) break; chosen.push(i); problems += c; }
+  return { chosen, rest: all.slice(chosen.length), all, problems };
+}
 /* 印刷済みで、まだ確定していない項目 */
 function gradeSet(d) {
   return d.items.filter((i) => i.printedOn).sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : (a.printedAs || 999) - (b.printedAs || 999) || b.failCount - a.failCount));
@@ -1015,7 +1020,7 @@ function TodayMake({ d, save }) {
   const cands = printSet(d); const printed = gradeSet(d);
   const [sel, setSel] = useState(() => new Set(pickDaily(d).chosen.map((i) => i.id)));
   useEffect(() => { setSel(new Set(pickDaily(d).chosen.map((i) => i.id))); }, [cands.map((i) => i.id).join(","), dailyMax()]);
-  const set = cands.filter((i) => sel.has(i.id));
+  const set = cands.filter((i) => sel.has(i.id)); const auto = new Set(pickDaily(d).chosen.map((i) => i.id));
   const toggleSel = (id) => setSel((x) => { const n = new Set(x); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [log, setLog] = useState([]);
   const sec = useElapsed(busy);
@@ -1046,10 +1051,10 @@ function TodayMake({ d, save }) {
   const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { setErr(e.message || "PDFを作れませんでした"); } setBusy(""); };
   return (<>
     <section className="sec">
-      <p className="lead">明日までに期日が来る項目が候補です。上位 {dailyMax()} 件（「設定」で変えられます）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
+      <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
       {cands.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "明日の分はありません。"}</p>
-        : (<>{cands.map((i, k) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}{k >= dailyMax() && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? " · 類題あり" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}
-          <p className="ph-note">チェック {set.length} 件、繰り越し {cands.length - set.length} 件。</p>
+        : (<>{cands.map((i, k) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? " · 類題あり" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}
+          <p className="ph-note">チェック {set.length} 件（{set.reduce((a, i) => a + problemCount(i), 0)} 問）、繰り越し {cands.length - set.length} 件。</p>
           <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `この内容で作る（${set.length}件 → PDF）`}</button></>)}
       {err && <div className="errbox"><p>{err}</p></div>}
       {log.length > 0 && <div className="loglist">{log.map((l, k) => (<div key={k}>{l}</div>))}</div>}
@@ -1903,8 +1908,8 @@ function Settings({ d, save, setSync }) {
       <Fld label="共有ID（知っている人だけがデータに触れます）"><input value={room} onChange={(e) => setRoom(e.target.value)} placeholder="fam-..." /></Fld>
       <div className="q-btns"><button className="btn-sm" onClick={genRoom}>共有IDを作る</button><button className="btn-sm" onClick={saveSync}>保存</button><button className="btn-sm" onClick={testSync} disabled={busy === "sync" || !url || !anon || !room}>{busy === "sync" ? "確認中…" : "接続して同期"}</button></div>
       <p className="q-warn">奥様の端末では同じ3つを入れて「接続して同期」。以後は自動です。項目単位で新しい方を採用するので、2人が別々に入力しても消えません。共有IDはパスワードと同じ扱いです。</p></section>
-    <section className="sec"><h3 className="s-h">今日の分の上限</h3><p className="lead">1日に出す項目の件数。多すぎると続きません。超えた分は翌日に繰り越します。</p>
-      <Fld label="1日の上限（1〜30、既定6）"><input type="number" inputMode="numeric" min="1" max="30" value={dmax} onChange={(e) => { setDmax(e.target.value); const v = parseInt(e.target.value, 10); if (v >= 1 && v <= 30) localStorage.setItem(DAILY_MAX_KEY, String(v)); }} /></Fld></section>
+    <section className="sec"><h3 className="s-h">今日の分の上限</h3><p className="lead">1日に出す問題数。習得中の項目は3問、保持の確認は1問で数えます。多すぎると続きません。超えた分は翌日に繰り越します。</p>
+      <Fld label="1日の問題数の上限（1〜60、既定18）"><input type="number" inputMode="numeric" min="1" max="60" value={dmax} onChange={(e) => { setDmax(e.target.value); const v = parseInt(e.target.value, 10); if (v >= 1 && v <= 60) localStorage.setItem(DAILY_MAX_KEY, String(v)); }} /></Fld></section>
     <section className="sec"><h3 className="s-h">APIキー</h3><p className="lead">AI機能に必要です。console.anthropic.com で発行。この端末の中にだけ保存されます。</p>
       <Fld label="Anthropic API キー"><input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-..." autoComplete="off" /></Fld>
       <div className="q-btns"><button className="btn-sm" onClick={saveKey}>保存</button><button className="btn-sm" onClick={testKey} disabled={busy === "key" || !key.trim()}>{busy === "key" ? "確認中…" : "接続を確認"}</button></div></section>

@@ -95,7 +95,7 @@ test("デモ: 今日/採点 に昨日印刷した項目が並び、既定は採�
   assert.ok(!g.includes("指示語の内容を答える"), "未印刷の項目は採点に出ない");
   const p = render(m.TodayTab, { d: F.demo(), save: noop, initial: "print" }).html;
   assert.ok(p.includes("指示語の内容を答える") && p.includes("六大陸の名前") && p.includes("この内容で作る（3件"), (p.match(/この内容で作る[^<]*/) || [])[0]);
-  assert.ok(p.includes("チェック 3 件、繰り越し 0 件") && p.includes('type="checkbox" checked=""'));
+  assert.ok(p.includes("チェック 3 件（9 問）、繰り越し 0 件") && p.includes('type="checkbox" checked=""'));
   assert.ok(!p.includes('ir-label">負の数のかけ算'), "印刷済みは印刷に出ない");
   assert.ok(p.includes("採点待ちの分をもう一度PDFにする"));
 });
@@ -300,9 +300,9 @@ test("×の登録: テストは答案だけをめくり、問題用紙の有無�
 test("今日/印刷: 上限を超えた候補は繰り越しとして未チェック。ヘッダーに繰り越しの件数", () => {
   const d = F.demo(); d.items = [...d.items, ...Array.from({ length: 6 }, (_, k) => ({ ...d.items.find((i) => i.id === "i5"), id: "x" + k, label: "追加" + k, printedOn: null, failCount: 0, nextDue: F.T }))];
   const html = render(m.TodayTab, { d, save: noop, initial: "print" }).html;
-  assert.ok(html.includes("チェック 6 件、繰り越し 3 件") && html.includes("> 繰り越し</em>"));
+  assert.ok(html.includes("チェック 6 件（18 問）、繰り越し 3 件") && html.includes("> 繰り越し</em>"));
   assert.ok(render(m.App, {}).html.includes("読み込み中"));
 });
 test("設定: 今日の分の上限の欄がある", () => {
-  assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("1日の上限（1〜30、既定6）"));
+  assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("1日の問題数の上限（1〜60、既定18）"));
 });
