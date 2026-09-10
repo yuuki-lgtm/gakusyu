@@ -405,9 +405,9 @@ test("未定着一覧: 仮の名前でタップ登録した項目があれば、
   assert.ok(h.includes("仮の項目 1 件に名前を付ける（AI）")); assert.ok(!h.includes("名前を付け直す"));
   assert.ok(!render(m.ItemList, { d: F.demo(), save: noop }).html.includes("名前を付ける（AI）"), "仮が無ければ出ない");
 });
-test("ホーム: 数字カード（連続・未定着・安定・マス目）は無く、次の定期テストの1行（D-N と範囲内の未定着）だけ。定期テストが無ければ出ない", () => {
+test("ホーム: 数字カード（連続・未定着・安定・マス目）は無く、次の定期テストの1行（あとN日と範囲内の未定着）。定期テストが無ければ未定着の件数", () => {
   const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
   assert.ok(!h.includes("hm-row") && !h.includes('class="heat sm"') && !h.includes(">連続<"));
-  assert.ok(/class="blk exam-line"/.test(h) && /D-\d+/.test(h) && h.includes("範囲の未定着 "));
-  const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(!e.includes("exam-line"));
+  assert.ok(/class="blk exam-line"/.test(h) && /あと\d+日/.test(h) && !/D-\d+/.test(h) && h.includes("範囲の未定着 "));
+  const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(e.includes("exam-line") && e.includes(">未定着<") && e.includes("0件"), "定期テストが無ければ未定着の件数");
 });

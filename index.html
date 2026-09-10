@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 22:44"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 22:47"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1010,7 +1010,7 @@ function App() {
   const nextExam = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
   const left = nextExam ? diffDays(today(), nextExam.date) : null;
   // 下のバーは頻度で3つ。毎日＝ホーム（夜の作業・朝の印刷・今日）、週1＝週末（テスト・模試・定期）、たまに＝その他（登録・分析・依頼文・設定）
-  const tabs = [["home", "ホーム"], ["week", left !== null && left <= 14 ? `週末 D-${left}` : "週末"], ["more", "その他"]];
+  const tabs = [["home", "ホーム"], ["week", left !== null && left <= 14 ? `週末 あと${left}日` : "週末"], ["more", "その他"]];
   const group = GROUP_OF[tab] || "home";
   // バーは、そのグループで最後に開いていた画面に戻す（その他→登録→ホーム→その他 なら登録）。いま居るグループをもう一度押すと先頭へ
   lastIn.current[group] = tab;
@@ -1058,7 +1058,8 @@ function HomeTab({ d, go }) {
       : (<div className="hero quiet"><div className="hero-k">いまやること</div><div className="hero-t">今日はありません</div><div className="hero-w">次の再出題日を待っています。週末になったらテストを作ってください。</div></div>)}
     <MorningPrint d={d} />
     {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span></button>))}</div>)}
-    {nx && (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>D-{left}</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)}
+    {nx ? (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>あと{left}日</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)
+      : (<button className="blk exam-line" onClick={() => go("reg", "list")}><span className="hm-k">未定着</span><strong>{d.items.filter((i) => i.status === "active").length}件</strong><span className="ex-n">安定 {d.items.filter((i) => i.status === "stable").length}件 · 定期テストは「週末→定期」で登録</span></button>)}
     <div className="blk"><h3>1週間の流れ</h3><ol className="flow">
       <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て右の欄に ○× → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> ホームの「夜の作業」を押して、採点 → ×登録 → 最後のページ → 明日の分、の順に「次へ」</li><li><b>土曜</b> 「週末→作る」で5教科 → 1つのPDFで印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」</li><li><b>日曜</b> 「週末→読解・記述」で読解1本・記述1本 → 撮る</li><li><b>定期テスト前（14日前から）</b> ホームに「模試を作る」が出たら「週末→模試」で作って印刷 → 50分で解く → 赤ペンで採点 → 用紙の行で撮る。14・7・3日前の3回</li><li><b>返却時</b> 「その他→登録→教材」で答案を「テスト」として取り込む → 「落とした項目」で×をタップ → 「週末→定期」で実点を入れる</li><li><b>週1</b> 「その他→依頼文」をコピーして相談</li></ol></div>
   </div>);
@@ -1360,7 +1361,7 @@ function MockMaker({ d, save, preset }) {
     <section className="sec">
       <p className="lead">定期テストの範囲で、本番と同じ形式（50分・100点満点・配点つき・大問構成）の模試を1教科ずつ作ります。返却されたテストが取り込んであれば、その形式に寄せます。50分で解かせ、赤ペンで採点して「撮る」で読み取ると、100点換算で記録され、×は未定着に入ります。</p>
       {exams.length > 1 && <Fld label="どの定期テストか"><select value={ex.id} onChange={(e) => setExId(e.target.value)}>{exams.map((e) => (<option key={e.id} value={e.id}>{e.name || "テスト"} {e.date}</option>))}</select></Fld>}
-      <p className="ph-note">{ex.name || "テスト"} {ex.date}（D-{left}）。{mockRound(left) ? `${mockRound(left)}日前の回。` : "14日前から、14・7・3日前の3回に分けて作るのが目安です。"}1日1〜2教科まで。{sel.map((s) => { const n = testSheets(d, s).length; return n ? `${s}は返却テスト${n}枚を形式の参考にします。` : ""; }).join("")}</p>
+      <p className="ph-note">{ex.name || "テスト"} {ex.date}（あと{left}日）。{mockRound(left) ? `${mockRound(left)}日前の回。` : "14日前から、14・7・3日前の3回に分けて作るのが目安です。"}1日1〜2教科まで。{sel.map((s) => { const n = testSheets(d, s).length; return n ? `${s}は返却テスト${n}枚を形式の参考にします。` : ""; }).join("")}</p>
       <div className="chips mb">{subjects.map((s) => { const done = mocks.some((p) => p.subject === s && p.round === mockRound(left)); return (<button key={s} className={"chip" + (sel.includes(s) ? " on" : "")} style={sel.includes(s) ? { background: HUE[s] } : {}} onClick={() => toggle(s)}>{s}{done && "✓"}</button>); })}</div>
       <button className="btn-main" onClick={make} disabled={!!busy || !sel.length || !ex}>{busy ? `${busy} を作成中… ${sec}秒` : `模試を作る（${sel.map((s) => s).join("・") || "教科を選ぶ"}）`}</button>
       {log.length > 0 && <div className="loglist">{log.map((l, i) => (<div key={i}>{l}</div>))}</div>}
@@ -1989,7 +1990,7 @@ function ExamCard({ ex, d, save }) {
   const stuck = rangeItems.filter((i) => i.failCount >= 3);
   const predicted = (s) => predictFor(d, ex, s);
   return (<div className="blk">
-    <div className="ex-h"><strong>{ex.name || "テスト"}</strong> {ex.date} {!past && <em className={"cnt-b" + (left <= 14 ? " near" : "")}>D-{left}</em>}<button className="btn-x" onClick={() => save(removeRec(d, "exams", ex.id))}>×</button></div>
+    <div className="ex-h"><strong>{ex.name || "テスト"}</strong> {ex.date} {!past && <em className={"cnt-b" + (left <= 14 ? " near" : "")}>あと{left}日</em>}<button className="btn-x" onClick={() => save(removeRec(d, "exams", ex.id))}>×</button></div>
     <Fld label="出題範囲"><div className="chips">{d.units.map((u) => (<button key={u.id} className={"chip" + (ex.unitIds.includes(u.id) ? " on" : "")} style={ex.unitIds.includes(u.id) ? { background: HUE[u.subject] } : {}} onClick={() => upd({ unitIds: ex.unitIds.includes(u.id) ? ex.unitIds.filter((x) => x !== u.id) : [...ex.unitIds, u.id] })}>{u.subject}・{u.name}</button>))}</div></Fld>
     {!past && ex.unitIds.length > 0 && (<>
       <div className={"count" + (left <= 14 ? " near" : "")}><div className="cn-n">あと {left} 日</div><div className="cn-s">範囲内の未定着 <strong>{rangeItems.length}</strong> 件{left <= 14 && " · 新しいことはやらず、これだけを潰す"}{left <= 14 && deferredFor(d, ex).length > 0 && ` · 範囲外の ${deferredFor(d, ex).length} 件は ${addDays(ex.date, 1).slice(5)} まで後ろ倒し`}</div></div>
