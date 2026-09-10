@@ -116,7 +116,7 @@
 - `paperHTML(p, res)` で用紙HTML。シートは `data-part="q"`（資料・問題）と `"a"`（解答）。`genToPaper(items)` は類題を用紙にする（項目ごとに教科・単元の見出し、説明の問い、「自分の判定」の欄）。
 - `buildPDF(papers)` は用紙の配列を受け、html2canvas + jsPDF でA4に詰める（ブロックごとに画像化、境目で切らない）。各用紙の「資料＋問題」を先に並べ、用紙ごとに奇数ページなら白紙を足して偶数にし、解答は全用紙ぶんを最後に教科で改ページせず詰める。両面印刷1回で解答が必ず別の紙になる。今日の類題PDFも5教科の確認テストも同じ経路。
 - `exportPDF()`: iOS は `navigator.share` で共有シート、それ以外はダウンロード。「HTMLで保存」は予備で、白紙の調整は入らない。
-- 既知の問題: html2canvas は oklab/oklch を読めないので独立 iframe 内で描画。html2canvas は詰め（`font-feature-settings: palt`）やカーニングがあると「【」「」」や数字がずれて消えるので、iframe 内では詰め・カーニング・字間をすべて切る（画面のプレビューだけ palt）。文字は A4 に対して本文 11.5px（約8.5pt）、解答 11px、罫線の間隔 19px。iOS Safari は画面より広い iframe の文字を自動で拡大する（text-size-adjust）ので、iframe に viewport meta と `-webkit-text-size-adjust:none` を入れている（これが無いと iPhone だけ文字が1.5倍ほどになる。Chrome では再現しない）。実ブラウザで確認すること。2026-09-10 に Windows Chrome で 2教科6ページと類題3ページ（問題＋白紙＋解答）を確認済み。
+- 既知の問題: html2canvas は oklab/oklch を読めないので独立 iframe 内で描画。html2canvas は詰め（`font-feature-settings: palt`）やカーニングがあると「【」「」」や数字がずれて消えるので、iframe 内では詰め・カーニング・字間をすべて切る（画面のプレビューだけ palt）。文字は A4 に対して本文 12.5px（約9.5pt）、解答 12px、罫線の間隔 21px（2026-09-10 に iPhone で確認して決めた）。iOS Safari は画面より広い iframe の文字を自動で拡大する（text-size-adjust）ので、iframe に viewport meta と `-webkit-text-size-adjust:none` を入れている（これが無いと iPhone だけ文字が1.5倍ほどになる。Chrome では再現しない）。実ブラウザで確認すること。2026-09-10 に Windows Chrome で 2教科6ページと類題3ページ（問題＋白紙＋解答）を確認済み。
 
 ## AI
 - Anthropic API を直接呼ぶ（`anthropic-dangerous-direct-browser-access`）。キーは localStorage。モデルの使い分け: 類題生成・答案や紙の読み取り・目次と索引・項目名付け → `claude-sonnet-5`（`SONNET`）、診断・同じ技能かの判定（既存の一覧を渡すとき）・模試の作問 → `claude-opus-5`（`OPUS`）。`callAI(content, system, maxTokens, model)` は失敗したら Sonnet 5 で1回やり直す（Sonnet が失敗したら Sonnet でもう一度）。設定の「すべて Opus 5 を使う」（localStorage `all_opus`）で全部 Opus に（`pickModel`）。
