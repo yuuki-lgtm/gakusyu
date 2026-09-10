@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 07:14"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 07:17"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -582,6 +582,17 @@ const MODEL = SONNET, FALLBACK = SONNET;
 const ALL_OPUS_KEY = "all_opus";
 const allOpus = () => LS(ALL_OPUS_KEY) === "1";
 const pickModel = (m) => (allOpus() ? OPUS : m || SONNET);
+/* 利用者側で直すまで AI が使えない状態: キー未設定／キー無効／残高切れ。localStorage の api_block に持ち、成功した呼び出しで消す。
+   ヘッダーの下の帯（Banner）に全画面で出し続ける。スナックバーには出さない */
+const BLOCK_KEY = "api_block";
+const BLOCK_TEXT = { nokey: "API キーが未設定です。類題・名前付け・作問などの AI が使えません。", invalid: "API キーが無効です。「その他→設定」で確かめてください。", credit: "API の残高がありません。console.anthropic.com で補充してください。" };
+let blockFn = null; // App が登録。状態が変わったら描き直す
+const apiBlock = () => { if (!hasKey()) return { kind: "nokey" }; try { const v = JSON.parse(localStorage.getItem(BLOCK_KEY) || "null"); return v && BLOCK_TEXT[v.kind] ? v : null; } catch { return null; } };
+const setApiBlock = (kind) => { try { if (kind) localStorage.setItem(BLOCK_KEY, JSON.stringify({ kind, at: today() })); else localStorage.removeItem(BLOCK_KEY); } catch {} if (blockFn) blockFn(apiBlock()); };
+function Banner({ block, go }) {
+  if (!block) return null;
+  return (<div className={"banner " + block.kind} role="alert"><span>{BLOCK_TEXT[block.kind]}</span>{block.kind !== "credit" && <button className="lnk" onClick={() => go("set")}>設定を開く →</button>}</div>);
+}
 let lastUsed = "";
 const usedLabel = () => (lastUsed === OPUS ? "Opus 5" : lastUsed === SONNET ? "Sonnet 5" : lastUsed ? lastUsed : "");
 const API_HEADERS = () => ({ "Content-Type": "application/json", "x-api-key": LS(AKEY), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" });
@@ -601,7 +612,9 @@ async function once(model, content, system, maxTokens) {
     body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: "user", content }] }),
   });
   let data; try { data = await res.json(); } catch { throw new Error(`応答を読めませんでした (HTTP ${res.status})`); }
-  if (!res.ok || data.error) throw new Error(apiErrorText(res.status, data?.error?.message));
+  if (!res.ok || data.error) { const msg = data?.error?.message; const jp = apiErrorText(res.status, msg); const err = new Error(jp);
+    err.block = jp.startsWith("API の残高") ? "credit" : jp.startsWith("API キーが無効") ? "invalid" : null; if (err.block) setApiBlock(err.block); throw err; }
+  setApiBlock(null);
   const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
   if (!text) throw new Error(`空の応答（${data.stop_reason || (data.content || []).map((c) => c.type).join(",") || "内容なし"}）`);
   return text;
@@ -622,7 +635,7 @@ const imgBlock = (b64) => ({ type: "image", source: { type: "base64", media_type
 /* 画面下（メニューバーの上）の通知（スナックバー）。ok・warn は 4.5 秒で消える。err は × を押すまで残る（見落とさない）。
    どの画面からも notify(text, kind) で出せる。App が snackFn を登録する */
 let snackFn = null;
-const notify = (text, kind = "ok") => { if (snackFn) snackFn(String(text), kind); };
+const notify = (text, kind = "ok") => { const t = String(text); if (/API の残高がありません|API キーが無効|APIキーが未設定|API キーが未設定/.test(t)) return; /* 直るまで帯に出る */ if (snackFn) snackFn(t, kind); };
 /* 先頭のアイコン: ok は ✓（緑の帯）、err は ⓧ（赤）、warn は !（橙） */
 const SNACK_ICON = {
   ok: (<svg className="sn-i" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="rgba(255,255,255,.18)" /><path d="M5.5 10.5l3 3 6-7" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>),
@@ -1023,7 +1036,7 @@ function App() {
   const pushTimer = useRef(null);
   useEffect(() => { (async () => {
     // 別の端末からの設定リンク（#cfg=…）で開かれたら、先に取り込む
-    try { if (/#cfg=/.test(window.location.hash) && importCfg(window.location.hash)) { window.history.replaceState(null, "", window.location.pathname + window.location.search); notify("設定を取り込みました"); } } catch {}
+    try { if (/#cfg=/.test(window.location.hash) && importCfg(window.location.hash)) { window.history.replaceState(null, "", window.location.pathname + window.location.search); notify("設定を取り込みました"); setApiBlock(null); } } catch {}
     let cur = null;
     try { const l = localStorage.getItem(KEY) || localStorage.getItem("gakushu_loop_v2"); cur = migrate(l ? JSON.parse(l) : null); } catch { cur = blank(); }
     if (syncOn()) { try { const remote = await pullRemote(); if (remote) { cur = mergeData(cur, migrate(remote.data)); localStorage.setItem(KEY, JSON.stringify(cur)); } setSync("ok"); } catch { setSync("err"); } }
@@ -1039,6 +1052,8 @@ function App() {
   };
 
   const [snacks, setSnacks] = useState([]);
+  const [block, setBlock] = useState(apiBlock);
+  useEffect(() => { blockFn = setBlock; setBlock(apiBlock()); return () => { blockFn = null; }; }, []);
   useEffect(() => { snackFn = (text, kind) => { const id = uid(); setSnacks((l) => [...l.filter((x) => x.kind === "err"), { id, text, kind }]); if (kind !== "err") setTimeout(() => setSnacks((l) => l.filter((x) => x.id !== id)), 4500); }; return () => { snackFn = null; }; }, []);
   // 登録直後の名前付けに失敗して「仮」のままの項目を、開いたときに裏で付け直す（同じ項目は1回の起動で1回だけ。ボタンを押す手間を無くす）
   const triedRef = useRef(new Set());
@@ -1065,6 +1080,7 @@ function App() {
   return (
     <div className="root"><style>{CSS}</style>
       <header className="hd"><div className="hd-t"><span>学習ループ</span>{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div></header>
+      <Banner block={block} go={go} />
       <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{TAB_ICONS[k]}<span className="tab-l">{l}</span></button>))}</nav>
       <main className="main">
         {Object.keys(opened).map((k) => { const m = opened[k].m; return (<div key={`${k}:${opened[k].n}`} hidden={tab !== k}>
@@ -2069,7 +2085,7 @@ function Settings({ d, save, setSync }) {
   const [key, setKey] = useState(LS(AKEY)); const [url, setUrl] = useState(LS(SB_URL)); const [anon, setAnon] = useState(LS(SB_KEY)); const [room, setRoom] = useState(LS(SB_ROOM));
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
   const say = (t) => notify(t); const dmaxT = useRef(null);
-  const saveKey = () => { localStorage.setItem(AKEY, key.trim()); say(key.trim() ? "APIキーを保存しました" : "削除しました"); };
+  const saveKey = () => { localStorage.setItem(AKEY, key.trim()); setApiBlock(null); say(key.trim() ? "APIキーを保存しました" : "削除しました"); };
   const testKey = async () => { setBusy("key"); localStorage.setItem(AKEY, key.trim()); try { await callAI("1+1は？数字だけ。", "簡潔に。", 30); say(`接続できました（${usedLabel()}）`); } catch (e) { notify("接続できません: " + e.message, "err"); } setBusy(""); };
   const saveSync = () => { localStorage.setItem(SB_URL, url.trim()); localStorage.setItem(SB_KEY, anon.trim()); localStorage.setItem(SB_ROOM, room.trim()); say("同期設定を保存しました"); };
   const genRoom = () => setRoom("fam-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10));
@@ -2169,7 +2185,9 @@ const CSS = `
 .root{--ink:#1E2321;--ink2:#5A615C;--ink3:#8A928C;--paper:#F6F7F5;--card:#FFF;--line:#DDE2DD;
  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
 .root *{box-sizing:border-box}
-.hd{padding:18px 16px 6px}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em;display:flex;align-items:center}.tabs{display:flex;gap:0;padding:0 0 env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0D0C}.tabs.three .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;letter-spacing:.02em;padding:8px 4px 7px;margin:0;border:none;border-radius:0;background:none;color:rgba(255,255,255,.5);-webkit-tap-highlight-color:transparent}
+.hd{padding:18px 16px 6px}
+.banner{display:flex;align-items:center;gap:10px;margin:0 12px 6px;padding:9px 12px;border-radius:4px;font-size:12px;line-height:1.5;background:#FBF3F2;border:1px solid #E4C4C0;color:#7A2D26}
+.banner span{flex:1}.banner .lnk{flex:0 0 auto;color:#7A2D26;font-weight:700;padding:0;margin:0}.banner.nokey{background:#FFF7E8;border-color:#E8D3A6;color:#6B4A12}.banner.nokey .lnk{color:#6B4A12}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em;display:flex;align-items:center}.tabs{display:flex;gap:0;padding:0 0 env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0D0C}.tabs.three .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;letter-spacing:.02em;padding:8px 4px 7px;margin:0;border:none;border-radius:0;background:none;color:rgba(255,255,255,.5);-webkit-tap-highlight-color:transparent}
 .tab-i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tabs.three .tab:active{background:rgba(255,255,255,.08)}
 .tabs.three .tab.on{color:#fff;font-weight:700}

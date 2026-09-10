@@ -418,3 +418,9 @@ test("スナックバー: ok は文だけ、err は × 付き。空なら何も�
   assert.equal(render(m.Snacks, { list: [], onClose: noop }).html, "");
   assert.doesNotThrow(() => m.notify("x", "err"), "App が無いときは何もしない");
 });
+test("帯: 未設定は設定へのリンク付き、残高切れはリンク無し、無ければ出さない。残高切れの文はスナックバーに出さない", () => {
+  const a = render(m.Banner, { block: { kind: "nokey" }, go: noop }).html; assert.ok(a.includes('class="banner nokey"') && a.includes("設定を開く"));
+  const b = render(m.Banner, { block: { kind: "credit" }, go: noop }).html; assert.ok(b.includes("残高がありません") && !b.includes("設定を開く"));
+  assert.equal(render(m.Banner, { block: null, go: noop }).html, "");
+  assert.ok(Object.keys(m.BLOCK_TEXT).length === 3);
+});

@@ -1589,3 +1589,23 @@ describe("API のエラー文", () => {
     finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
   });
 });
+
+describe("使えない状態の帯", () => {
+  test("apiBlock: キーが無ければ nokey。残高切れ・キー無効は呼び出しの失敗で記録され、成功で消える", async () => {
+    const orig = globalThis.fetch;
+    try {
+      m.stubs.localStorage.removeItem("anthropic_api_key"); m.stubs.localStorage.removeItem("api_block");
+      assert.deepEqual(m.apiBlock(), { kind: "nokey" });
+      m.stubs.localStorage.setItem("anthropic_api_key", "sk"); assert.equal(m.apiBlock(), null);
+      globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { message: "Your credit balance is too low" } }) });
+      await assert.rejects(() => m.callAI("x", "y", 10)); assert.equal(m.apiBlock().kind, "credit");
+      globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({ error: { message: "invalid x-api-key" } }) });
+      await assert.rejects(() => m.callAI("x", "y", 10)); assert.equal(m.apiBlock().kind, "invalid");
+      globalThis.fetch = async () => ({ ok: false, status: 429, json: async () => ({ error: { message: "rate_limit" } }) });
+      m.setApiBlock(null); await assert.rejects(() => m.callAI("x", "y", 10)); assert.equal(m.apiBlock(), null, "回数制限は利用者側の問題ではないので帯にしない");
+      m.setApiBlock("credit");
+      globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: "2" }] }) });
+      await m.callAI("x", "y", 10); assert.equal(m.apiBlock(), null, "成功したら消える");
+    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); m.stubs.localStorage.removeItem("api_block"); }
+  });
+});
