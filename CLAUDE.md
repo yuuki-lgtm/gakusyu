@@ -139,7 +139,7 @@
 
 ## バージョンと運用
 - `index.html` の `VERSION`（ヘッダー右端と設定タブに表示）は、git の pre-commit フック `tools/pre-commit` がコミット日時で自動更新する。別の環境では一度 `sh tools/install-hooks.sh`。
-- push すると GitHub Pages に1〜2分で反映。iPhone で古いままなら、アプリを完全に終了して開き直す。
+- push すると GitHub Pages に1〜2分で反映。iPhone で古いままなら、設定の「最新版に更新（再読み込み）」（クエリを付けて `location.replace`）。それでも古ければアプリを完全に終了して開き直す。
 - ブラウザの `alert`／`confirm` は使わない（削除の確認は画面内の2択）。
 
 ## 決めたことと理由

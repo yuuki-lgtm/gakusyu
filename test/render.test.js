@@ -314,3 +314,6 @@ test("採点に「問題が変」があり、分析に件数が出る", () => {
   const ana = render(m.AnaTab, { d: { ...F.demo(), genCount: 20, badCount: 2 } }).html;
   assert.ok(ana.includes("問題が変") && ana.includes("生成 20 件（10%）"));
 });
+test("設定: 「最新版に更新（再読み込み）」がある", () => {
+  assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("最新版に更新（再読み込み）"));
+});

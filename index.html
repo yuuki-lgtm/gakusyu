@@ -1944,7 +1944,8 @@ function Settings({ d, save, setSync }) {
       <div className="q-btns"><button className="btn-sm" onClick={backup}>書き出す</button><label className="btn-sm ctr">読み込む<input type="file" accept="application/json" onChange={restore} hidden /></label></div>
       <p className="q-warn">未定着 {d.items.filter((i) => i.status === "active").length} ／ 安定 {d.items.filter((i) => i.status === "stable").length} ／ 記録 {d.tests.length} ／ 単元 {d.units.length}</p></section>
     <section className="sec"><h3 className="s-h">ホーム画面に追加</h3><p className="lead">Safariで開き、共有ボタン →「ホーム画面に追加」。印刷もSafariの共有から行えます。</p></section>
-    <section className="sec"><h3 className="s-h">バージョン</h3><p className="lead">v{VERSION}（コミットの日時）。画面が古いと感じたら、アプリを完全に終了して開き直し、この日時が進んでいるか確認してください。</p></section>
+    <section className="sec"><h3 className="s-h">バージョン</h3><p className="lead">v{VERSION}（コミットの日時）。画面が古いと感じたら下のボタンで読み込み直してください。それでも古ければ、アプリを完全に終了して開き直します。</p>
+      <button className="btn-sm wide" onClick={() => { try { window.location.replace(window.location.pathname + "?r=" + Date.now()); } catch {} }}>最新版に更新（再読み込み）</button></section>
     {msg && <p className="msg fixed">{msg}</p>}
   </div>);
 }
