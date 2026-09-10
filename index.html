@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 14:08"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 14:11"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1054,7 +1054,10 @@ function TodayMake({ d, save }) {
           if (needsCheck(cur)) { // 検算: 別の呼び出しで解かせ、不一致なら作り直す（最大2回）
             setBusy(`検算 ${k + 1}/${set.length}`); let v = await verifyGen(cur, g);
             if (!v.ok) { setBusy(`作り直し ${k + 1}/${set.length}`); g = await genForItem(cur, unitOf(cur.unitId), ctxFor(d, cur), `${g.problems.map((p) => p.q).join(" / ")}（前回は検算で問${v.bad.join("・")}が不一致。解答を必ず確かめる）`); genN++; v = await verifyGen(cur, g); }
-            if (!v.ok) { unverified.push(cur.label); cur = { ...cur, gen: null, genOn: null, updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x)); continue; }
+            if (!v.ok) { // 2回とも不一致: 類題が作れなかった項目と同じ扱い（元の問題を切り出して載せ、説明を求め、「解けた」では据え置き）。元の問題が無ければ翌日に
+              cur = { ...cur, gen: null, genOn: null, ...(hasPos(cur.src) ? { printedOrig: true } : {}), updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x));
+              if (hasPos(cur.src)) { orig.push(`${cur.label}（検算で不一致）`); ok.push(cur); } else unverified.push(cur.label);
+              continue; }
             g = { ...g, checked: true };
           }
           cur = { ...cur, ...applyGen(cur, g), updatedAt: now() }; items = items.map((x) => (x.id === cur.id ? cur : x)); save({ ...d, items, genCount: (d.genCount || 0) + genN }); }
@@ -1068,7 +1071,7 @@ function TodayMake({ d, save }) {
       await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`));
       const pos = new Map(ok.map((i, k) => [i.id, k + 1]));
       save({ ...d, items: items.map((x) => (pos.has(x.id) ? { ...x, printedOn: today(), printedAs: pos.get(x.id), updatedAt: now() } : x)), genCount: (d.genCount || 0) + genN, log: { ...d.log, [today()]: true } });
-      setLog([`${ok.length}件を1枚にまとめました。印刷して明日の机に。`, ...unverified.map((b) => `検算で2回とも不一致（翌日に回します）: ${b}`), ...orig.map((b) => `類題を作れなかったので元の問題を載せました（この回は「説明もできた」でのみ進みます）: ${b}`), ...bad.map((b) => `作れなかった項目（次回に回します）: ${b}`)]);
+      setLog([`${ok.length}件を1枚にまとめました。印刷して明日の机に。`, ...unverified.map((b) => `検算で2回とも不一致で、元の問題も無いので翌日に回します: ${b}`), ...orig.map((b) => `類題を作れなかったので元の問題を載せました（この回は「説明もできた」でのみ進みます）: ${b}`), ...bad.map((b) => `作れなかった項目（次回に回します）: ${b}`)]);
     } catch (e) { setErr(e.message || "PDFを作れませんでした"); }
     setBusy("");
   };
