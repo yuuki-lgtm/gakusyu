@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 08:58"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 08:55"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -2223,12 +2223,12 @@ const CSS = `
 .taskbox{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:11px;margin:8px 0}.tk-p{font-size:14px;line-height:1.6;margin-bottom:6px;font-weight:700}
 .tr{font-size:12px;line-height:1.9;white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;margin:8px 0}
 .tabhint{font-size:12px;color:var(--ink2);background:#EEF1EE;border-radius:3px;padding:8px 10px;margin:0 0 12px;line-height:1.6}
-.hero{display:block;width:100%;text-align:left;font-family:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-left:4px solid var(--ink);border-radius:6px;padding:16px 16px 14px;margin-bottom:12px;cursor:pointer;box-shadow:0 2px 8px rgba(30,35,33,.10);position:relative;-webkit-tap-highlight-color:transparent}
+.hero{display:block;width:100%;text-align:left;border:none;font-family:inherit;color:#fff;background:var(--ink);border-radius:6px;padding:18px 16px;margin-bottom:12px;cursor:pointer;box-shadow:0 6px 16px rgba(30,35,33,.28);position:relative;-webkit-tap-highlight-color:transparent}
 .press{transition:transform .08s,box-shadow .08s}.press:active{transform:translateY(1px) scale(.995);box-shadow:0 2px 6px rgba(30,35,33,.2)}
 .chev{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:24px;text-align:center;font-size:26px;line-height:1;color:var(--ink3);font-weight:400}
-.hero.quiet{border-left-color:#2F6F5E;cursor:default}
-.hero-k{font-size:11px;color:var(--ink3);letter-spacing:.08em;margin-bottom:6px}.hero-t{font-size:19px;font-weight:700;line-height:1.4;margin-bottom:6px}.hero-w{font-size:12px;color:var(--ink2);line-height:1.6}
-.hero-b{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px}.hero-b>span:first-child{color:var(--ink3)}.hero .chev{position:static;transform:none;width:auto;font-size:26px;color:var(--ink3);padding:0 2px 0 12px}.nxt.press{position:relative;padding-right:52px;color:var(--ink);background:var(--card);box-shadow:0 2px 8px rgba(30,35,33,.10);border-color:var(--line);-webkit-tap-highlight-color:transparent}.nxt.press:active{background:var(--paper)}
+.hero.quiet{background:#2F6F5E;cursor:default}
+.hero-k{font-size:11px;opacity:.7;letter-spacing:.08em;margin-bottom:6px}.hero-t{font-size:19px;font-weight:700;line-height:1.4;margin-bottom:6px}.hero-w{font-size:12px;opacity:.85;line-height:1.6}
+.hero-b{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px}.hero-b>span:first-child{opacity:.85}.hero .chev{position:static;transform:none;width:auto;font-size:26px;color:#fff;opacity:.9;padding:0 2px 0 12px}.nxt.press{position:relative;padding-right:52px;color:var(--ink);background:var(--card);box-shadow:0 2px 8px rgba(30,35,33,.10);border-color:var(--line);-webkit-tap-highlight-color:transparent}.nxt.press:active{background:var(--paper)}
 .nxt{display:block;width:100%;text-align:left;padding:10px;margin-bottom:6px;border:1px solid var(--line);background:var(--paper);border-radius:3px;cursor:pointer;font-family:inherit}
 .nxt-t{display:block;font-size:13px;font-weight:700;color:var(--ink)}.nxt-w{display:block;font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
 .exam-line{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink2)}.exam-line strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}.exam-line strong.near{color:#8E3830}.exam-line .ex-n{flex:1}
