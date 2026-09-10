@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 22:38"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 22:44"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1050,8 +1050,7 @@ function MorningPrint({ d }) {
 function HomeTab({ d, go }) {
   const { A, left, nx } = nextActions(d);
   const [p, ...rest] = A;
-  const streak = streakDays(d.log);
-  const days = Array.from({ length: 14 }, (_, i) => addDays(today(), -13 + i));
+  const rangeN = nx ? d.items.filter((i) => i.status === "active" && examRangeIds(d).has(i.unitId)).length : 0; // 次の定期テストの範囲内の未定着
   return (<div className="pane">
     {p ? (<div className="hero" onClick={() => go(p.tab, p.mode)}>
       <div className="hero-k">いまやること</div><div className="hero-t">{p.title}</div><div className="hero-w">{p.why}</div>
@@ -1059,13 +1058,9 @@ function HomeTab({ d, go }) {
       : (<div className="hero quiet"><div className="hero-k">いまやること</div><div className="hero-t">今日はありません</div><div className="hero-w">次の再出題日を待っています。週末になったらテストを作ってください。</div></div>)}
     <MorningPrint d={d} />
     {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span></button>))}</div>)}
-    <div className="blk"><div className="hm-row"><div><div className="hm-k">連続</div><div className="hm-v">{streak}<small>日</small></div></div>
-      <div><div className="hm-k">未定着</div><div className="hm-v">{d.items.filter((i) => i.status === "active").length}</div></div>
-      <div><div className="hm-k">安定</div><div className="hm-v">{d.items.filter((i) => i.status === "stable").length}</div></div>
-      {nx && <div><div className="hm-k">{nx.name || "定期"}</div><div className="hm-v" style={{ color: left <= 14 ? "#8E3830" : "inherit" }}>D-{left}</div></div>}</div>
-      <div className="heat sm">{days.map((dd) => (<span key={dd} className={d.log[dd] ? "on" : ""} />))}</div></div>
+    {nx && (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>D-{left}</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)}
     <div className="blk"><h3>1週間の流れ</h3><ol className="flow">
-      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て「自分の判定」に印 → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> ホームの「夜の作業」を押して、採点 → ×登録 → 最後のページ → 明日の分、の順に「次へ」</li><li><b>土曜</b> 「週末→作る」で5教科 → 1つのPDFで印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」</li><li><b>日曜</b> 「週末→読解・記述」で読解1本・記述1本 → 撮る</li><li><b>定期テスト前（14日前から）</b> ホームに「模試を作る」が出たら「週末→模試」で作って印刷 → 50分で解く → 赤ペンで採点 → 用紙の行で撮る。14・7・3日前の3回</li><li><b>返却時</b> 「その他→登録→教材」で答案を「テスト」として取り込む → 「落とした項目」で×をタップ → 「週末→定期」で実点を入れる</li><li><b>週1</b> 「その他→依頼文」をコピーして相談</li></ol></div>
+      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て右の欄に ○× → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> ホームの「夜の作業」を押して、採点 → ×登録 → 最後のページ → 明日の分、の順に「次へ」</li><li><b>土曜</b> 「週末→作る」で5教科 → 1つのPDFで印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」</li><li><b>日曜</b> 「週末→読解・記述」で読解1本・記述1本 → 撮る</li><li><b>定期テスト前（14日前から）</b> ホームに「模試を作る」が出たら「週末→模試」で作って印刷 → 50分で解く → 赤ペンで採点 → 用紙の行で撮る。14・7・3日前の3回</li><li><b>返却時</b> 「その他→登録→教材」で答案を「テスト」として取り込む → 「落とした項目」で×をタップ → 「週末→定期」で実点を入れる</li><li><b>週1</b> 「その他→依頼文」をコピーして相談</li></ol></div>
   </div>);
 }
 
@@ -2130,8 +2125,8 @@ const CSS = `
 .hero-b{display:flex;justify-content:space-between;margin-top:12px;font-size:12px;opacity:.85}.hero-go{font-weight:700;opacity:1}
 .nxt{display:block;width:100%;text-align:left;padding:10px;margin-bottom:6px;border:1px solid var(--line);background:var(--paper);border-radius:3px;cursor:pointer;font-family:inherit}
 .nxt-t{display:block;font-size:13px;font-weight:700;color:var(--ink)}.nxt-w{display:block;font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
-.hm-row{display:flex;gap:14px;margin-bottom:10px}.hm-k{font-size:10px;color:var(--ink3)}.hm-v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
-.heat.sm{grid-template-columns:repeat(14,1fr);margin:0}
+.exam-line{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink2)}.exam-line strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}.exam-line strong.near{color:#8E3830}.exam-line .ex-n{flex:1}.hm-k{font-size:10px;color:var(--ink3)}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
+
 .flow{margin:0;padding-left:18px;font-size:12px;line-height:1.9;color:var(--ink2)}.flow b{color:var(--ink)}
 .root{--ink:#1E2321;--ink2:#5A615C;--ink3:#8A928C;--paper:#F6F7F5;--card:#FFF;--line:#DDE2DD;
  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
