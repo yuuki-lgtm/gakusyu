@@ -424,3 +424,8 @@ test("帯: 未設定は設定へのリンク付き、残高切れはリンク無
   assert.equal(render(m.Banner, { block: null, go: noop }).html, "");
   assert.ok(Object.keys(m.BLOCK_TEXT).length === 3);
 });
+test("ホーム: 「いまやること」と「そのあと」は説明文を含む面をボタンにせず、明示のボタン「開く →」を持つ", () => {
+  const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
+  assert.ok(h.includes('<div class="hero">') && h.includes('<button class="btn-hero">開く →</button>'));
+  assert.ok(!h.includes('<button class="nxt"') && h.includes('<div class="nxt nxt-row">') && h.includes('<button class="btn-sm nxt-a">開く →</button>'));
+});

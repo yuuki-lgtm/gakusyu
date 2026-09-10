@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 07:38"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 08:26"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1114,12 +1114,12 @@ function HomeTab({ d, go }) {
   const [p, ...rest] = A;
   const rangeN = nx ? d.items.filter((i) => i.status === "active" && examRangeIds(d).has(i.unitId)).length : 0; // 次の定期テストの範囲内の未定着
   return (<div className="pane">
-    {p ? (<div className="hero" onClick={() => go(p.tab, p.mode)}>
+    {p ? (<div className="hero">
       <div className="hero-k">いまやること</div><div className="hero-t">{p.title}</div><div className="hero-w">{p.why}</div>
-      <div className="hero-b"><span>{p.t}</span><span className="hero-go">開く →</span></div></div>)
+      <div className="hero-b"><span>{p.t}</span><button className="btn-hero" onClick={() => go(p.tab, p.mode)}>開く →</button></div></div>)
       : (<div className="hero quiet"><div className="hero-k">いまやること</div><div className="hero-t">今日はありません</div><div className="hero-w">次の再出題日を待っています。週末になったらテストを作ってください。</div></div>)}
     <MorningPrint d={d} />
-    {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span></button>))}</div>)}
+    {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<div className="nxt nxt-row" key={a.k}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span><button className="btn-sm nxt-a" onClick={() => go(a.tab, a.mode)}>開く →</button></div>))}</div>)}
     {nx ? (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>あと{left}日</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)
       : (<button className="blk exam-line" onClick={() => go("reg", "list")}><span className="hm-k">未定着</span><strong>{d.items.filter((i) => i.status === "active").length}件</strong><span className="ex-n">安定 {d.items.filter((i) => i.status === "stable").length}件 · 定期テストは「週末→定期」で登録</span></button>)}
     <div className="blk"><h3>1週間の流れ</h3><ol className="flow">
@@ -2174,10 +2174,10 @@ const CSS = `
 .taskbox{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:11px;margin:8px 0}.tk-p{font-size:14px;line-height:1.6;margin-bottom:6px;font-weight:700}
 .tr{font-size:12px;line-height:1.9;white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;margin:8px 0}
 .tabhint{font-size:12px;color:var(--ink2);background:#EEF1EE;border-radius:3px;padding:8px 10px;margin:0 0 12px;line-height:1.6}
-.hero{background:var(--ink);color:#fff;border-radius:5px;padding:18px 16px;margin-bottom:12px;cursor:pointer}
+.hero{background:var(--ink);color:#fff;border-radius:5px;padding:18px 16px;margin-bottom:12px}
 .hero.quiet{background:#2F6F5E;cursor:default}
 .hero-k{font-size:11px;opacity:.7;letter-spacing:.08em;margin-bottom:6px}.hero-t{font-size:19px;font-weight:700;line-height:1.4;margin-bottom:6px}.hero-w{font-size:12px;opacity:.85;line-height:1.6}
-.hero-b{display:flex;justify-content:space-between;margin-top:12px;font-size:12px;opacity:.85}.hero-go{font-weight:700;opacity:1}
+.hero-b{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-size:12px;opacity:.85}.btn-hero{opacity:1;padding:10px 18px;border:none;border-radius:4px;background:#fff;color:var(--ink);font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}.btn-hero:active{background:#E7EAE7}.nxt-row{cursor:default}.nxt-row .nxt-a{display:block;margin:8px 0 0 auto}
 .nxt{display:block;width:100%;text-align:left;padding:10px;margin-bottom:6px;border:1px solid var(--line);background:var(--paper);border-radius:3px;cursor:pointer;font-family:inherit}
 .nxt-t{display:block;font-size:13px;font-weight:700;color:var(--ink)}.nxt-w{display:block;font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
 .exam-line{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink2)}.exam-line strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}.exam-line strong.near{color:#8E3830}.exam-line .ex-n{flex:1}.hm-k{font-size:10px;color:var(--ink3)}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
