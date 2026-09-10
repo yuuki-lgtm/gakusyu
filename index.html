@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 08:41"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 08:45"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1017,7 +1017,7 @@ const TAB_ICONS = {
   week: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="15" rx="2" /><path d="M3.5 10.5h17M8 3.5v4M16 3.5v4" /></svg>),
   more: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none" /></svg>),
 };
-const GROUP_OF = { home: "home", today: "home", night: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more" };
+const GROUP_OF = { home: "home", today: "home", night: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more", guide: "more" };
 const openScreen = (o, t, m = null) => (m || !o[t] ? { ...o, [t]: { m, n: o[t] ? o[t].n + 1 : 0 } } : o);
 function App() {
   const [d, setD] = useState(null);
@@ -1092,6 +1092,7 @@ function App() {
           {k === "ana" && <AnaTab d={d} />}
           {k === "exam" && <WeekTab d={d} save={save} initial="exam" />}
           {k === "more" && <MoreTab d={d} go={go} />}
+          {k === "guide" && <GuideTab go={go} />}
           {k === "export" && <ExportTab d={d} />}
           {k === "set" && <Settings d={d} save={save} setSync={setSync} />}</div>); })}
         <Snacks list={snacks} onClose={(id) => setSnacks((l) => l.filter((x) => x.id !== id))} />
@@ -1122,8 +1123,7 @@ function HomeTab({ d, go }) {
     {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt press" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span><span className="chev">›</span></button>))}</div>)}
     {nx ? (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>あと{left}日</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)
       : (<button className="blk exam-line" onClick={() => go("reg", "list")}><span className="hm-k">未定着</span><strong>{d.items.filter((i) => i.status === "active").length}件</strong><span className="ex-n">安定 {d.items.filter((i) => i.status === "stable").length}件 · 定期テストは「テスト→定期テスト」で登録</span></button>)}
-    <div className="blk"><h3>1週間の流れ</h3><ol className="flow">
-      <li><b>平日・子ども</b> 机の紙（類題）を解く → 解答を見て右の欄に ○× → ワーク → ×は解答を見て閉じて再現</li><li><b>平日・親（夜5分）</b> ホームの「夜の作業」を押して、採点 → ×登録 → 最後のページ → 明日の分、の順に「次へ」</li><li><b>土曜</b> 「テスト→5教科テスト」で作る → 1つのPDFで印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」</li><li><b>日曜</b> 「テスト→読解・記述」で読解1本・記述1本 → 撮る</li><li><b>定期テスト前（14日前から）</b> ホームに「模試を作る」が出たら「テスト→模試」で作って印刷 → 50分で解く → 赤ペンで採点 → 用紙の行で撮る。14・7・3日前の3回</li><li><b>返却時</b> 「その他→登録→教材」で答案を「テスト」として取り込む → 「落とした項目」で×をタップ → 「テスト→定期テスト」で実点を入れる</li><li><b>週1</b> 「その他→依頼文」をコピーして相談</li></ol></div>
+    <button className="guide-link" onClick={() => go("guide")}><span>使い方がわからないときは</span><b>使い方を見る →</b></button>
   </div>);
 }
 
@@ -1934,6 +1934,51 @@ function MaterialReg({ d, save }) {
 }
 
 /* ---- その他（たまに使う画面のメニュー） ---- */
+/* ---- 使い方（初めての人向け。短い言葉で） ---- */
+function GuideTab({ go }) {
+  const S = ({ t, children }) => (<section className="sec guide"><h3 className="s-h">{t}</h3>{children}</section>);
+  return (<div className="pane">
+    <p className="tabhint">このアプリの使い方。困ったらここに戻ってください。</p>
+    <S t="このアプリは何をするもの？">
+      <p className="g-p">子どもが「まだ覚えていないこと」を集めて、忘れそうな日に紙で出し直すアプリです。親がやるのは1日5分。教えるのではなく、紙を渡して答え合わせを見るだけです。</p>
+    </S>
+    <S t="毎日（平日）">
+      <ol className="g-ol">
+        <li><b>子ども</b>：机の上の紙を解く → 答えを見て、右の欄に自分で ○ か × を書く → 学校のワークをやる。</li>
+        <li><b>親（夜5分）</b>：ホームの「夜の作業」を押す。①昨日の紙を撮って採点 → ②ワークの×をタップして登録 → ③今日やった最後のページを入れる → ④明日の紙を作って印刷。「次へ」で順に進みます。</li>
+      </ol>
+    </S>
+    <S t="週末">
+      <ol className="g-ol">
+        <li><b>土曜</b>：「テスト → 5教科テスト」で作って印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」。</li>
+        <li><b>日曜</b>：「テスト → 読解・記述」で1本ずつ。</li>
+      </ol>
+    </S>
+    <S t="定期テストの前と後">
+      <ol className="g-ol">
+        <li><b>まず登録</b>：「テスト → 定期テスト」で日付と範囲を入れる。14日前からホームに「模試を作る」が出ます。</li>
+        <li><b>前</b>：14・7・3日前に「テスト → 模試」で作って印刷。50分で解かせて採点し、用紙の行で撮る。</li>
+        <li><b>返ってきたら</b>：「その他 → 登録 → 教材の取り込み」で答案を「テスト」として取り込み、「落とした項目」で×をタップ。「テスト → 定期テスト」に点を入れる。</li>
+      </ol>
+    </S>
+    <S t="最初に1回だけ">
+      <ol className="g-ol">
+        <li>「その他 → 設定」で API キーと共有（Supabase）を入れる。</li>
+        <li>「その他 → 登録 → 教材の取り込み」でワークをスキャンして入れる（教科書は後でもよい）。</li>
+        <li>「その他 → 登録 → 単元と進度」で目次を撮るか手で単元を入れ、習ったところまで「ここまで」を押す。</li>
+      </ol>
+    </S>
+    <S t="困ったとき">
+      <ul className="g-ul">
+        <li><b>項目名が「仮」のまま</b>：AI の名前付けに失敗しています。開き直すと自動でやり直します。急ぐなら「未定着リスト」の上のボタン。</li>
+        <li><b>AI が使えない</b>：画面の上に赤か橙の帯が出ます。書いてある場所（設定や残高）を直せば消えます。</li>
+        <li><b>画面が古い</b>：「その他 → 最新版に更新」。</li>
+        <li><b>紙が無い朝</b>：ホームの「今日の紙をもう一度PDFに」。</li>
+      </ul>
+    </S>
+    <button className="btn-sm" onClick={() => go("more")}>← その他に戻る</button>
+  </div>);
+}
 function MoreTab({ d, go }) {
   const last = (arr) => (arr && arr.length ? arr.map((x) => x.updatedAt || "").sort().pop() : "");
   const rows = [
@@ -1946,6 +1991,7 @@ function MoreTab({ d, go }) {
   return (<div className="pane">
     <p className="tabhint">たまにしか使わない画面。毎日の操作はホーム、週末の作業は「週末」にあります。</p>
     {rows.map(([k, t, w, when]) => (<button className="nxt" key={k} onClick={() => go(k)}><span className="nxt-t">{t}</span><span className="nxt-w">{w}{when ? `　最終 ${String(when).slice(0, 10)}` : ""}</span></button>))}
+    <button className="nxt" onClick={() => go("guide")}><span className="nxt-t">使い方</span><span className="nxt-w">このアプリで何をするか、毎日・週末・テスト前にやることを短くまとめたページ。</span></button>
     <button className="nxt" onClick={reload}><span className="nxt-t">最新版に更新（再読み込み）</span><span className="nxt-w">いまは v{VERSION}。画面が古いと感じたら押す。それでも古ければアプリを完全に終了して開き直す。</span></button>
   </div>);
 }
@@ -2184,7 +2230,8 @@ const CSS = `
 .nxt-t{display:block;font-size:13px;font-weight:700;color:var(--ink)}.nxt-w{display:block;font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
 .exam-line{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink2)}.exam-line strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}.exam-line strong.near{color:#8E3830}.exam-line .ex-n{flex:1}.hm-k{font-size:10px;color:var(--ink3)}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
 
-.flow{margin:0;padding-left:18px;font-size:12px;line-height:1.9;color:var(--ink2)}.flow b{color:var(--ink)}
+.guide-link{display:flex;align-items:center;justify-content:space-between;width:100%;margin:4px 0 8px;padding:12px 14px;border:1px dashed var(--line);border-radius:4px;background:none;font-family:inherit;font-size:12px;color:var(--ink2);cursor:pointer;-webkit-tap-highlight-color:transparent}.guide-link b{color:var(--ink);font-size:13px}
+.guide .g-p{font-size:13px;line-height:1.8;margin:0}.g-ol,.g-ul{margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--ink2)}.g-ol li,.g-ul li{margin-bottom:6px}.g-ol b,.g-ul b{color:var(--ink)}.flow b{color:var(--ink)}
 .root{--ink:#1E2321;--ink2:#5A615C;--ink3:#8A928C;--paper:#F6F7F5;--card:#FFF;--line:#DDE2DD;
  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
 .root *{box-sizing:border-box}

@@ -29,6 +29,7 @@ const SCREENS = (d) => [
   ["テスト/既定", m.WeekTab, { d, save: noop, initial: null }],
   ["テスト/定期", m.WeekTab, { d, save: noop, initial: "exam" }],
   ["その他", m.MoreTab, { d, go: noop }],
+  ["使い方", m.GuideTab, { go: noop }],
   ["登録/単元", m.RegTab, { d, save: noop, initial: "unit" }],
   ["登録/項目", m.RegTab, { d, save: noop, initial: "item" }],
   ["登録/一覧", m.RegTab, { d, save: noop, initial: "list" }],
@@ -362,11 +363,15 @@ test("夜の作業の進み具合は番号つきのステップ表示（ボタ�
     assert.ok(!html.includes("night-steps")); }
   finally { m.nightSave(null); }
 });
-test("ホーム/1週間の流れ: 7行で、いまの画面の呼び名（週末・その他）を使う", () => {
+test("使い方: ホームには「1週間の流れ」を置かず、使い方への動線だけ。その他の下から2番目に「使い方」。使い方の画面はいまの呼び名を使う", () => {
   const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
-  for (const t of ["平日・子ども", "平日・親（夜5分）", "土曜", "日曜", "定期テスト前（14日前から）", "返却時", "週1"]) assert.ok(h.includes(`<b>${t}</b>`), t);
-  assert.ok(h.includes("「テスト→5教科テスト」") && h.includes("「テスト→模試」") && h.includes("「その他→登録→教材」") && h.includes("「その他→依頼文」") && h.includes("「テスト→定期テスト」"));
-  assert.ok(!h.includes("「定期」で実点") && !h.includes("「登録」で答案"));
+  assert.ok(!h.includes("1週間の流れ") && h.includes('class="guide-link"') && h.includes("使い方を見る →"));
+  const more = render(m.MoreTab, { d: F.demo(), go: noop }).html; const rows = [...more.matchAll(/<span class="nxt-t">([^<]*)<\/span>/g)].map((x) => x[1]);
+  assert.equal(rows[rows.length - 2], "使い方"); assert.equal(rows[rows.length - 1], "最新版に更新（再読み込み）");
+  const g = render(m.GuideTab, { go: noop }).html;
+  for (const t of ["このアプリは何をするもの？", "毎日（平日）", "週末", "定期テストの前と後", "最初に1回だけ", "困ったとき"]) assert.ok(g.includes(`<h3 class="s-h">${t}</h3>`), t);
+  for (const t of ["テスト → 5教科テスト", "テスト → 定期テスト", "その他 → 登録 → 教材の取り込み", "夜の作業", "今日の紙をもう一度PDFに"]) assert.ok(g.includes(t), t);
+  assert.ok(!g.includes("週末→") && !g.includes("「作る」"));
 });
 test("夜の作業: やることが無い段階は飛ばす。空のデータなら最初から「明日の分」、次へは実際の行き先", () => {
   m.nightSave(null);
