@@ -270,3 +270,10 @@ test("用紙の行を開くと、未採点なら「この用紙の答案を撮�
   assert.ok(!w.includes("採点した答案を撮る") && w.includes("テストを作る"));
   assert.equal(p2.status, "graded");
 });
+test("設定: SQL は未設定なら開き、設定済みなら畳む", () => {
+  const open = render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html;
+  assert.ok(/<details class="det" open=""/.test(open) && open.includes("初回だけ: Supabase で実行する SQL"));
+  m.stubs.localStorage.setItem("sb_url", "u"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("sb_room", "r");
+  try { const closed = render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html; assert.ok(!/<details class="det" open=""/.test(closed) && closed.includes("設定済みです")); }
+  finally { ["sb_url", "sb_key", "sb_room"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+});

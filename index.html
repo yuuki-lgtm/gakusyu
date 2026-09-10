@@ -1798,8 +1798,8 @@ function Settings({ d, save, setSync }) {
       <button className="btn-sm" onClick={doImport} disabled={!paste.trim()}>取り込む</button>
       <p className="q-warn">リンクには共有IDとキーが入っています。パスワードと同じ扱いで、送ったメッセージは消してください。</p></section>
     <section className="sec"><h3 className="s-h">夫婦でデータを共有する</h3>
-      <p className="lead">Supabaseの無料枠を使います。supabase.com でプロジェクトを作り、SQL Editor で下を実行してください。所要15分、費用ゼロ。</p>
-      <pre className="sql">{`create table state (\n  id text primary key,\n  data jsonb,\n  updated_at timestamptz default now()\n);\nalter table state enable row level security;\ncreate policy rw on state for all\n  to anon using (true) with check (true);\n\n-- 教材画像（ワーク・教科書）用の非公開バケット\ninsert into storage.buckets (id, name, public)\n  values ('materials', 'materials', false);\ncreate policy mat on storage.objects for all\n  to anon using (bucket_id = 'materials')\n  with check (bucket_id = 'materials');`}</pre>
+      <p className="lead">Supabaseの無料枠を使います。{syncOn() ? "設定済みです。" : "supabase.com でプロジェクトを作り、SQL Editor で下を実行してください。所要15分、費用ゼロ。"}</p>
+      <details className="det" open={!syncOn()}><summary>初回だけ: Supabase で実行する SQL</summary><pre className="sql">{`create table state (\n  id text primary key,\n  data jsonb,\n  updated_at timestamptz default now()\n);\nalter table state enable row level security;\ncreate policy rw on state for all\n  to anon using (true) with check (true);\n\n-- 教材画像（ワーク・教科書）用の非公開バケット\ninsert into storage.buckets (id, name, public)\n  values ('materials', 'materials', false);\ncreate policy mat on storage.objects for all\n  to anon using (bucket_id = 'materials')\n  with check (bucket_id = 'materials');`}</pre></details>
       <Fld label="プロジェクトURL（Settings → API）"><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" /></Fld>
       <Fld label="anon キー"><input type="password" value={anon} onChange={(e) => setAnon(e.target.value)} placeholder="eyJ..." /></Fld>
       <Fld label="共有ID（知っている人だけがデータに触れます）"><input value={room} onChange={(e) => setRoom(e.target.value)} placeholder="fam-..." /></Fld>
