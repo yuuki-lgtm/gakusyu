@@ -1425,3 +1425,32 @@ describe("問題が変", () => {
     assert.equal(m.printSet({ ...nd, items: nd.items.map((x) => (x.id === "a" ? { ...x, nextDue: day(-1) } : x)) }).some((x) => x.id === "a"), true, "翌日の候補に戻る");
   });
 });
+
+describe("考え方の説明（2回以上落ちた項目）", () => {
+  const it = (o) => item({ history: [], ...o });
+  test("needsGuide は落とした回数2以上", () => { assert.equal(m.needsGuide({ failCount: 1 }), false); assert.equal(m.needsGuide({ failCount: 2 }), true); });
+  test("guideFor: Opus 5 で説明と例題を作り、教科書のページを添える", async () => {
+    const orig = globalThis.fetch; let sent = null; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"explain":"負×負は正。\\n符号を先に決める。","example":{"q":"(−3)×(−2)","a":"符号は正。3×2=6 で 6"}}' }] }) }; };
+    try {
+      const d = F.demo(); const i = { ...d.items.find((x) => x.id === "i1"), failCount: 2 };
+      const g = await m.guideFor(i, d.units[0], m.ctxFor(d, i));
+      assert.equal(sent.model, m.OPUS);
+      assert.ok(g.explain.startsWith("負×負は正") && g.example.q === "(−3)×(−2)" && g.pages === "教科書 p.10-30" && g.fc === 2 && g.on === T);
+      assert.equal((await m.guideFor(i, null, m.ctxFor(d, i))).pages, "");
+    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+  test("用紙: 2回以上落ちた項目の類題の前に、番号なしの説明ブロック。解答ページと満点には数えない", () => {
+    const u = { id: "u", name: "正負の数", pages: "p.10-30" };
+    const items = [{ id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", failCount: 2, guide: { explain: "考え方の本文", example: { q: "例題Q", a: "例題A" }, pages: "教科書 p.10-30", fc: 2 }, gen: { problems: [{ q: "q1", a: "a1" }], why: "" } },
+      { id: "2", subject: "数学", unitId: "u", label: "B", fmt: "計算", failCount: 1, guide: { explain: "古い", fc: 1 }, gen: { problems: [{ q: "q2", a: "a2" }], why: "" } }];
+    const p = m.genToPaper(items, () => u);
+    assert.equal(p.questions.length, 3); assert.equal(p.questions[0].guide, true); assert.equal(p.questions[1].n, 1); assert.equal(p.questions[2].n, 2);
+    const h = m.paperHTML(p);
+    assert.ok(h.includes('class="guide"') && h.includes("考え方（A）") && h.includes("教科書 p.10-30") && h.includes("例題Q") && h.includes("例題A"));
+    assert.ok(h.indexOf("考え方の本文") < h.indexOf("q1"), "類題の前に出る");
+    assert.ok(h.includes("／2") && !h.includes("／3"), "満点は問題数だけ");
+    assert.equal((h.match(/class="arow"/g) || []).length, 4, "解答とねらいは2問ぶんだけ");
+    assert.ok(m.paperText(p).includes("【考え方】考え方の本文"));
+  });
+});
