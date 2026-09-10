@@ -1217,9 +1217,11 @@ function MaterialReg({ d, save }) {
     }
     setBusy("");
   };
-  const removeAll = async () => {
+  const [delPages, setDelPages] = useState("");
+  const delTargets = delPages.trim() ? (() => { const ps = new Set(parsePages(delPages)); return mine.filter((m) => ps.has(m.page)); })() : mine;
+  const remove = async (targets) => {
     setBusy("削除中"); setErr(""); setMsg("");
-    try { await stRemove(mine.map((m) => m.path)); const ids = new Set(mine.map((m) => m.id)); save({ ...d, materials: d.materials.filter((m) => !ids.has(m.id)), deleted: [...d.deleted, ...ids] }); setMsg("削除しました"); }
+    try { await stRemove(targets.map((m) => m.path)); const ids = new Set(targets.map((m) => m.id)); save({ ...d, materials: d.materials.filter((m) => !ids.has(m.id)), deleted: [...d.deleted, ...ids] }); setMsg(`${targets.length}ページを削除しました`); setDelPages(""); }
     catch (e) { setErr(e.message || "削除できませんでした"); }
     setBusy("");
   };
@@ -1241,9 +1243,10 @@ function MaterialReg({ d, save }) {
       {msg && <p className="msg">{msg}</p>}
     </section>
     {mine.length > 0 && (<section className="sec"><h3 className="s-h">{subject}の{kind} <span className="cnt">{mine.length}ページ</span></h3>
-      <p className="lead">p.{pagesToRanges(mine.map((m) => m.page))}。ページ番号を間違えたときは、いったん全部消してから入れ直してください。</p>
-      {confirmDel ? (<div className="del-ask"><p>{subject}の{kind} {mine.length}ページを共有先から消します。元に戻せません。</p><div className="q-btns"><button className="btn-sm danger" onClick={() => { setConfirmDel(false); removeAll(); }} disabled={!!busy}>本当に削除する</button><button className="btn-sm" onClick={() => setConfirmDel(false)}>やめる</button></div></div>)
-        : <button className="btn-x wide-x" onClick={() => setConfirmDel(true)} disabled={!!busy}>{subject}の{kind}を全部削除</button>}</section>)}
+      <p className="lead">p.{pagesToRanges(mine.map((m) => m.page))}。ページ番号を間違えたときは、同じ番号で入れ直すと上書きされます。余分なページは下で消せます。</p>
+      <Fld label="消すページ（空欄なら全部。例: 12-15, 20）"><input value={delPages} onChange={(e) => { setDelPages(e.target.value); setConfirmDel(false); }} placeholder="12-15, 20" /></Fld>
+      {confirmDel ? (<div className="del-ask"><p>{subject}の{kind} {delTargets.length}ページ（p.{pagesToRanges(delTargets.map((m) => m.page))}）を共有先から消します。元に戻せません。</p><div className="q-btns"><button className="btn-sm danger" onClick={() => { setConfirmDel(false); remove(delTargets); }} disabled={!!busy}>本当に削除する</button><button className="btn-sm" onClick={() => setConfirmDel(false)}>やめる</button></div></div>)
+        : <button className="btn-x wide-x" onClick={() => setConfirmDel(true)} disabled={!!busy || !delTargets.length}>{delPages.trim() ? (delTargets.length ? `p.${pagesToRanges(delTargets.map((m) => m.page))} の ${delTargets.length}ページを削除` : "該当するページがありません") : `${subject}の${kind}を全部削除`}</button>}</section>)}
     <section className="sec"><h3 className="s-h">取り込み方</h3><ol className="flow"><li>スキャンアプリ（iPhoneの「メモ」やプリンタ付属のもの）で1冊をPDFにするか、1ページずつ撮る。</li><li>見開きで撮ると左右2ページが1枚になるので、片ページずつ。</li><li>ページ番号は本の印刷どおりに。単元のページ範囲と照合します。</li></ol></section>
   </>);
 }
