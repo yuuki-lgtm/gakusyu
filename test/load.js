@@ -18,7 +18,7 @@ const EXPORTS = [
   "escHTML", "safeSvg", "paperHTML", "needBlank", "pdfName", "paperFigs", "usedFigs", "resolveRefs", "fileHTML", "paperText", "genToPaper", "isIOS",
   // 画面
   "App", "HomeTab", "TodayTab", "TodayMake", "TodayGrade", "TodayCards", "ItemCard", "WeekTab", "MakePapers", "PaperRow", "GradeFlow", "ReadingMaker", "WritingFlow", "ManualTest",
-  "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "MaterialReg", "TapReg", "tapHit", "marksOn", "tapsToItems", "markDone", "applyAutoProgress", "untouchedPages", "buildIndex", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",
+  "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "MaterialReg", "TapReg", "tapHit", "marksOn", "tapsToItems", "markDone", "markDoneUpTo", "applyAutoProgress", "untouchedPages", "buildIndex", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",
 ];
 
 function extractSource() {

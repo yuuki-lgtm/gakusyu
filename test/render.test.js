@@ -213,3 +213,8 @@ test("テスト/作る を cum で開くと累積が選ばれている", () => {
   assert.ok(/class="on">累積</.test(html) && !/class="on">週次</.test(html));
   assert.ok(/class="on">週次</.test(render(m.WeekTab, { d: F.demo(), save: noop, initial: "make" }).html));
 });
+test("デモ: ×の登録に「p.N までやった」の1タップが出る", () => {
+  const html = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html;
+  assert.ok(html.includes("までやった") && html.includes("今日やった最後のページ"));
+  assert.ok(!html.includes("×なし（やった）"));
+});

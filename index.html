@@ -397,6 +397,8 @@ function markDone(d, paths, on = today()) {
   const set = new Set(paths);
   return { ...d, materials: (d.materials || []).map((mt) => (set.has(mt.path) && !mt.doneOn ? { ...mt, doneOn: on, updatedAt: now() } : mt)) };
 }
+/* その教科・教材の、指定ページまでの取り込み済みページを全部「やった」にする（今日やった最後のページを1タップで） */
+const markDoneUpTo = (d, subject, kind, page) => markDone(d, matsOf(d, subject, kind).filter((mt) => mt.page <= page && !mt.doneOn).map((mt) => mt.path));
 /* やったページから進度を自動判定。単元のワーク（または教科書）のページのどれかが「やった」なら、その単元は習った扱い。手動の「ここまで」は残る */
 function applyAutoProgress(d) {
   const done = new Map(); (d.materials || []).forEach((mt) => { if (mt.doneOn) done.set(`${mt.subject}/${mt.kind}/${mt.page}`, mt.doneOn); });
@@ -1402,7 +1404,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     else setTimeout(() => setMsg(""), 4000);
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
-  const allOk = () => { if (!cur) return; save(applyAutoProgress(markDone({ ...d, log: { ...d.log, [today()]: true } }, [cur.path]))); setMsg(`p.${page} を「やった」にしました`); setTimeout(() => setMsg(""), 3000); };
+  const upTo = () => { if (!cur) return; const n = matsOf(d, subject, kind).filter((mt) => mt.page <= page && !mt.doneOn).length; save(applyAutoProgress(markDoneUpTo({ ...d, log: { ...d.log, [today()]: true } }, subject, kind, page))); setMsg(n ? `p.${page} までの ${n} ページを「やった」にしました` : `p.${page} までは「やった」になっています`); setTimeout(() => setMsg(""), 3000); };
   // 裏で問題番号の索引を作る（テスト前の「手つかず」検出用。無くても登録と類題には影響しない）。1ページ1回だけ。失敗したページはこのセッションでは再試行しない
   useEffect(() => { if (!cur || cur.idx || !hasKey() || _idxTried.has(cur.path)) return; const path = cur.path; _idxTried.add(path);
     buildIndex(cur).then((idx) => save((c) => ({ ...c, materials: (c.materials || []).map((mt) => (mt.path === path ? { ...mt, idx, updatedAt: now() } : mt)) }))).catch(() => {});
@@ -1419,12 +1421,14 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
         {old.map((i) => (<span key={i.id} className={"mk-old" + (i.status === "stable" ? " stable" : "") + (i.id === sel ? " sel" : "")} style={{ left: `${i.src.x * 100}%`, top: `${i.src.y * 100}%` }} />))}
         {here.map((t, k) => (<span key={k} className="mk-new" style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }} />))}
       </div></div>) : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
-    <p className="ph-note">×だった問題をタップ。もう一度タップで取り消し。薄い印は登録済みで、タップすると状態が見えます。{cur && !cur.doneOn && !here.length && <button className="lnk" onClick={allOk}>このページは×なし（やった）</button>}</p>
+    <p className="ph-note">×だった問題をタップ。もう一度タップで取り消し。薄い印は登録済みで、タップすると状態が見えます。</p>
     {selItem && (<div className="mpop"><div className="c-label">{selItem.label}</div>
       <div className="ir-meta">{selItem.status === "stable" ? "安定" : "未定着"} · {selItem.failCount}回 · 間隔{INT[selItem.level || 0]}日 · 次回 {selItem.nextDue.slice(5)}{selItem.printedOn ? " · 印刷済み" : ""}</div>
       <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selItem.etype === e ? " on" : "")} onClick={() => setEtype(selItem, e)}>{e}</button>))}</div></div>)}
     {taps.length > 0 && (<><p className="tap-sum">印 {taps.length}（{Object.entries(byPage).map(([k, n]) => `${k}: ${n}`).join("、")}）</p>
       <button className="btn-main" onClick={commit}>まとめて登録（{taps.length}件）</button></>)}
+    {kind !== "テスト" && cur && (<div className="lastp"><span>今日やった最後のページを開いて</span><button className="btn-sm" onClick={upTo} disabled={!!taps.length}>p.{page} までやった</button></div>)}
+    {kind !== "テスト" && cur && taps.length > 0 && <p className="ph-note">先に「まとめて登録」を押してから。</p>}
     {msg && <p className={"msg" + (naming ? " naming" : "")}>{msg}</p>}
   </div>);
 }
@@ -1730,6 +1734,7 @@ const CSS = `
 .mscroll{overflow:auto;-webkit-overflow-scrolling:touch;border-radius:3px}.mscroll.z{max-height:72vh;border:1px solid var(--line)}.zoom-row{display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:11px;color:var(--ink3)}.zoom-row .btn-sm{padding:4px 9px;font-size:11px}.zoom-row .btn-sm.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .mwrap{position:relative;display:block;user-select:none;-webkit-user-select:none;cursor:crosshair}.mwrap img{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff;-webkit-touch-callout:none}
 .mk-new,.mk-old{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel{box-shadow:0 0 0 3px #C08A3E}
+.lastp{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--ink2)}.lastp .btn-sm{margin-left:auto;white-space:nowrap}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}

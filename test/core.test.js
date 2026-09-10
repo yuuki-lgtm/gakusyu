@@ -818,3 +818,15 @@ describe("累積テストの間隔（30日）", () => {
     assert.equal(m.nextActions({ ...never, items: [] }).A.find((x) => x.k === "cum"), undefined);
   });
 });
+
+describe("今日やった最後のページ", () => {
+  test("markDoneUpTo: そのページまでの取り込み済みページを「やった」に。済みのものは触らず、後のページは触らない", () => {
+    const d = F.demo();
+    const r = m.markDoneUpTo(d, "数学", "ワーク", 11);
+    const by = Object.fromEntries(r.materials.map((x) => [x.path, x.doneOn || null]));
+    assert.equal(by["fam-demo/math/wb/10.jpg"], day(-3)); assert.equal(by["fam-demo/math/wb/11.jpg"], T); assert.equal(by["fam-demo/math/wb/12.jpg"], null);
+    assert.equal(by["fam-demo/math/tb/12.jpg"], null, "教科書は触らない");
+    assert.equal(m.markDoneUpTo(d, "数学", "ワーク", 5).materials.filter((x) => x.doneOn).length, 1, "手前なら変化なし");
+    assert.equal(m.applyAutoProgress(m.markDoneUpTo({ ...d, units: d.units.map((u) => ({ ...u, learnedOn: null })) }, "数学", "ワーク", 12)).units.find((u) => u.id === "u2").learnedOn, T, "進度も進む");
+  });
+});
