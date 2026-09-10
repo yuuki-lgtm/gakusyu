@@ -135,7 +135,7 @@ test("デモ: 登録/教材 に取り込み済みのページ範囲が出る。�
   assert.ok(html.includes("3ページ（p.10–12）"), "数学ワークの範囲");
   assert.ok(html.includes("1ページ（p.12）"), "数学教科書の範囲");
   assert.ok(html.includes("を全部削除") && !html.includes("本当に削除する"), "確認は押すまで出ない");
-  assert.ok(html.includes("見開き（1枚に2ページ）") && html.includes("右ページが若い番号"));
+  assert.ok(html.includes("横長の画像は見開きとして2ページ") && html.includes("右ページが若い番号"));
   assert.ok(html.includes("消すページ"));
   const e = render(m.RegTab, { d: F.empty(), save: noop, initial: "mat" }).html;
   assert.ok(e.includes("なし") && !e.includes("を全部削除"));

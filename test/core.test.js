@@ -718,12 +718,17 @@ describe("日付（ローカル日付。UTC 変換で1日ずれない）", () =>
 });
 
 describe("見開きの取り込み", () => {
-  test("spreadPages: 見開きなら1枚に2ページ、片ページなら1ページずつ", () => {
-    assert.deepEqual(m.spreadPages(12, 3, true), [[12, 13], [14, 15], [16, 17]]);
-    assert.deepEqual(m.spreadPages(12, 3, false), [[12], [13], [14]]);
-    assert.deepEqual(m.spreadPages(1, 0, true), []);
+  test("isSpreadShape: 横長なら見開き、縦長や正方形に近ければ片ページ", () => {
+    assert.equal(m.isSpreadShape(1400, 1000), true);
+    assert.equal(m.isSpreadShape(1000, 1400), false);
+    assert.equal(m.isSpreadShape(1000, 1000), false);
+    assert.equal(m.isSpreadShape(1160, 1000), true); assert.equal(m.isSpreadShape(1140, 1000), false);
   });
-  test("splitSpread は canvas が無ければ同じ画像を2つ返す", async () => {
-    assert.deepEqual(await m.splitSpread("AAAA", false), ["AAAA", "AAAA"]);
+  test("assignPages: 見開きは2ページ、片ページは1ページを順に振る", () => {
+    assert.deepEqual(m.assignPages(1, ["single", "spread", "spread", "single"]), [[1], [2, 3], [4, 5], [6]]);
+    assert.deepEqual(m.assignPages(12, []), []);
+  });
+  test("splitSpread は canvas が無ければそのまま1つ返す", async () => {
+    assert.deepEqual(await m.splitSpread("AAAA", false), ["AAAA"]);
   });
 });

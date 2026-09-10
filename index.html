@@ -24,7 +24,7 @@ input,select,textarea{font-size:16px !important}
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useRef } = React;
 
-const VERSION = "2026-09-10 10:37"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 10:40"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1071,18 +1071,21 @@ const loadScript = (src) => new Promise((res, rej) => { if (document.querySelect
 const loadLibs = () => (_libs = _libs || Promise.all([loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"), loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")]));
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
 const loadPdfjs = () => loadScript(PDFJS + "pdf.min.js").then(() => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js"; });
-/* 見開きの画像を左右に切って2ページにする。rightFirst（右綴じ・縦書き）なら右ページが先。canvas が無ければそのまま2つ返す */
+/* 横長なら見開き（2ページ）、縦長なら片ページ */
+const isSpreadShape = (w, h) => w > h * 1.15;
+/* 画像の形の並びから、各画像のページ番号を割り当てる。shapes: ["spread"|"single", …] */
+function assignPages(start, shapes) { let n = start; return shapes.map((sh) => (sh === "spread" ? [n++, n++] : [n++])); }
+const loadImg = (b64) => new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error("画像を読めません")); img.src = `data:image/jpeg;base64,${b64}`; });
+/* 画像を見て、見開きなら左右に切って2ページ、片ページならそのまま1ページ。rightFirst（右綴じ・縦書き）なら右ページが先。canvas が無ければそのまま1つ返す */
 async function splitSpread(b64, rightFirst) {
-  if (typeof Image === "undefined") return [b64, b64];
-  const img = new Image(); img.src = `data:image/jpeg;base64,${b64}`;
-  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("画像を読めません")); });
+  if (typeof Image === "undefined") return [b64];
+  const img = await loadImg(b64);
+  if (!isSpreadShape(img.width, img.height)) return [b64];
   const half = Math.floor(img.width / 2);
   const cut = (x0) => { const c = document.createElement("canvas"); c.width = half; c.height = img.height; c.getContext("2d").drawImage(img, x0, 0, half, img.height, 0, 0, half, img.height); const out = c.toDataURL("image/jpeg", 0.85).split(",")[1]; c.width = c.height = 0; return out; };
   const left = cut(0), right = cut(img.width - half);
   return rightFirst ? [right, left] : [left, right];
 }
-/* 画像ごとのページ番号。見開きなら1枚に2ページ */
-const spreadPages = (start, count, spread) => Array.from({ length: count }, (_, k) => (spread ? [start + 2 * k, start + 2 * k + 1] : [start + k]));
 /* PDF を1ページずつ JPEG（base64）にして onPage に渡す。全ページを一度にメモリへ載せない */
 async function pdfToJpegs(file, onPage, maxW = 1500) {
   await loadPdfjs();
@@ -1447,8 +1450,8 @@ function MaterialReg({ d, save }) {
   const [kind, setKind] = useState(MKINDS[0]);
   const [start, setStart] = useState("1");
   const [files, setFiles] = useState([]);
-  const [spread, setSpread] = useState(true); // 見開き（1枚に2ページ）
   const [rightFirst, setRightFirst] = useState(false); // 右ページが先（右綴じ・縦書き）
+  const [shapes, setShapes] = useState([]); // 選んだ画像ごとの形（spread/single）。PDF は保存時に判定
   useEffect(() => { setRightFirst(subject === "国語"); }, [subject]);
   const [busy, setBusy] = useState(""); const [err, setErr] = useState(""); const [msg, setMsg] = useState("");
   const [confirmDel, setConfirmDel] = useState(false);
@@ -1456,7 +1459,10 @@ function MaterialReg({ d, save }) {
   const mine = matsOf(d, subject, kind);
   useEffect(() => { setConfirmDel(false); }, [subject, kind]);
   const isPdf = files.length === 1 && /pdf$/i.test(files[0].type || files[0].name);
-  const pick = (e) => { setErr(""); setMsg(""); setFiles(Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true }))); e.target.value = ""; };
+  const pick = async (e) => { setErr(""); setMsg(""); const fs = Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true })); setFiles(fs); setShapes([]); e.target.value = "";
+    if (fs.length === 1 && /pdf$/i.test(fs[0].type || fs[0].name)) return;
+    const sh = []; for (const f of fs) { try { const img = await loadImg(await compressImage(f, 400, 0.5)); sh.push(isSpreadShape(img.width, img.height) ? "spread" : "single"); } catch { sh.push("single"); } }
+    setShapes(sh); };
 
   const upload = async () => {
     if (!syncOn()) { setErr("先に「設定」で共有（Supabase）を設定してください。教材画像は共有先にだけ保存します。"); return; }
@@ -1470,12 +1476,12 @@ function MaterialReg({ d, save }) {
       // 入れ直しでも「やった」は引き継ぐ。索引は画像が変わるので作り直す
       recs.push({ id: old ? old.id : uid(), subject, kind, page, path: matPath(subject, kind, page), doneOn: old ? old.doneOn || null : null, updatedAt: now() });
     };
-    // k 枚目の画像。見開きなら左右に切って2ページ
+    // k 枚目の画像。横長なら見開きとして左右に切って2ページ、縦長なら1ページ。番号は順に進む
+    let next = s0;
     const put = async (b64, k, total) => {
       setBusy(`保存中 ${k + 1}/${total}`);
-      const pages = spreadPages(s0, k + 1, spread)[k];
-      const parts = spread ? await splitSpread(b64, rightFirst) : [b64];
-      for (let j = 0; j < pages.length; j++) await putPage(pages[j], parts[j]);
+      const parts = await splitSpread(b64, rightFirst);
+      for (const part of parts) await putPage(next++, part);
     };
     try {
       if (isPdf) await pdfToJpegs(files[0], (b64, n, total) => put(b64, n - 1, total));
@@ -1505,13 +1511,13 @@ function MaterialReg({ d, save }) {
       <SubjRow value={subject} onChange={(s) => { setSubject(s); setFiles([]); setMsg(""); }} />
       <div className="seg sm">{MKINDS.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setFiles([]); setMsg(""); }}>{k}</button>))}</div>
       <div className="mat-sum">{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）` : "なし"}</div>); })}</div>
-      <div className="seg sm"><button className={spread ? "on" : ""} onClick={() => setSpread(true)}>見開き（1枚に2ページ）</button><button className={!spread ? "on" : ""} onClick={() => setSpread(false)}>片ページ</button></div>
-      {spread && <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>左ページが若い番号（横書き）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>右ページが若い番号（国語など縦書き）</button></div>}
-      <Fld label={spread ? "最初の見開きの若いほうのページ番号（1枚ごとに2ずつ進みます）" : "最初のページ番号（ファイルは名前順にこの番号から振ります）"}><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
+      <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>左ページが若い番号（横書き）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>右ページが若い番号（国語など縦書き）</button></div>
+      <Fld label="最初のページ番号（横長の画像は見開きとして2ページ、縦長は1ページとして順に振ります）"><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
       <label className="ph-btn">{busy ? `${busy}… ${sec}秒` : "PDF か ページの画像（複数可）を選ぶ"}<input type="file" accept="image/*,application/pdf" multiple hidden disabled={!!busy} onChange={pick} /></label>
       {files.length > 0 && !busy && (<div className="mat-pre">
-        <div>{isPdf ? `PDF「${files[0].name}」` : `画像 ${files.length} 枚`} → {subject}の{kind} p.{start}{!isPdf && files.length > 0 ? `〜${(parseInt(start, 10) || 0) + files.length * (spread ? 2 : 1) - 1}` : isPdf ? "〜（ページ数はPDFから）" : ""}{spread ? "（見開きを左右に切って保存）" : ""}</div>
-        {!isPdf && <ol className="mat-files">{files.slice(0, 6).map((f, k) => (<li key={k}>p.{spreadPages(parseInt(start, 10) || 0, k + 1, spread)[k].join("・")}　{f.name}</li>))}{files.length > 6 && <li>…ほか {files.length - 6} 枚</li>}</ol>}
+        {(() => { const s1 = parseInt(start, 10) || 0; const ps = shapes.length === files.length ? assignPages(s1, shapes) : null; const last = ps && ps.length ? ps[ps.length - 1][ps[ps.length - 1].length - 1] : null; return (<>
+        <div>{isPdf ? `PDF「${files[0].name}」` : `画像 ${files.length} 枚`} → {subject}の{kind} p.{start}{isPdf ? "〜（ページ数と見開きはPDFから判定）" : ps ? `〜${last}（見開き ${shapes.filter((x) => x === "spread").length}枚、片ページ ${shapes.filter((x) => x === "single").length}枚）` : "〜（形を確認中…）"}</div>
+        {!isPdf && ps && <ol className="mat-files">{files.slice(0, 6).map((f, k) => (<li key={k}>p.{ps[k].join("・")}　{f.name}</li>))}{files.length > 6 && <li>…ほか {files.length - 6} 枚</li>}</ol>}</>); })()}
         <p className="ph-note">ページ番号が違うときは、上の番号を直してから保存。同じページを入れ直すと上書きされます。</p>
         <button className="btn-main" onClick={upload}>この内容で保存する</button></div>)}
       {err && <div className="errbox"><p>{err}</p></div>}
@@ -1522,7 +1528,7 @@ function MaterialReg({ d, save }) {
       <Fld label="消すページ（空欄なら全部。例: 12-15, 20）"><input value={delPages} onChange={(e) => { setDelPages(e.target.value); setConfirmDel(false); }} placeholder="12-15, 20" /></Fld>
       {confirmDel ? (<div className="del-ask"><p>{subject}の{kind} {delTargets.length}ページ（p.{pagesToRanges(delTargets.map((m) => m.page))}）を共有先から消します。元に戻せません。</p><div className="q-btns"><button className="btn-sm danger" onClick={() => { setConfirmDel(false); remove(delTargets); }} disabled={!!busy}>本当に削除する</button><button className="btn-sm" onClick={() => setConfirmDel(false)}>やめる</button></div></div>)
         : <button className="btn-x wide-x" onClick={() => setConfirmDel(true)} disabled={!!busy || !delTargets.length}>{delPages.trim() ? (delTargets.length ? `p.${pagesToRanges(delTargets.map((m) => m.page))} の ${delTargets.length}ページを削除` : "該当するページがありません") : `${subject}の${kind}を全部削除`}</button>}</section>)}
-    <section className="sec"><h3 className="s-h">取り込み方</h3><ol className="flow"><li>スキャンアプリ（iPhoneの「メモ」やプリンタ付属のもの）で見開きのまま1冊をPDFにするか、見開きごとに撮る。真ん中で左右に切って2ページとして保存します。</li><li>最初や最後の見開きが片ページだけ（表紙の裏など）なら、その1枚は「片ページ」で別に入れる。</li><li>ページ番号は本の印刷どおりに。単元のページ範囲と照合します。</li></ol></section>
+    <section className="sec"><h3 className="s-h">取り込み方</h3><ol className="flow"><li>スキャンアプリ（iPhoneの「メモ」やプリンタ付属のもの）で見開きのまま1冊をPDFにするか、見開きごとに撮る。真ん中で左右に切って2ページとして保存します。</li><li>表紙の裏などで片ページだけの1枚が混ざっていても、縦長なら自動で1ページとして扱います。</li><li>ページ番号は本の印刷どおりに。単元のページ範囲と照合します。</li></ol></section>
   </>);
 }
 
