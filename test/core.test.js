@@ -1242,3 +1242,21 @@ describe("今日の分の量（候補・優先順・上限・繰り越し）", (
     assert.equal(m.pickDaily(d).chosen.length, 6, "既定の上限");
   });
 });
+
+describe("一度に多数を登録したときの分散", () => {
+  const mk = (n) => Array.from({ length: n }, (_, k) => m.newItem({ id: "n" + k, subject: "数学", unitId: "u", label: "L" + k }));
+  test("上限の2倍未満なら全部翌日", () => {
+    const r = m.spreadDue(mk(11), m.blank(), 6);
+    assert.ok(r.every((i) => i.nextDue === day(1)));
+  });
+  test("上限の2倍以上なら、上限ずつ翌日・明後日…に分ける", () => {
+    const r = m.spreadDue(mk(14), m.blank(), 6);
+    assert.deepEqual(r.map((i) => i.nextDue), [...Array(6).fill(day(1)), ...Array(6).fill(day(2)), day(3), day(3)]);
+  });
+  test("今日すでに登録した分も数える", () => {
+    const d = { ...m.blank(), items: mk(5).map((i) => ({ ...i, createdOn: T })) };
+    const r = m.spreadDue(mk(7), d, 6);
+    assert.deepEqual(r.map((i) => i.nextDue), [day(1), day(2), day(2), day(2), day(2), day(2), day(2)]);
+    assert.ok(m.spreadDue(mk(6), d, 6).every((i) => i.nextDue === day(1)), "5+6=11 は 12 未満なので分散しない");
+  });
+});

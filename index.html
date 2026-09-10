@@ -390,6 +390,12 @@ function printSet(d) {
   return d.items.filter((i) => !i.printedOn && i.nextDue <= lim && i.pending?.d !== today())
     .sort((a, b) => (range.has(b.unitId) - range.has(a.unitId)) || b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
 }
+/* 一度に多数を登録したとき（今日の登録が上限の2倍以上）、初回の期日を翌日から上限ずつ後ろにずらす。全部が翌日に集中しないように */
+function spreadDue(newItems, d, max = dailyMax()) {
+  const t = today(); const already = (d.items || []).filter((i) => i.createdOn === t).length;
+  if (already + newItems.length < max * 2) return newItems;
+  return newItems.map((i, k) => ({ ...i, nextDue: addDays(t, 1 + Math.floor((already + k) / max)) }));
+}
 /* 候補のうち上限までを「今日の分」に、残りは繰り越し */
 function pickDaily(d, max = dailyMax()) { const all = printSet(d); return { chosen: all.slice(0, max), rest: all.slice(max), all }; }
 /* 印刷済みで、まだ確定していない項目 */
@@ -1304,7 +1310,7 @@ function PaperGrade({ p: paper, d, save }) {
     if (!paper || !marks) return;
     const r = gradeResult(paper, marks);
     const test = { id: uid(), subject: paper.subject, date: today(), kind: paper.kind, source: `自作 ${paper.code}`, ...r, unitIds: paper.unitIds, paperId: paper.id, ...(paper.kind === "模試" ? { examId: paper.examId } : {}), updatedAt: now() };
-    const newItems = paper.questions.filter((qq) => checked[qq.n]).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" }));
+    const newItems = spreadDue(paper.questions.filter((qq) => checked[qq.n]).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" })), d);
     save({ ...d, tests: [...d.tests, test], items: [...d.items, ...newItems], papers: d.papers.map((p) => (p.id === paper.id ? { ...p, status: "graded", updatedAt: now() } : p)), log: { ...d.log, [today()]: true } });
     setMarks(null);
   };
@@ -1543,9 +1549,10 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   };
   const commit = () => {
     if (!taps.length) return;
-    const add = tapsToItems(taps, subject, us, fallbackUnitId);
+    const add = spreadDue(tapsToItems(taps, subject, us, fallbackUnitId), d);
     save(applyAutoProgress(markDone({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }, taps.map((t) => t.path))));
-    setTaps([]); setMsg(`${add.length}件を登録しました。明日の「今日」に出ます${hasKey() ? "。項目名をAIが付けています…" : ""}`);
+    const spread = add.filter((i) => i.nextDue !== addDays(today(), 1)).length;
+    setTaps([]); setMsg(`${add.length}件を登録しました。${spread ? `多いので ${spread} 件は明後日以降に分散しました。` : "明日の「今日」に出ます"}${hasKey() ? "。項目名をAIが付けています…" : ""}`);
     if (hasKey()) { setNaming(true); const meta = {}; nameItems(add, (id) => us.find((u) => u.id === id), null, meta).then((patch) => {
       const n = Object.keys(patch).length;
       const { ids: lis, tests: lisTests } = splitListening(add, patch, meta.listening);
