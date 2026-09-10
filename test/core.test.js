@@ -962,3 +962,27 @@ describe("模試（段階3: 返却テストを形式の参考に）", () => {
     } finally { globalThis.fetch = orig; ["sb_url", "sb_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
   });
 });
+
+describe("模試（段階4: ホームの日程。14・7・3日前、1日1〜2教科）", () => {
+  const withExam = (left, papers = []) => { const d = F.demo(); d.exams = d.exams.map((e) => (e.id === "e1" ? { ...e, date: day(left) } : e)); d.papers = [...d.papers, ...papers]; return d; };
+  const mock = (subject, round, date = T) => ({ id: "mk" + subject + round + date, kind: "模試", subject, date, examId: "e1", round, questions: [], unitIds: [], status: "printed", updatedAt: "" });
+  test("14日前: 範囲の教科を2つまで。作った分は次の日に回る。2つ作った日はもう出ない", () => {
+    assert.deepEqual(m.mockDue(withExam(14), withExam(14).exams[0]).subjects, ["数学", "英語"]);
+    assert.deepEqual(m.mockDue(withExam(13, [mock("数学", 14, day(-1))]), withExam(13).exams[0]).subjects, ["英語"]);
+    assert.deepEqual(m.mockDue(withExam(14, [mock("数学", 14)]), withExam(14).exams[0]).subjects, ["英語"]);
+    assert.deepEqual(m.mockDue(withExam(14, [mock("数学", 14), mock("英語", 14)]), withExam(14).exams[0]).subjects, []);
+    assert.deepEqual(m.mockDue(withExam(12, [mock("数学", 14, day(-2)), mock("英語", 14, day(-2))]), withExam(12).exams[0]).subjects, [], "14日前の回は済み");
+  });
+  test("7日前・3日前は別の回として再び出る。15日前と過ぎたあとは出ない", () => {
+    const done14 = [mock("数学", 14, day(-7)), mock("英語", 14, day(-7))];
+    assert.deepEqual(m.mockDue(withExam(7, done14), withExam(7).exams[0]).subjects, ["数学", "英語"]);
+    assert.deepEqual(m.mockDue(withExam(3, done14), withExam(3).exams[0]).subjects, ["数学", "英語"]);
+    assert.equal(m.mockDue(withExam(15), withExam(15).exams[0]), null);
+    assert.equal(m.mockDue(withExam(-1), withExam(-1).exams[0]), null);
+  });
+  test("ホーム: 「模試を作る（数学・英語）D-14」が出て、テストの画面を教科指定で開く。20日前は出ない", () => {
+    const a = m.nextActions(withExam(14)).A.find((x) => x.k === "mock");
+    assert.ok(a && a.title === "模試を作る（数学・英語）D-14" && a.mode === "mock:数学,英語" && a.tab === "week");
+    assert.equal(m.nextActions(F.demo()).A.find((x) => x.k === "mock"), undefined);
+  });
+});

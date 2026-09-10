@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 11:10"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 11:12"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -466,6 +466,8 @@ function nextActions(d) {
     if (pendN) A.push({ k: "confirm", title: `子どもの判定 ${pendN} 件を確定する`, why: "机の紙と照らして、親の確定を押す。ここで初めて次回の日程が決まります。", tab: "today", mode: "cards", t: "5分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
     if (toGrade.length) A.push({ k: "mark", title: `昨日の分を採点する（${toGrade.length}件）`, why: "紙を見て、項目ごとに「できなかった／解けた／説明もできた」を押し、まとめて確定。", tab: "today", mode: "grade", t: "3分" });
+    const mx = upcomingExams(d)[0]; const md = mx ? mockDue(d, mx, t) : null;
+    if (md && md.subjects.length) A.push({ k: "mock", title: `模試を作る（${md.subjects.join("・")}）D-${md.left}`, why: `${md.round}日前の回。本番と同じ形式で50分。赤ペンで採点して「撮る」で読み取る。1日1〜2教科。`, tab: "week", mode: `mock:${md.subjects.join(",")}`, t: "生成3分＋印刷" });
     if (toPrint.length) A.push({ k: "print", title: `今日の分を印刷する（${toPrint.length}件）`, why: "類題を自動で作って1枚のPDFに。明日、机に置く。", tab: "today", mode: "print", t: "生成＋印刷で5分" });
     if (d.items.length === 0 && !pending.length) A.push({ k: "first", title: "最初の項目を入れる", why: "返却されたテストの答案を撮るのが最良の入口。なければ週末のテストから。", tab: "reg", mode: "item", t: "20分" });
     if (weekend && !paperThisWeek && !pending.length && d.items.length > 0) A.push({ k: "prog2", title: "「今週どこまで進んだ？」を聞いて進度を更新", why: "作問の前に。子どもに聞いて、該当の単元で「ここまで」を押すだけ。", tab: "reg", mode: "unit", t: "1分" });
@@ -622,8 +624,17 @@ const upcomingExams = (d) => (d.exams || []).filter((e) => e.date >= today() && 
 const examSubjects = (d, ex) => SUBJECTS.filter((s) => d.units.some((u) => u.subject === s && ex.unitIds.includes(u.id)));
 const mocksFor = (d, ex) => (d.papers || []).filter((p) => p.kind === "模試" && p.examId === ex.id).sort((a, b) => (a.date < b.date ? 1 : -1));
 
-/* 段階4で日程を決める。ここでは「14日以内なら 14・7・3 のうち最も近い回」 */
+/* 模試の回。定期テストの 14・7・3 日前の3回。残り日数から「いまの回」を決める（14日以内で、残り日数以上の最も近い回） */
 const mockRound = (left) => (left === null || left < 0 || left > 14 ? null : [3, 7, 14].find((r) => r >= left));
+/* 今日作る模試。いまの回でまだ作っていない教科を、1日1〜2教科ずつ（今日すでに作った分を差し引く） */
+function mockDue(d, ex, t = today()) {
+  const left = diffDays(t, ex.date); const round = mockRound(left);
+  if (!round) return null;
+  const mocks = mocksFor(d, ex);
+  const rest = examSubjects(d, ex).filter((s) => !mocks.some((p) => p.subject === s && p.round === round));
+  const madeToday = mocks.filter((p) => p.date === t).length;
+  return { round, left, rest, subjects: rest.slice(0, Math.max(0, 2 - madeToday)) };
+}
 /* 返却された定期テストの答案（教材種別「テスト」）を、形式の参考として渡す。新しいものから最大4枚 */
 const testSheets = (d, subject, max = 4) => matsOf(d, subject, "テスト").slice(-max);
 async function refSheets(d, subject) {
