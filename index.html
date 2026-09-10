@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 14:38"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 14:39"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -968,8 +968,8 @@ function App() {
 
   return (
     <div className="root"><style>{CSS}</style>
-      <header className="hd"><div className="hd-t">学習ループ</div>
-        <div className="hd-s">未定着 {active.length} · 今日 {due.length}件{daily.rest.length ? `（繰り越し ${daily.rest.length}件）` : ""} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div></header>
+      <header className="hd"><div className="hd-t">学習ループ<span className="ver">v{VERSION}</span></div>
+        <div className="hd-s">未定着 {active.length} · 今日 {due.length}件{daily.rest.length ? `（繰り越し ${daily.rest.length}件）` : ""} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}</div></header>
       <nav className="tabs">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => go(k)}>{l}</button>))}</nav>
       <main className="main">
         {tab === "home" && <HomeTab d={d} go={go} />}
@@ -1958,7 +1958,7 @@ function Settings({ d, save, setSync }) {
 /* ---- CSS と起動 ---- */
 const CSS = `
 .sy{display:inline-block;vertical-align:middle;margin-left:6px;padding:0 6px;border-radius:2px;font-size:10px;line-height:16px;height:16px;color:#fff;white-space:nowrap;font-weight:400;letter-spacing:0}.sy-ok{background:#2F6F5E}.sy-ng{background:#A8443B}
-.ver{margin-left:auto;font-size:10px;color:var(--ink3);opacity:.7;white-space:nowrap}
+.ver{margin-left:8px;font-size:10px;font-weight:400;letter-spacing:0;color:var(--ink3);opacity:.8;white-space:nowrap;vertical-align:middle}
 .ctr{text-align:center;cursor:pointer}.sql{background:#1E2321;color:#D8DED8;font-size:10px;line-height:1.6;padding:10px;border-radius:3px;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;margin:0 0 12px;white-space:pre}
 .msg.fixed{position:sticky;bottom:8px;background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
 .morning .btn-main{margin-top:0}
