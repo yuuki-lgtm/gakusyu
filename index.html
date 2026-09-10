@@ -1005,7 +1005,7 @@ function App() {
 
   return (
     <div className="root"><style>{CSS}</style>
-      <header className="hd"><div className="hd-t">{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span>学習ループ</span><span className="ver">v{VERSION}</span></div>
+      <header className="hd"><div className="hd-t"><span>学習ループ</span>{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div>
         <div className="hd-s">未定着 {active.length} · 今日 {due.length}件{daily.rest.length ? `（繰り越し ${daily.rest.length}件）` : ""} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日</div></header>
       <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{l}</button>))}</nav>
       <main className="main">
@@ -2026,7 +2026,7 @@ function Settings({ d, save, setSync }) {
 
 /* ---- CSS と起動 ---- */
 const CSS = `
-.sy{display:inline-block;vertical-align:middle;margin-right:8px;padding:1px 6px 0;border-radius:2px;font-size:10px;line-height:15px;height:16px;box-sizing:border-box;color:#fff;white-space:nowrap;font-weight:400;letter-spacing:0}.sy-ok{background:#2F6F5E}.sy-ng{background:#A8443B}
+.sy{display:inline-block;vertical-align:middle;margin-left:8px;padding:1px 6px 0;border-radius:2px;font-size:10px;line-height:15px;height:16px;box-sizing:border-box;color:#fff;white-space:nowrap;font-weight:400;letter-spacing:0}.sy-ok{background:#2F6F5E}.sy-ng{background:#A8443B}
 .ver{margin-left:auto;font-size:10px;font-weight:400;letter-spacing:0;color:var(--ink3);opacity:.8;white-space:nowrap;vertical-align:middle}
 .ctr{text-align:center;cursor:pointer}.sql{background:#1E2321;color:#D8DED8;font-size:10px;line-height:1.6;padding:10px;border-radius:3px;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;margin:0 0 12px;white-space:pre}
 .msg.fixed{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
