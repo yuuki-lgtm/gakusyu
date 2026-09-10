@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 18:26"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 18:44"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -2064,7 +2064,7 @@ const CSS = `
  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
 .root *{box-sizing:border-box}
 .hd{padding:18px 16px 10px}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em}.hd-s{font-size:12px;line-height:18px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;align-items:center}
-.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto}.tabs.three .tab{flex:1;text-align:center;font-size:14px;padding:11px 4px}
+.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto;position:sticky;top:0;z-index:20;background:var(--paper)}.tabs.three .tab{flex:1;text-align:center;font-size:14px;padding:11px 4px}
 .sub .lead{margin-top:2px}
 .tab{flex:0 0 auto;background:none;border:none;padding:9px 11px;font-size:13px;color:var(--ink3);cursor:pointer;border-bottom:2px solid transparent;font-family:inherit;white-space:nowrap}
 .tab.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:700}
