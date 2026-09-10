@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 21:34"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 21:48"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -131,19 +131,20 @@ async function splitSpread(b64, rightFirst) {
   const left = cut(0, cutX), right = cut(cutX, img.width - cutX);
   return rightFirst ? [right, left] : [left, right];
 }
-/* ページ画像に赤い印（番号つき）を描き込む。AI に「印の位置の問題」を読ませるため。canvas が無い環境ではそのまま返す */
+/* ページ画像に赤い印（番号つき）を描き込む。AI に「印の位置の問題」を読ませるため。canvas が無い環境ではそのまま返す。
+   印は小さな点（幅の 0.7%、最小 5px）と、その右横の番号。以前の大きな丸（幅の 2.8%）と上の番号は隣の問題にかぶり、AI が別の問題を読むことがあった */
 async function annotateB64(b64, marks) {
   if (!marks.length || typeof Image === "undefined") return b64;
   const img = new Image(); img.src = `data:image/jpeg;base64,${b64}`;
   await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("画像を読めません")); });
   const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
   const g = c.getContext("2d"); g.drawImage(img, 0, 0);
-  const r = Math.max(14, Math.round(img.width * 0.028));
+  const r = Math.max(5, Math.round(img.width * 0.007));
   marks.forEach((mk, k) => {
     const x = mk.x * img.width, y = mk.y * img.height;
-    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.lineWidth = Math.max(3, r / 4); g.strokeStyle = "#E0201A"; g.stroke();
-    g.fillStyle = "rgba(224,32,26,.12)"; g.fill();
-    if (marks.length > 1) { g.fillStyle = "#E0201A"; g.font = `bold ${Math.round(r * 1.1)}px sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(k + 1), x, y - r * 1.6); }
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fillStyle = "#E0201A"; g.fill();
+    g.beginPath(); g.arc(x, y, r * 1.8, 0, Math.PI * 2); g.lineWidth = Math.max(1.5, r / 3); g.strokeStyle = "#E0201A"; g.stroke();
+    if (marks.length > 1) { const f = Math.round(r * 3.2); g.font = `bold ${f}px sans-serif`; g.textAlign = "left"; g.textBaseline = "middle"; g.lineWidth = Math.max(3, f / 4); g.strokeStyle = "#fff"; g.strokeText(String(k + 1), x + r * 2.6, y); g.fillStyle = "#E0201A"; g.fillText(String(k + 1), x + r * 2.6, y); }
   });
   return c.toDataURL("image/jpeg", 0.85).split(",")[1];
 }
@@ -468,7 +469,7 @@ const hasPos = (s) => !!(s && s.path && typeof s.x === "number" && typeof s.y ==
 /* 類題生成の入力。元の問題（教材ページ）があれば画像を先に付ける */
 const srcLabel = (s) => (s && s.path ? `${s.kind} p.${s.page}${s.q ? ` 「${s.q}」` : ""}` : "");
 /* 印の位置にある問題の説明（AIへ渡す文） */
-const markDesc = (s, n = null) => (hasPos(s) ? `${n ? `赤い${n}の印` : "赤い○印"}の位置にある問題（${s.kind} p.${s.page}）` : srcLabel(s));
+const markDesc = (s, n = null) => (hasPos(s) ? `${n ? `赤い点の印（右横に番号${n}）` : "赤い点の印"}の位置にある問題（${s.kind} p.${s.page}）` : srcLabel(s));
 /* リスニングは紙で反復できないので、未定着には入れず形式の弱点として記録する（設計思想10）。
    patch のうち fmt が「リスニング」の項目を外し、紙ごとに「出題数（AIが数えた数、×の数より少なければ×の数）・正答数＝出題数−×」の記録を作る */
 function splitListening(items, patch, listening = []) {
@@ -639,7 +640,7 @@ async function nameItems(items, unitOf, model = null, meta = {}, existing = []) 
     try {
       const b64 = await annotateB64(await stGet(path), group.map((i) => ({ x: i.src.x, y: i.src.y })));
       const qb64 = s0.src.qpath ? await stGet(s0.src.qpath) : null;
-      const t = await callAI([imgBlock(b64), ...(qb64 ? [{ type: "text", text: "【問題用紙】上の答案に対応する問題用紙" }, imgBlock(qb64)] : []), { type: "text", text: `${qb64 ? `1枚目は中学1年${s0.subject}の定期テストの答案（${s0.src.page}枚目）、2枚目はその問題用紙。答案の赤い印の位置にある答えに対応する問題を、問題用紙から探して読んでください。` : `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。`}${u ? `単元は「${u.name}」。` : ""}赤い印（${group.length > 1 ? `①〜${group.length}の番号つき` : "1つ"}）の位置にある問題を子どもが間違えました。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。${exText}` }],
+      const t = await callAI([imgBlock(b64), ...(qb64 ? [{ type: "text", text: "【問題用紙】上の答案に対応する問題用紙" }, imgBlock(qb64)] : []), { type: "text", text: `${qb64 ? `1枚目は中学1年${s0.subject}の定期テストの答案（${s0.src.page}枚目）、2枚目はその問題用紙。答案の赤い印の位置にある答えに対応する問題を、問題用紙から探して読んでください。` : `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。`}${u ? `単元は「${u.name}」。` : ""}赤い小さな点の印（${group.length > 1 ? `1〜${group.length}の番号がそれぞれの点の右横にある` : "1つ"}）の位置にある問題を子どもが間違えました。印は問題文や答えの上に小さく置いてあるので、点のある行の問題を読んでください。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。${exText}` }],
         `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。音声を聞いて答えるリスニングの問題は fmt を「リスニング」にし、listening_total にこの紙のリスニングの問題数（小問ごと）を入れる（無ければ 0）。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false,"same":0}],"listening_total":0}`, 1400, model);
       const parsed = parseJSON(t); const rs = parsed.items || [];
       meta.listening.push({ path, subject: s0.subject, kind: s0.src.kind, page: s0.src.page, total: Number(parsed.listening_total) || 0 });
@@ -2061,7 +2062,7 @@ const CSS = `
 .mat-pre{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;font-size:12px;line-height:1.6}.mat-files{margin:6px 0 0;padding-left:18px;font-size:11px;color:var(--ink3)}
 .mscroll{overflow:auto;-webkit-overflow-scrolling:touch;border-radius:3px}.mscroll.z{max-height:72vh;border:1px solid var(--line)}.zoom-row{display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:11px;color:var(--ink3)}.zoom-row .btn-sm{padding:4px 9px;font-size:11px}.zoom-row .btn-sm.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .mwrap{position:relative;display:block;user-select:none;-webkit-user-select:none;cursor:crosshair}.mwrap img{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff;-webkit-touch-callout:none}
-.mk-new,.mk-old{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel,.mk-new.sel{box-shadow:0 0 0 3px #C08A3E}
+.mk-new,.mk-old{position:absolute;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel,.mk-new.sel{box-shadow:0 0 0 3px #C08A3E}
 .lastp{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--ink2)}.lastp .btn-sm{margin-left:auto;white-space:nowrap}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
