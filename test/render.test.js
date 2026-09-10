@@ -277,3 +277,9 @@ test("設定: SQL は未設定なら開き、設定済みなら畳む", () => {
   try { const closed = render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html; assert.ok(!/<details class="det" open=""/.test(closed) && closed.includes("設定済みです")); }
   finally { ["sb_url", "sb_key", "sb_room"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
 });
+test("今日/採点: 元の問題の回は印と説明が出る", () => {
+  const d = F.demo(); d.items = d.items.map((i) => (i.id === "i1" ? { ...i, gen: null, printedOrig: true } : i));
+  const html = render(m.TodayGrade, { d, save: noop }).html;
+  assert.ok(html.includes(">元の問題<") && html.includes("「解けた」では間隔が伸びず"));
+  assert.ok(render(m.GradeRowDetail, { i: d.items[0], d, save: noop }).html.includes("元の問題（ワーク p.11）をもう一度解いています"));
+});

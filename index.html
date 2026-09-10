@@ -317,9 +317,10 @@ function applyJudgment(item, r) {
   const t = today();
   let level = item.level || 0, failCount = item.failCount || 0;
   if (r === "x") { level = 0; failCount += 1; }
+  else if (item.printedOrig && r === "o") { /* 元の問題をもう一度解いた回: 白紙再生ではないので「解けた」では据え置き */ }
   else if (r === "oo" || item.fmt === "知識・用語") { level = Math.min(level + 1, INT.length - 1); }
   else { level = Math.min(level + 1, 3); }
-  return { ...item, level, failCount, nextDue: addDays(t, INT[level]), status: level >= STABLE_LEVEL ? "stable" : "active", gen: r === "x" ? null : item.gen, defer: null, updatedAt: now() };
+  return { ...item, level, failCount, nextDue: addDays(t, INT[level]), status: level >= STABLE_LEVEL ? "stable" : "active", gen: r === "x" ? null : item.gen, defer: null, printedOrig: null, updatedAt: now() };
 }
 function retention(items) {
   let c = 0, t = 0;
@@ -390,11 +391,11 @@ function judgeAll(d, decisions) {
   const t = today(); let n = 0;
   const items = d.items.map((i) => {
     const dc = decisions[i.id]; if (!dc) return i;
-    if (dc.skip) return { ...i, printedOn: null, updatedAt: now() };
+    if (dc.skip) return { ...i, printedOn: null, printedOrig: null, updatedAt: now() };
     if (!dc.r) return i;
     n++;
     const next = applyJudgment(i, dc.r);
-    next.history = [...(i.history || []), { d: t, r: dc.r, self: dc.self || "", etype: dc.r === "x" ? dc.etype || "" : "", etypeSelf: dc.etypeSelf || "" }];
+    next.history = [...(i.history || []), { d: t, r: dc.r, self: dc.self || "", etype: dc.r === "x" ? dc.etype || "" : "", etypeSelf: dc.etypeSelf || "", ...(i.printedOrig ? { orig: true } : {}) }];
     next.pending = null; next.printedOn = null;
     if (dc.r === "x" && dc.etype) next.etype = dc.etype;
     return next;
@@ -1002,7 +1003,7 @@ function GradeRowDetail({ i, d, save }) {
       {g.problems.map((pr, n) => (<div className="qitem" key={n}><div className="q-n">問{n + 1}</div><div className="q-q">{pr.q}</div>{showA && <div className="q-a">{pr.a}</div>}</div>))}
       {g.why && i.fmt !== "知識・用語" && <div className="q-why">説明させる問い：{g.why}</div>}
       {showA && g.script && <div className="q-s">声かけ例：{g.script}</div>}
-      <div className="q-btns"><button className="btn-sm" onClick={() => setShowA(!showA)}>{showA ? "解答を隠す" : "解答を見る"}</button></div></>) : <p className="empty">類題はありません。</p>}
+      <div className="q-btns"><button className="btn-sm" onClick={() => setShowA(!showA)}>{showA ? "解答を隠す" : "解答を見る"}</button></div></>) : <p className="empty">{i.printedOrig ? `類題を作れなかったので、元の問題（${srcLabel(i.src)}）をもう一度解いています。解答はワークで。` : "類題はありません。"}</p>}
     {i.failCount >= 3 && !i.diag && <button className="btn-ai warn" onClick={() => diag()} disabled={busy}>{busy ? `診断中… ${sec}秒` : "なぜ定着しないのかを診断"}</button>}
     {err && <div className="errbox"><p>{err}</p><button className="btn-sm" onClick={() => diag(FALLBACK)}>Sonnet 4.6 で診断</button></div>}
     {i.diag && (<div className="dbox"><div className="d-row"><span>原因</span>{i.diag.cause}</div><div className="d-row"><span>戻る単元</span>{i.diag.prereq}</div>
@@ -1033,12 +1034,12 @@ function TodayGrade({ d, save }) {
   const commit = () => { const { d: nd, n } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; setMsg(`${n}件を確定しました。${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); setTimeout(() => setMsg(""), 4000); };
   return (<section className="sec">
     {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
-      <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>3問すべて正解で「解けた」、説明の問いにも答えられていれば「説明もできた」。</strong></p>
+      <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>3問すべて正解で「解けた」、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（判定欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
       {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, FALLBACK)}>Sonnet 4.6 で読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = i.fmt === "知識・用語"; return (
         <div className={"grow" + (c.skip ? " skip" : c.r ? " done" : "")} key={i.id}>
-          <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}<em className="lv">印刷 {i.printedOn.slice(5)}{i.printedAs ? ` · 紙の${i.printedAs}番目` : ""}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
+          <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<em className="lv">印刷 {i.printedOn.slice(5)}{i.printedAs ? ` · 紙の${i.printedAs}番目` : ""}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
           <button className="c-label tap" onClick={() => setOpen((o) => ({ ...o, [i.id]: !o[i.id] }))}>{i.label}<em className="pg"> {open[i.id] ? "閉じる" : i.failCount >= 3 ? "類題・診断 ▸" : "類題 ▸"}</em></button>
           {open[i.id] && <GradeRowDetail i={i} d={d} save={save} />}
           {!c.skip && (<>

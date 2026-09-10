@@ -1105,3 +1105,22 @@ describe("類題が作れない項目は元の問題を印刷（A-1）", () => {
     finally { globalThis.fetch = orig; ["sb_url", "sb_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
   });
 });
+
+describe("元の問題の回の判定（A-2）", () => {
+  test("「解けた」は据え置き（level そのまま、次回は同じ間隔）、「説明もできた」は進む、「できなかった」は通常。印は消える", () => {
+    const base = item({ level: 2, failCount: 1, printedOrig: true, history: [] });
+    const o = m.applyJudgment(base, "o"); assert.deepEqual([o.level, o.nextDue, o.printedOrig, o.status], [2, day(7), null, "active"]);
+    const oo = m.applyJudgment(base, "oo"); assert.deepEqual([oo.level, oo.nextDue], [3, day(14)]);
+    const x = m.applyJudgment(base, "x"); assert.deepEqual([x.level, x.failCount, x.nextDue, x.printedOrig], [0, 2, day(1), null]);
+    const normal = m.applyJudgment(item({ level: 2, history: [] }), "o"); assert.equal(normal.level, 3, "通常の回は解けたで進む");
+    const term = m.applyJudgment(item({ level: 2, fmt: "知識・用語", printedOrig: true, history: [] }), "o"); assert.equal(term.level, 2, "用語でも元の問題の回は据え置き");
+  });
+  test("judgeAll: 履歴に orig が付き、skip でも印が消える", () => {
+    const d = { ...m.blank(), items: [item({ id: "a", printedOn: day(-1), printedOrig: true, history: [] }), item({ id: "b", printedOn: day(-1), printedOrig: true, history: [] })] };
+    const { d: nd } = m.judgeAll(d, { a: { r: "o", self: "o" }, b: { skip: true } });
+    assert.equal(nd.items[0].history[0].orig, true); assert.equal(nd.items[0].printedOrig, null);
+    assert.equal(nd.items[1].printedOrig, null); assert.equal(nd.items[1].printedOn, null);
+    const n2 = m.judgeAll({ ...m.blank(), items: [item({ id: "c", printedOn: day(-1), history: [] })] }, { c: { r: "o" } }).d.items[0];
+    assert.equal(n2.history[0].orig, undefined);
+  });
+});
