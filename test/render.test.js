@@ -388,3 +388,8 @@ test("今日/印刷: 候補は教科ごとに見出しで分かれ、行には�
   let pos = -1; for (const sb of subs) { const k = html.indexOf(`<h4 class="sub-h">`, pos + 1); assert.ok(k > pos, sb); assert.ok(html.slice(k, k + 200).includes(sb + "<em"), sb); pos = k; }
   assert.ok(!/<div class="ir-meta">[^<]*<span[^>]*><.span>(数学|英語|社会|理科|国語)・/.test(html));
 });
+test("印のポップオーバー: 測るまでは非表示で印の位置に置く。中身は出す", () => {
+  const { html, errors } = render(m.MarkPop, { x: 0.3, y: 0.7, children: "中身" });
+  assert.equal(errors.length, 0, errors.join(", "));
+  assert.ok(html.includes('class="mpop pop"') && html.includes("visibility:hidden") && html.includes("left:30%") && html.includes("top:70%") && html.includes("中身"));
+});

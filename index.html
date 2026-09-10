@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 22:07"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 22:10"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1639,7 +1639,25 @@ function UnitReg({ d, save }) {
           <button className="btn-x" onClick={() => save(removeRec(d, "units", u.id))}>×</button></div></>)}</div>))}</section>
   </>);
 }
-const popCls = (x, y) => "mpop pop" + (x > 0.5 ? " l" : "") + (y > 0.55 ? " up" : "");
+/* 印のそばに出すポップオーバー。描いてから実際の大きさを測り、見える範囲（拡大中は枠、そうでなければ画面。下のバーぶんは除く）に収まる位置へ動かす。
+   右にはみ出せば印の左、下にはみ出せば印の上、それでも出れば範囲の中に寄せる。測るまでは非表示（ちらつかない） */
+function MarkPop({ x, y, children }) {
+  const ref = useRef(null); const [pos, setPos] = useState(null);
+  useEffect(() => {
+    const el = ref.current, wrap = el && el.parentElement; if (!el || !wrap) return;
+    try {
+      const W = wrap.clientWidth, H = wrap.clientHeight, w = el.offsetWidth, h = el.offsetHeight, g = 10;
+      const wr = wrap.getBoundingClientRect(), sr = (wrap.parentElement || wrap).getBoundingClientRect();
+      const vl = Math.max(sr.left, 0) - wr.left, vt = Math.max(sr.top, 0) - wr.top;
+      const vr = Math.min(sr.right, window.innerWidth) - wr.left, vb = Math.min(sr.bottom, window.innerHeight - 70) - wr.top;
+      const mx = x * W, my = y * H;
+      let left = mx + g; if (left + w > vr) left = mx - g - w; if (left < vl) left = Math.max(vl, Math.min(vr - w, mx - w / 2));
+      let top = my + g; if (top + h > vb) top = my - g - h; if (top < vt) top = Math.max(vt, Math.min(vb - h, my + g));
+      setPos({ left: Math.round(left), top: Math.round(top) });
+    } catch { setPos({ left: x * 100 + "%", top: y * 100 + "%" }); }
+  }, [x, y]);
+  return (<div ref={ref} className="mpop pop" style={pos ? { left: pos.left, top: pos.top } : { left: `${x * 100}%`, top: `${y * 100}%`, visibility: "hidden" }} onClick={(e) => e.stopPropagation()}>{children}</div>);
+}
 function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const kinds = MKINDS.filter((k) => matsOf(d, subject, k).length);
   const [kind, setKind] = useState(kinds[0] || MKINDS[0]);
@@ -1708,13 +1726,13 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     {cur ? (img ? (<div className={"mscroll" + (zoom > 1 ? " z" : "")}><div className="mwrap" onClick={onTap} style={{ width: `${zoom * 100}%` }}><img src={img} alt={`${kind} p.${page}`} draggable="false" />
         {old.map((i) => (<span key={i.id} className={"mk-old" + (i.status === "stable" ? " stable" : "") + (i.id === sel ? " sel" : "")} style={{ left: `${i.src.x * 100}%`, top: `${i.src.y * 100}%` }} />))}
         {here.map((t, k) => (<span key={k} className={"mk-new" + (t === selTap ? " sel" : "")} style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }} />))}
-        {selTap && here.includes(selTap) && (<div className={popCls(selTap.x, selTap.y)} style={{ left: `${selTap.x * 100}%`, top: `${selTap.y * 100}%` }} onClick={(e) => e.stopPropagation()}><div className="c-label">この印の誤答の種類</div>
+        {selTap && here.includes(selTap) && (<MarkPop x={selTap.x} y={selTap.y}><div className="c-label">この印の誤答の種類</div>
           <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selTap.etype === e ? " on" : "")} onClick={() => { const nt = { ...selTap, etype: e }; setTaps((ts) => ts.map((z) => (z === selTap ? nt : z))); setSelTap(nt); }}>{e}</button>))}</div>
-          <div className="q-btns"><button className="btn-sm" onClick={() => { setTaps((ts) => ts.filter((z) => z !== selTap)); setSelTap(null); }}>この印を消す</button><button className="btn-sm" onClick={() => setSelTap(null)}>閉じる</button></div></div>)}
-        {selItem && (<div className={popCls(selItem.src.x, selItem.src.y)} style={{ left: `${selItem.src.x * 100}%`, top: `${selItem.src.y * 100}%` }} onClick={(e) => e.stopPropagation()}><div className="c-label">{selItem.label}</div>
+          <div className="q-btns"><button className="btn-sm" onClick={() => { setTaps((ts) => ts.filter((z) => z !== selTap)); setSelTap(null); }}>この印を消す</button><button className="btn-sm" onClick={() => setSelTap(null)}>閉じる</button></div></MarkPop>)}
+        {selItem && (<MarkPop x={selItem.src.x} y={selItem.src.y}><div className="c-label">{selItem.label}</div>
           <div className="ir-meta">{selItem.status === "stable" ? "安定" : "未定着"} · {selItem.failCount}回 · 間隔{INT[selItem.level || 0]}日 · 次回 {selItem.nextDue.slice(5)}{selItem.printedOn ? " · 印刷済み" : ""}</div>
           <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (selItem.etype === e ? " on" : "")} onClick={() => setEtype(selItem, e)}>{e}</button>))}</div>
-          <div className="q-btns">{selItem.fmt !== "知識・用語" && <button className={"et why" + (selItem.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === selItem.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{selItem.noWhy ? "説明不要（暗記もの）" : "説明を求める"}</button>}<button className="btn-sm" onClick={() => setSel(null)}>閉じる</button></div></div>)}
+          <div className="q-btns">{selItem.fmt !== "知識・用語" && <button className={"et why" + (selItem.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === selItem.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{selItem.noWhy ? "説明不要（暗記もの）" : "説明を求める"}</button>}<button className="btn-sm" onClick={() => setSel(null)}>閉じる</button></div></MarkPop>)}
       </div></div>) : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
     <p className="ph-note">×だった問題をタップすると印が付き、誤答の種類を選べます（初期値は「知らなかった」）。薄い印は登録済みで、タップすると状態と誤答の種類が見えます。</p>
     {taps.length > 0 && (<><p className="tap-sum">印 {taps.length}（{Object.entries(byPage).map(([k, n]) => `${k}: ${n}`).join("、")}）</p>
@@ -2067,8 +2085,7 @@ const CSS = `
 .mk-new,.mk-old{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:2px solid #1656D6;background:rgba(22,86,214,.25)}.mk-old{border:1.5px solid #1656D6;background:rgba(22,86,214,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel,.mk-new.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #C08A3E}
 .lastp{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--ink2)}.lastp .btn-sm{margin-left:auto;white-space:nowrap}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}
-.mpop.pop{position:absolute;z-index:5;margin:0;width:240px;max-width:92%;background:var(--card);box-shadow:0 4px 16px rgba(30,35,33,.18);transform:translate(10px,10px);cursor:default}
-.mpop.pop.l{transform:translate(calc(-100% - 10px),10px)}.mpop.pop.up{transform:translate(10px,calc(-100% - 10px))}.mpop.pop.l.up{transform:translate(calc(-100% - 10px),calc(-100% - 10px))}
+.mpop.pop{position:absolute;z-index:5;margin:0;width:240px;max-width:92%;background:var(--card);box-shadow:0 4px 16px rgba(30,35,33,.18);cursor:default}
 .mpop.pop .q-btns{margin-top:8px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
 .et.bad.on{background:#A8443B;border-color:#A8443B;color:#fff}.et.why{margin-top:4px;margin-left:4px}.et.why.on{background:#C08A3E;border-color:#C08A3E}
