@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 14:07"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 14:08"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -565,10 +565,14 @@ function nextActions(d) {
 /* ==================== 3. AI ==================== */
 
 /* ---- 呼び出し ---- */
-const MODEL = "claude-opus-5";
-const FALLBACK = "claude-sonnet-4-6";
+/* モデルの使い分け。類題生成・答案や紙の読み取り・目次と索引・項目名付け → Sonnet 5。診断・同じ技能かの判定・模試の作問 → Opus 5。失敗時の切り替え先は Sonnet 5。設定の「すべて Opus 5」で全部 Opus に */
+const OPUS = "claude-opus-5", SONNET = "claude-sonnet-5";
+const MODEL = SONNET, FALLBACK = SONNET;
+const ALL_OPUS_KEY = "all_opus";
+const allOpus = () => LS(ALL_OPUS_KEY) === "1";
+const pickModel = (m) => (allOpus() ? OPUS : m || SONNET);
 let lastUsed = "";
-const usedLabel = () => (lastUsed === MODEL ? "Opus 5" : lastUsed === FALLBACK ? "Sonnet 4.6" : "");
+const usedLabel = () => (lastUsed === OPUS ? "Opus 5" : lastUsed === SONNET ? "Sonnet 5" : lastUsed ? lastUsed : "");
 const API_HEADERS = () => ({ "Content-Type": "application/json", "x-api-key": LS(AKEY), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" });
 async function once(model, content, system, maxTokens) {
   if (!hasKey()) throw new Error("APIキーが未設定です。「設定」タブで登録してください。");
@@ -582,8 +586,8 @@ async function once(model, content, system, maxTokens) {
   if (!text) throw new Error("空の応答");
   return text;
 }
-async function callAI(content, system, maxTokens = 2200, force = null) {
-  const order = force ? [force] : lastUsed ? [lastUsed, ...[MODEL, FALLBACK].filter((m) => m !== lastUsed)] : [MODEL, FALLBACK];
+async function callAI(content, system, maxTokens = 2200, model = null) {
+  const primary = pickModel(model); const order = primary === FALLBACK ? [primary, primary] : [primary, FALLBACK]; // 失敗したら Sonnet 5 で1回だけやり直す
   let err;
   for (const m of order) { try { const t = await once(m, content, system, maxTokens); lastUsed = m; return t; } catch (e) { err = e; } }
   throw err;
@@ -621,7 +625,7 @@ async function genForItem(i, u, ctx, prev = "なし", model = null) {
 /* 座標つきで登録された項目に、AI が名前と形式を付ける。ページごとに1回。失敗したページは仮の名前のまま。戻り値は {id: {label, fmt, note, named}} */
 async function nameItems(items, unitOf, model = null, meta = {}, existing = []) {
   const out = {}; meta.listening = [];
-  const exList = existing.slice(0, 40); const exText = exList.length ? `\n既存の未定着項目:\n${exList.map((e, k) => `${k + 1}) ${e.label}`).join("\n")}\n印の問題が既存の項目と同じ技能（後日その一点を聞き直せば同時に確かめられる）なら same にその番号を入れる。迷えば 0。` : "";
+  const exList = existing.slice(0, 40); model = model || (exList.length ? OPUS : SONNET); /* 同じ技能かの判定があるときは Opus */ const exText = exList.length ? `\n既存の未定着項目:\n${exList.map((e, k) => `${k + 1}) ${e.label}`).join("\n")}\n印の問題が既存の項目と同じ技能（後日その一点を聞き直せば同時に確かめられる）なら same にその番号を入れる。迷えば 0。` : "";
   const byPath = {}; items.filter((i) => hasPos(i.src) && !i.named).forEach((i) => { (byPath[i.src.path] = byPath[i.src.path] || []).push(i); });
   for (const path of Object.keys(byPath)) {
     const group = byPath[path]; const s0 = group[0];
@@ -676,7 +680,7 @@ async function genPaper(d, subject, units, opts) {
 ${mock ? MOCK_JSON : 'JSONのみ: {"questions":[{"q":"問題文","a":"解答（途中式含む）","unit":"単元名","fmt":"形式","aim":"ねらい","label":"項目名","svg":"","fig":0' + (carry.length ? ',"item":"繰り越しの再出題なら id、それ以外は空"' : "") + '}]}'}`;
   const parts = [...images.flatMap((im) => [{ type: "text", text: `【参考】${im.label}` }, imgBlock(im.b64)]), ...matImgs.flatMap((x, k) => [{ type: "text", text: `【図${k + 1}】${x.m.kind} p.${x.m.page}` }, imgBlock(x.b64)])];
   const content = parts.length ? [...parts, { type: "text", text: prompt }] : prompt;
-  const t = await callAI(content, system, mock ? 9000 : 6000);
+  const t = await callAI(content, system, mock ? 9000 : 6000, mock ? OPUS : SONNET);
   const parsed = parseJSON(t);
   const raw = mock ? flattenSections(parsed) : (parsed.questions || []).map((x) => ({ ...x, sec: "" }));
   const qs = raw.map((x, i) => {
@@ -708,7 +712,7 @@ function normalizePts(qs, total = 100) {
 }
 
 /* 3回以上落ちた項目の診断。抜けている前提と、戻って積み上げ直す手順 */
-async function diagnose(i, u, ctx, model = null) {
+async function diagnose(i, u, ctx, model = OPUS) {
   const t = await callAI(`${itemContext(i, u, ctx)}\n\n同じ項目を${i.failCount}回落としています。反復では解決しないと判断しました。抜けている前提を特定し、そこまで戻って積み上げ直す手順を。`,
     `日本の中学1年生を教える講師。causeは最も可能性が高い原因1つ。prereqは戻るべき前提の単元（小学校範囲でも可）。stepsは3〜4段階、各段階は「何をやらせるか」だけ短く。checkは通過の判定方法。\nJSONのみ: {"cause":"","prereq":"","steps":[{"do":"","check":""}]}`, 2000, model);
   return parseJSON(t);
@@ -1075,7 +1079,7 @@ function GradeRowDetail({ i, d, save }) {
       {showA && g.script && <div className="q-s">声かけ例：{g.script}</div>}
       <div className="q-btns"><button className="btn-sm" onClick={() => setShowA(!showA)}>{showA ? "解答を隠す" : "解答を見る"}</button></div></>) : <p className="empty">{i.printedOrig ? `類題を作れなかったので、元の問題（${srcLabel(i.src)}）をもう一度解いています。解答はワークで。` : "類題はありません。"}</p>}
     {i.failCount >= 3 && !i.diag && <button className="btn-ai warn" onClick={() => diag()} disabled={busy}>{busy ? `診断中… ${sec}秒` : "なぜ定着しないのかを診断"}</button>}
-    {err && <div className="errbox"><p>{err}</p><button className="btn-sm" onClick={() => diag(FALLBACK)}>Sonnet 4.6 で診断</button></div>}
+    {err && <div className="errbox"><p>{err}</p><button className="btn-sm" onClick={() => diag(SONNET)}>Sonnet 5 で診断</button></div>}
     {i.diag && (<div className="dbox"><div className="d-row"><span>原因</span>{i.diag.cause}</div><div className="d-row"><span>戻る単元</span>{i.diag.prereq}</div>
       {(i.diag.steps || []).map((st, n) => (<div className="d-step" key={n}><div className="ds-n">{n + 1}</div><div><div className="ds-do">{st.do}</div><div className="ds-ck">通過の目安：{st.check}</div></div></div>))}</div>)}
   </div>);
@@ -1106,7 +1110,7 @@ function TodayGrade({ d, save }) {
     {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
       <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（判定欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
-      {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, FALLBACK)}>Sonnet 4.6 で読み取る</button>}</div>}
+      {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, SONNET)}>もう一度読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (
         <div className={"grow" + (c.skip ? " skip" : c.r ? " done" : "")} key={i.id}>
           <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<em className="lv">印刷 {i.printedOn.slice(5)}{i.printedAs ? ` · 紙の${i.printedAs}番目` : ""}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
@@ -1351,7 +1355,7 @@ function PaperGrade({ p: paper, d, save }) {
     {(<>
       <p className="lead">赤ペンで採点したあと、この用紙の答案を撮ってください。○×の記号を読み取り、結果と未定着項目を自動で組み立てます。</p>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : `この用紙の答案を撮る（${paper.code}）`}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) { setLastFile(f); read(f); } }} /></label>
-      {err && <div className="errbox"><p>{err}</p>{lastFile && <button className="btn-sm" onClick={() => read(lastFile, FALLBACK)}>Sonnet 4.6 で読み取る</button>}</div>}
+      {err && <div className="errbox"><p>{err}</p>{lastFile && <button className="btn-sm" onClick={() => read(lastFile, SONNET)}>もう一度読み取る</button>}</div>}
       {marks && paper && (<>
         <div className="markgrid">{paper.questions.map((qq) => { const m = marks[qq.n] || "unknown"; return (
           <button key={qq.n} className={"mk " + m} onClick={() => setMarks((x) => ({ ...x, [qq.n]: m === "o" ? "x" : m === "x" ? "blank" : m === "blank" ? "unknown" : "o" }))}>{qq.n}<span>{m === "o" ? "○" : m === "x" ? "×" : m === "blank" ? "空" : "?"}</span></button>); })}</div>
@@ -1879,7 +1883,7 @@ function ExportTab({ d }) {
     <Fld label="依頼内容"><textarea rows={2} value={ask} onChange={(e) => setAsk(e.target.value)} /></Fld><textarea id="expta" className="exp" readOnly rows={18} value={text} /><button className="btn-main" onClick={copy}>コピーする</button></div>);
 }
 function Settings({ d, save, setSync }) {
-  const [dmax, setDmax] = useState(String(dailyMax()));
+  const [dmax, setDmax] = useState(String(dailyMax())); const [opusAll, setOpusAll] = useState(allOpus());
   const [key, setKey] = useState(LS(AKEY)); const [url, setUrl] = useState(LS(SB_URL)); const [anon, setAnon] = useState(LS(SB_KEY)); const [room, setRoom] = useState(LS(SB_ROOM));
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
   const say = (t) => { setMsg(t); setTimeout(() => setMsg(""), 4000); };
@@ -1911,6 +1915,7 @@ function Settings({ d, save, setSync }) {
     <section className="sec"><h3 className="s-h">今日の分の上限</h3><p className="lead">1日に出す問題数。習得中の項目は3問、保持の確認は1問で数えます。多すぎると続きません。超えた分は翌日に繰り越します。</p>
       <Fld label="1日の問題数の上限（1〜60、既定18）"><input type="number" inputMode="numeric" min="1" max="60" value={dmax} onChange={(e) => { setDmax(e.target.value); const v = parseInt(e.target.value, 10); if (v >= 1 && v <= 60) localStorage.setItem(DAILY_MAX_KEY, String(v)); }} /></Fld></section>
     <section className="sec"><h3 className="s-h">APIキー</h3><p className="lead">AI機能に必要です。console.anthropic.com で発行。この端末の中にだけ保存されます。</p>
+      <label className="chk"><input type="checkbox" checked={opusAll} onChange={(e) => { setOpusAll(e.target.checked); localStorage.setItem(ALL_OPUS_KEY, e.target.checked ? "1" : "0"); }} /> すべて Opus 5 を使う（既定は、類題・読み取り・索引・項目名は Sonnet 5、診断・同じ技能の判定・模試は Opus 5。費用と速さの違い）</label>
       <Fld label="Anthropic API キー"><input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-..." autoComplete="off" /></Fld>
       <div className="q-btns"><button className="btn-sm" onClick={saveKey}>保存</button><button className="btn-sm" onClick={testKey} disabled={busy === "key" || !key.trim()}>{busy === "key" ? "確認中…" : "接続を確認"}</button></div></section>
     <section className="sec"><h3 className="s-h">バックアップ</h3><p className="lead">月1回は書き出してください。30日たつとホームに出ます。読み込みは上書きではなく統合です。{d.backupOn ? `前回 ${d.backupOn}。` : "まだ書き出していません。"}</p>
@@ -1947,6 +1952,7 @@ const CSS = `
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
 .et.why{margin-top:4px;margin-left:4px}.et.why.on{background:#C08A3E;border-color:#C08A3E}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--ink2);line-height:1.6;margin:6px 0 10px}.chk input{width:auto;height:auto;margin-top:3px}
 .root select.et-sel{width:auto;font-size:11px;padding:3px 6px;margin-top:4px;color:var(--ink2)}
 .matpick{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}.matpick .seg{margin-bottom:8px}.qn-row{display:flex;gap:6px;margin-top:8px}.qn-row input{flex:1}
 .src-n{font-size:11px;color:var(--ink2);display:flex;align-items:center;gap:4px;margin:0 0 8px;padding:6px 8px;background:#EEF3F6;border-left:2px solid #3D6B8E}.src-n .btn-x{margin-left:auto}

@@ -119,7 +119,7 @@
 - 既知の問題: html2canvas は oklab/oklch を読めないので独立 iframe 内で描画。html2canvas は詰め（`font-feature-settings: palt`）やカーニングがあると「【」「」」や数字がずれて消えるので、iframe 内では詰め・カーニング・字間をすべて切る（画面のプレビューだけ palt）。文字は A4 に対して本文 13px（約10pt）。実ブラウザで確認すること。2026-09-10 に Windows Chrome で 2教科6ページと類題3ページ（問題＋白紙＋解答）を確認済み。
 
 ## AI
-- Anthropic API を直接呼ぶ（`anthropic-dangerous-direct-browser-access`）。キーは localStorage。モデルは `claude-opus-5`、失敗時 `claude-sonnet-4-6`（`callAI`、直近に成功したモデルを先に試す）。
+- Anthropic API を直接呼ぶ（`anthropic-dangerous-direct-browser-access`）。キーは localStorage。モデルの使い分け: 類題生成・答案や紙の読み取り・目次と索引・項目名付け → `claude-sonnet-5`（`SONNET`）、診断・同じ技能かの判定（既存の一覧を渡すとき）・模試の作問 → `claude-opus-5`（`OPUS`）。`callAI(content, system, maxTokens, model)` は失敗したら Sonnet 5 で1回やり直す（Sonnet が失敗したら Sonnet でもう一度）。設定の「すべて Opus 5 を使う」（localStorage `all_opus`）で全部 Opus に（`pickModel`）。
 - 出力は必ず JSON 指定、`parseJSON()` で取り出す。画像は `imgBlock(b64)`。
 - 用途: 類題生成／診断／採点済み答案の○×読み取り／目次から単元抽出／タップした問題の項目名付け／ページの問題番号の索引／作問／読解の文章と設問／記述の添削／設定の接続確認。
 - 教科書・既存作品の文章は複製しない。文章は新規に書く。教材ページは「用語・表現・難易度を合わせる」ためと図の参照のために渡し、本文や設問をそのまま写させない。

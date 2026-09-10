@@ -1352,3 +1352,33 @@ describe("安定した項目は日々の再出題から外れ、累積テスト�
     assert.equal(m.migrate({ v: 3, units: [], items: [{ id: "x", level: 5 }] }).items[0].level, 4);
   });
 });
+
+describe("モデルの使い分け", () => {
+  test("pickModel: 既定は Sonnet 5、指定があればそれ、「すべて Opus 5」なら Opus", () => {
+    assert.equal(m.SONNET, "claude-sonnet-5"); assert.equal(m.OPUS, "claude-opus-5");
+    assert.equal(m.pickModel(null), m.SONNET); assert.equal(m.pickModel(m.OPUS), m.OPUS);
+    m.stubs.localStorage.setItem("all_opus", "1"); try { assert.equal(m.pickModel(null), m.OPUS); assert.equal(m.pickModel(m.SONNET), m.OPUS); assert.equal(m.allOpus(), true); } finally { m.stubs.localStorage.removeItem("all_opus"); }
+  });
+  test("callAI: 失敗したら Sonnet 5 に切り替える。Sonnet が失敗したら Sonnet でもう一度", async () => {
+    const orig = globalThis.fetch; const models = []; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => { const b = JSON.parse(opts.body); models.push(b.model); return models.length === 1 ? { ok: false, status: 500, json: async () => ({ error: { message: "x" } }) } : { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: "ok" }] }) }; };
+    try {
+      assert.equal(await m.callAI("q", "s", 10, m.OPUS), "ok"); assert.deepEqual(models, [m.OPUS, m.SONNET]);
+      models.length = 0; assert.equal(await m.callAI("q", "s", 10), "ok"); assert.deepEqual(models, [m.SONNET, m.SONNET]);
+    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+  test("使い分け: 診断は Opus、名前付けは既存の一覧があれば Opus・無ければ Sonnet、模試は Opus・週次は Sonnet", async () => {
+    const orig = globalThis.fetch; const models = []; m.stubs.localStorage.setItem("anthropic_api_key", "sk"); m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k");
+    globalThis.fetch = async (url, opts) => { if (url.includes("/storage/")) return { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer }; models.push(JSON.parse(opts.body).model); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"cause":"c","prereq":"p","steps":[],"items":[{"n":1,"label":"L","fmt":"計算"}],"questions":[{"q":"q","a":"a","unit":"正負の数","fmt":"計算","label":"l"}],"sections":[]}' }] }) }; };
+    try {
+      const d = F.demo(); const src = { path: "p.jpg", kind: "ワーク", page: 1, x: 0.2, y: 0.2 };
+      await m.diagnose(d.items[0], d.units[0], m.ctxFor(d, d.items[0]));
+      await m.nameItems([{ id: "a", subject: "数学", unitId: "u", named: false, src }], () => null, null, {}, []);
+      await m.nameItems([{ id: "a", subject: "数学", unitId: "u", named: false, src }], () => null, null, {}, [{ id: "e", label: "x" }]);
+      const units = d.units.filter((u) => u.id === "u1");
+      await m.genPaper(d, "数学", units, { kind: "週次", n: "3" });
+      await m.genPaper(d, "数学", units, { kind: "模試", fields: { examId: "e1" } });
+      assert.deepEqual(models, [m.OPUS, m.SONNET, m.OPUS, m.SONNET, m.OPUS]);
+    } finally { globalThis.fetch = orig; ["anthropic_api_key", "sb_url", "sb_key"].forEach((k) => m.stubs.localStorage.removeItem(k)); }
+  });
+});

@@ -306,3 +306,6 @@ test("今日/印刷: 上限を超えた候補は繰り越しとして未チェ�
 test("設定: 今日の分の上限の欄がある", () => {
   assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("1日の問題数の上限（1〜60、既定18）"));
 });
+test("設定: 「すべて Opus 5 を使う」の切り替えがある", () => {
+  assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("すべて Opus 5 を使う"));
+});
