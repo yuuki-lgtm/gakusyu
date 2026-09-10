@@ -381,3 +381,10 @@ test("夜の作業: やることが無い段階は飛ばす。空のデータな
   try { const h3 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html; assert.ok(h3.includes("夜の作業 3/4") && h3.includes("← 採点に戻る"), "途中保存は尊重し、戻る先は飛ばした段階を越える"); }
   finally { m.nightSave(null); }
 });
+test("今日/印刷: 候補は教科ごとに見出しで分かれ、行には教科名を繰り返さない", () => {
+  const html = render(m.TodayTab, { d: F.demo(), save: noop, initial: "print" }).html;
+  const subs = m.SUBJECTS.filter((sb) => m.printSet(F.demo()).some((i) => i.subject === sb));
+  assert.ok(subs.length >= 2, "デモは2教科以上");
+  let pos = -1; for (const sb of subs) { const k = html.indexOf(`<h4 class="sub-h">`, pos + 1); assert.ok(k > pos, sb); assert.ok(html.slice(k, k + 200).includes(sb + "<em"), sb); pos = k; }
+  assert.ok(!/<div class="ir-meta">[^<]*<span[^>]*><.span>(数学|英語|社会|理科|国語)・/.test(html));
+});
