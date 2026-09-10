@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 19:03"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 19:06"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -955,6 +955,12 @@ async function exportPDF(papers, onStep) {
 /* ---- App ---- */
 /* 一度開いた画面は裏に残す（hidden）。バーで戻ると、選んでいた切り替え・入力途中・スクロール位置がそのまま。
    m（サブ画面）付きの遷移（ホームの「次にやること」など）は n を進めて画面を作り直し、m から始める */
+/* 下のメニューバーのアイコン（線画、色は文字色に従う） */
+const TAB_ICONS = {
+  home: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.5 12 4.5l8.5 7M6 9.8V20h4.5v-5h3v5H18V9.8" /></svg>),
+  week: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="15" rx="2" /><path d="M3.5 10.5h17M8 3.5v4M16 3.5v4" /></svg>),
+  more: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none" /></svg>),
+};
 const GROUP_OF = { home: "home", today: "home", night: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more" };
 const openScreen = (o, t, m = null) => (m || !o[t] ? { ...o, [t]: { m, n: o[t] ? o[t].n + 1 : 0 } } : o);
 function App() {
@@ -1007,7 +1013,7 @@ function App() {
     <div className="root"><style>{CSS}</style>
       <header className="hd"><div className="hd-t"><span>学習ループ</span>{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div>
         <div className="hd-s">未定着 {active.length} · 今日 {due.length}件{daily.rest.length ? `（繰り越し ${daily.rest.length}件）` : ""} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日</div></header>
-      <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{l}</button>))}</nav>
+      <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{TAB_ICONS[k]}<span className="tab-l">{l}</span></button>))}</nav>
       <main className="main">
         {Object.keys(opened).map((k) => { const m = opened[k].m; return (<div key={`${k}:${opened[k].n}`} hidden={tab !== k}>
           {k === "home" && <HomeTab d={d} go={go} />}
@@ -2079,8 +2085,8 @@ const CSS = `
  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
 .root *{box-sizing:border-box}
 .hd{padding:18px 16px 4px}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em;display:flex;align-items:center}.hd-s{font-size:12px;line-height:18px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;align-items:center}
-.tabs{display:flex;gap:0;padding:0 0 env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0D0C}.tabs.three .tab{flex:1;text-align:center;font-size:14px;font-weight:500;padding:14px 4px 15px;margin:0;border:none;border-radius:0;background:none;color:rgba(255,255,255,.55);-webkit-tap-highlight-color:transparent}
-.tabs.three .tab+.tab{border-left:1px solid rgba(255,255,255,.14)}
+.tabs{display:flex;gap:0;padding:0 0 env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0D0C}.tabs.three .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;letter-spacing:.02em;padding:8px 4px 7px;margin:0;border:none;border-radius:0;background:none;color:rgba(255,255,255,.5);-webkit-tap-highlight-color:transparent}
+.tab-i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tabs.three .tab:active{background:rgba(255,255,255,.08)}
 .tabs.three .tab.on{color:#fff;font-weight:700}
 .sub .lead{margin-top:2px}
