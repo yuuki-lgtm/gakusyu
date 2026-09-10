@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 07:17"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 07:20"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -2115,7 +2115,8 @@ function Settings({ d, save, setSync }) {
     <section className="sec"><h3 className="s-h">APIキー</h3><p className="lead">AI機能に必要です。console.anthropic.com で発行。この端末の中にだけ保存されます。</p>
       <label className="chk"><input type="checkbox" checked={opusAll} onChange={(e) => { setOpusAll(e.target.checked); localStorage.setItem(ALL_OPUS_KEY, e.target.checked ? "1" : "0"); }} /> すべて Opus 5 を使う（既定は、類題・読み取り・索引・項目名は Sonnet 5、診断・同じ技能の判定・模試は Opus 5。費用と速さの違い）</label>
       <Fld label="Anthropic API キー"><input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-..." autoComplete="off" /></Fld>
-      <div className="q-btns"><button className="btn-sm" onClick={saveKey}>保存</button><button className="btn-sm" onClick={testKey} disabled={busy === "key" || !key.trim()}>{busy === "key" ? "確認中…" : "接続を確認"}</button></div></section>
+      <div className="q-btns"><button className="btn-sm" onClick={saveKey}>保存</button><button className="btn-sm" onClick={testKey} disabled={busy === "key" || !key.trim()}>{busy === "key" ? "確認中…" : "接続を確認"}</button></div>
+      <p className="q-warn">帯の見本: <button className="lnk" onClick={() => setApiBlock("credit")}>残高切れを表示</button> ／ <button className="lnk" onClick={() => setApiBlock("invalid")}>キー無効を表示</button> ／ <button className="lnk" onClick={() => setApiBlock(null)}>消す</button>（見た目の確認用。AI の呼び出しが成功すれば自動で消えます）</p></section>
     <section className="sec"><h3 className="s-h">バックアップ</h3><p className="lead">月1回は書き出してください。30日たつとホームに出ます。読み込みは上書きではなく統合です。{d.backupOn ? `前回 ${d.backupOn}。` : "まだ書き出していません。"}</p>
       <div className="q-btns"><button className="btn-sm" onClick={backup}>書き出す</button><label className="btn-sm ctr">読み込む<input type="file" accept="application/json" onChange={restore} hidden /></label></div>
       <p className="q-warn">未定着 {d.items.filter((i) => i.status === "active").length} ／ 安定 {d.items.filter((i) => i.status === "stable").length} ／ 記録 {d.tests.length} ／ 単元 {d.units.length}</p></section>
