@@ -780,3 +780,22 @@ describe("共通処理（整理で切り出したもの）", () => {
     const d = F.demo(); assert.equal(m.unitById(d, "u2").name, "文字と式"); assert.equal(m.unitById(d, "nope"), undefined);
   });
 });
+
+describe("教材種別「テスト」", () => {
+  test("定数とパス", () => {
+    assert.deepEqual(m.MKINDS, ["ワーク", "教科書", "テスト"]); assert.deepEqual(m.BOOK_KINDS, ["教科書", "ワーク"]);
+    m.stubs.localStorage.setItem("sb_room", "fam-x");
+    try { assert.equal(m.matPath("数学", "テスト", 2), "fam-x/math/ts/2.jpg"); } finally { m.stubs.localStorage.removeItem("sb_room"); }
+  });
+  test("テストのページは単元のページ範囲と結びつかない（作問の添付・進度の自動判定に混ざらない）", () => {
+    const u = { pages: "p.10-12", wbPages: "p.4-5" };
+    assert.deepEqual(m.unitPages(u, "テスト"), []);
+    const d = F.demo();
+    assert.ok(m.materialsForUnits(d, "数学", d.units).every((x) => x.kind !== "テスト"));
+    assert.equal(m.unitForPage(d.units, "テスト", 1), null);
+  });
+  test("タップ登録はテストの答案にも使える（単元は指定のものに）", () => {
+    const its = m.tapsToItems([{ path: "fam-demo/math/ts/1.jpg", kind: "テスト", page: 1, x: 0.5, y: 0.5 }], "数学", F.demo().units, "u1");
+    assert.equal(its[0].unitId, "u1"); assert.equal(its[0].label, "テスト p.1 の×（1）"); assert.equal(its[0].src.kind, "テスト");
+  });
+});

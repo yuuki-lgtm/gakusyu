@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 10:55"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 10:59"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -35,9 +35,10 @@ const ETYPES = ["知らなかった", "分かっていたが間違えた", "読�
 const INT = [1, 3, 7, 14, 30, 60];
 const STABLE_LEVEL = 4;
 /* 教材（ワーク・教科書）のページ画像は Supabase Storage に置き、端末には索引だけ持つ */
-const MKINDS = ["ワーク", "教科書"];
+const MKINDS = ["ワーク", "教科書", "テスト"]; // 教材種別。テスト＝返却された定期テストの答案（枚をページとして扱う）
+const BOOK_KINDS = ["教科書", "ワーク"]; // 目次があり、単元とページ範囲を結びつけるもの
 const SUBJ_CODE = { 数学: "math", 英語: "eng", 社会: "soc", 理科: "sci", 国語: "jpn" };
-const KIND_CODE = { ワーク: "wb", 教科書: "tb" };
+const KIND_CODE = { ワーク: "wb", 教科書: "tb", テスト: "ts" };
 const JUDGE = [["x", "できなかった", "ng"], ["o", "解けた", "mid"], ["oo", "説明もできた", "okb"]];
 const READ_TYPES = ["指示語の内容", "接続語の選択", "理由の説明", "要旨・主張", "心情の読み取り", "語句の意味", "段落の役割"];
 const RUBRIC = [["len", "字数を満たした"], ["structure", "段落の型に沿った"], ["surface", "助詞・送り仮名・脱字がない"]];
@@ -276,7 +277,7 @@ function parsePages(s) {
   return [...out].sort((a, b) => a - b);
 }
 const unitById = (d, id) => d.units.find((u) => u.id === id);
-const unitPages = (u, kind) => parsePages(kind === "ワーク" ? u.wbPages : u.pages);
+const unitPages = (u, kind) => parsePages(kind === "ワーク" ? u.wbPages : kind === "教科書" ? u.pages : "");
 const unitForPage = (units, kind, page) => units.find((u) => unitPages(u, kind).includes(page)) || null;
 const unitPageLabel = (u) => [u.pages ? `教科書 ${u.pages}` : "", u.wbPages ? `ワーク ${u.wbPages}` : ""].filter(Boolean).join(" ／ ");
 /* 目次から読んだ候補を単元に反映する。既存の単元名に一致すればページ範囲だけ足し、なければ新規に作る */
@@ -1333,7 +1334,7 @@ function UnitReg({ d, save }) {
   return (<>
     <section className="sec"><SubjRow value={subject} onChange={(s) => { setSubject(s); setCands(null); setEdit(null); }} />
       <p className="lead">学期の初めに教科書の目次を撮って一括登録すれば、以後の登録は不要です。ワークの目次も撮っておくと、単元ごとにワークのページが結びつき、作問と×の登録で教材のページを自動で使えます。</p>
-      <div className="seg sm">{MKINDS.slice().reverse().map((k) => (<button key={k} className={tocKind === k ? "on" : ""} onClick={() => { setTocKind(k); setCands(null); }}>{k}の目次</button>))}</div>
+      <div className="seg sm">{BOOK_KINDS.map((k) => (<button key={k} className={tocKind === k ? "on" : ""} onClick={() => { setTocKind(k); setCands(null); }}>{k}の目次</button>))}</div>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : `${tocKind}の目次を撮る`}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) readTOC(f); }} /></label>
       {err && <div className="errbox"><p>{err}</p></div>}
       {cands && (<><p className="ph-note">{tocKind === "ワーク" ? "登録済みの単元に当たるものは「→ 単元名」と出ます。チェックしたものにワークのページを結びつけ、該当がなければ新しい単元として登録します。" : "登録する単元にチェック。既にページが入っているものは外してあります。"}</p>
@@ -1433,7 +1434,7 @@ function ItemReg({ d, save }) {
     save({ ...d, items: [...d.items, newItem({ subject, unitId, label: label.trim(), note: note.trim(), fmt, etype })], log: { ...d.log, [today()]: true } });
     setLabel(""); setNote(""); setMsg("追加しました。明日の「今日」に出ます"); setTimeout(() => setMsg(""), 2000); };
   return (<section className="sec">
-    <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて×だった問題をタップし、最後に「まとめて登録」。項目名はAIがあとで付けます。翌日の「今日」に出ます。" : "その日のワークの×を、その夜に登録します。「登録→教材」でワークを取り込んでおくと、ページを開いて×をタップするだけで登録できます。取り込むまでは下の手入力で。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
+    <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて×だった問題をタップし、最後に「まとめて登録」。項目名はAIがあとで付けます。翌日の「今日」に出ます。返却されたテストは「テスト」を選んで同じように。" : "その日のワークの×を、その夜に登録します。「登録→教材」でワークを取り込んでおくと、ページを開いて×をタップするだけで登録できます。取り込むまでは下の手入力で。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
     <SubjRow value={subject} onChange={setSubject} />
     {hasMat && <TapReg d={d} save={save} subject={subject} us={us} fallbackUnitId={unitId} />}
     <Fld label={hasMat ? "単元（ページが単元と対応していないときに使う）" : "単元"}><select value={unitId} onChange={(e) => setUnitId(e.target.value)}><option value="">—</option>{us.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</select></Fld>
@@ -1515,12 +1516,12 @@ function MaterialReg({ d, save }) {
 
   return (<>
     <section className="sec">
-      <p className="lead">ワークと教科書を一度だけ取り込みます。以後は作問と×の登録で写真を撮らずに済みます。画像は共有先（Supabase）にだけ置き、この端末には残しません。家庭内の私的使用に限ります。</p>
+      <p className="lead">ワークと教科書を一度だけ取り込みます。以後は作問と×の登録で写真を撮らずに済みます。返却された定期テストの答案も「テスト」として取り込めば、同じように×をタップで登録できます。画像は共有先（Supabase）にだけ置き、この端末には残しません。家庭内の私的使用に限ります。</p>
       <SubjRow value={subject} onChange={(s) => { setSubject(s); setFiles([]); setMsg(""); }} />
       <div className="seg sm">{MKINDS.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setFiles([]); setMsg(""); }}>{k}</button>))}</div>
       <div className="mat-sum">{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）` : "なし"}</div>); })}</div>
       <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>左ページが若い番号（横書き）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>右ページが若い番号（国語など縦書き）</button></div>
-      <Fld label="最初のページ番号（横長の画像は見開きとして2ページ、縦長は1ページとして順に振ります）"><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
+      <Fld label={kind === "テスト" ? "最初の番号（答案の1枚目なら 1。前に取り込んだ分に続けるならその次の番号）" : "最初のページ番号（横長の画像は見開きとして2ページ、縦長は1ページとして順に振ります）"}><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
       <label className="ph-btn">{busy ? `${busy}… ${sec}秒` : "PDF か ページの画像（複数可）を選ぶ"}<input type="file" accept="image/*,application/pdf" multiple hidden disabled={!!busy} onChange={pick} /></label>
       {files.length > 0 && !busy && (<div className="mat-pre">
         {(() => { const s1 = parseInt(start, 10) || 0; const ps = shapes.length === files.length ? assignPages(s1, shapes) : null; const last = ps && ps.length ? ps[ps.length - 1][ps[ps.length - 1].length - 1] : null; return (<>

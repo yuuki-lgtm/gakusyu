@@ -79,6 +79,7 @@ function fixtures(m) {
       { id: "m3", subject: "数学", kind: "ワーク", page: 12, path: "fam-demo/math/wb/12.jpg", idx: { ns: ["1", "2", "3", "4"], at: day(-3) }, updatedAt: ts(-30) },
       { id: "m4", subject: "数学", kind: "教科書", page: 12, path: "fam-demo/math/tb/12.jpg", updatedAt: ts(-30) },
       { id: "m5", subject: "英語", kind: "教科書", page: 8, path: "fam-demo/eng/tb/8.jpg", updatedAt: ts(-30) },
+      { id: "m6", subject: "数学", kind: "テスト", page: 1, path: "fam-demo/math/ts/1.jpg", updatedAt: ts(-2) },
     ],
     log: { [T]: true, [day(-1)]: true, [day(-2)]: true, [day(-4)]: true },
     deleted: ["old-item-1"],

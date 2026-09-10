@@ -200,3 +200,11 @@ test("設定にバージョンが出る。形式は日時", () => {
   assert.match(m.VERSION, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
   assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("v" + m.VERSION));
 });
+test("デモ: 教材の取り込みと×の登録に「テスト」の種別が出る。目次の切り替えには出ない", () => {
+  const mat = render(m.RegTab, { d: F.demo(), save: noop, initial: "mat" }).html;
+  assert.ok(mat.includes(">テスト<") && mat.includes("<b>テスト</b>"));
+  const item = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html;
+  assert.ok(item.includes(">テスト<"), "数学にはテストの答案が取り込まれている");
+  const unit = render(m.RegTab, { d: F.demo(), save: noop, initial: "unit" }).html;
+  assert.ok(unit.includes("教科書の目次") && unit.includes("ワークの目次") && !unit.includes("テストの目次"));
+});
