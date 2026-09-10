@@ -878,3 +878,38 @@ describe("定期テスト前の後ろ倒し", () => {
     assert.deepEqual(m.deferredFor(F.demo(), F.demo().exams[0]), []);
   });
 });
+
+describe("模試（段階1: 種別と範囲）", () => {
+  const withAI = async (reply, fn) => {
+    const orig = globalThis.fetch; const calls = [];
+    m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => { calls.push({ url, body: opts && opts.body ? JSON.parse(opts.body) : null }); if (url.includes("/storage/")) return { ok: false, status: 404 }; return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: JSON.stringify(reply) }] }) }; };
+    try { return await fn(calls); } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  };
+  test("upcomingExams / examSubjects / mocksFor / mockRound", () => {
+    const d = F.demo();
+    assert.deepEqual(m.upcomingExams(d).map((e) => e.id), ["e1"]);
+    assert.deepEqual(m.examSubjects(d, d.exams[0]), ["数学", "英語"]);
+    assert.deepEqual(m.mocksFor(d, d.exams[0]), []);
+    assert.deepEqual([14, 10, 7, 5, 3, 1, 0, 15, -1, null].map(m.mockRound), [14, 14, 7, 7, 3, 3, 3, null, null, null]);
+  });
+  test("genPaper: 週次と同じ経路で、模試は kind・examId・50分・100点を持つ", async () => {
+    const d = F.demo(); const ex = d.exams[0]; const units = d.units.filter((u) => u.subject === "数学" && ex.unitIds.includes(u.id));
+    await withAI({ questions: [{ q: "q1", a: "a1", unit: "正負の数", fmt: "計算", aim: "x", label: "l1" }, { q: "q2", a: "a2", unit: "文字と式", fmt: "知識・用語", aim: "y", label: "l2" }] }, async (calls) => {
+      const { paper } = await m.genPaper(d, "数学", units, { kind: "模試", fields: { examId: ex.id, examName: "2学期中間", left: 10, round: 14 } });
+      assert.deepEqual([paper.kind, paper.subject, paper.examId, paper.examName, paper.minutes, paper.maxScore, paper.round, paper.status], ["模試", "数学", "e1", "2学期中間", 50, 100, 14, "printed"]);
+      assert.equal(paper.questions.length, 2); assert.equal(paper.questions[1].unitId, "u2"); assert.ok(paper.code.endsWith("模"));
+      const w = await m.genPaper(d, "数学", units, { kind: "週次", n: "5" });
+      assert.equal(w.paper.kind, "週次"); assert.equal(w.paper.minutes, undefined);
+      assert.ok(calls.some((c) => c.body && JSON.stringify(c.body).includes("模試")));
+    });
+    await assert.rejects(() => m.genPaper(d, "社会", [], { kind: "週次" }), /出題範囲の単元がありません/);
+  });
+  test("paperTitle", () => {
+    assert.equal(m.paperTitle({ kind: "模試", examName: "中間" }), "模試（中間）"); assert.equal(m.paperTitle({ kind: "週次" }), "週次テスト"); assert.equal(m.paperTitle({ kind: "類題" }), "類題");
+  });
+  test("模試は週次の判断と「今日作った教科をまとめてPDF」に混ざらない", () => {
+    const d = F.demo(); d.papers.push({ id: "mk", kind: "模試", subject: "数学", date: T, examId: "e1", questions: [], unitIds: [], status: "printed", updatedAt: "" });
+    assert.equal(m.lastCumOn(d), day(-10));
+  });
+});

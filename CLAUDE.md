@@ -45,7 +45,8 @@
 - **カード `TodayCards`**: 従来の1件ずつの画面。`ItemCard` で類題を画面で見る、子どもが画面で判定して `pending` に保存、親が確定、3回落ちた項目の診断。
 
 ### テスト `WeekTab`（作る／撮る／読解／記述／手入力）
-- **作る `MakePapers`**: 教科ごとに `pickUnits()`（未定着がある単元と最近出していない単元）か手で選んだ単元で、`materialsForUnits()` の教材ページを「図1〜図N」として添付して作問。問題文が参照した図（「図3」または `fig`）のページだけ `refs` に残す。「今日作った N 教科を1つのPDFに」で `exportPDF(papers)`。各行の `PaperRow`→`PrintSheet` は1教科ずつ。
+- **作る `MakePapers`**: 教科ごとに `pickUnits()`（未定着がある単元と最近出していない単元）か手で選んだ単元で `genPaper()`（週次・累積・模試で共通の作問関数。AI 節）を呼び、`materialsForUnits()` の教材ページを「図1〜図N」として添付して作問。問題文が参照した図（「図3」または `fig`）のページだけ `refs` に残す。「今日作った N 教科を1つのPDFに」で `exportPDF(papers)`。各行の `PaperRow`→`PrintSheet` は1教科ずつ。
+- **模試 `MockMaker`**: 「定期」で範囲を選んだ直近のテストの範囲で、1教科ずつ `genPaper(kind:"模試")` で作る。用紙は `examId`・`examName`・`left`・`round` を持つ。週次の判断（`paperThisWeek`）や「今日作った教科をまとめてPDF」には混ぜない。模試の用紙は再利用しない。
 - **撮る `GradeFlow`**: 採点済みの答案を撮り、AI が○×を読む。×と空欄を未定着に入れ、形式別の結果を `tests` に入れる。
 - **読解 `ReadingMaker`**: 新規の文章と設問を作る（既存作品は使わない）。落とした設問は「読解の技能」として未定着に。
 - **記述 `WritingFlow`**: 課題を作り、答案を撮って添削。表面の誤りの種類を未定着に。
@@ -74,7 +75,8 @@
           src:{path, kind, page, x, y}|undefined(教材のページとタップ位置。旧データは q=問題番号), named(false なら仮の名前),
           defer:{examId, from}|null(定期テスト前の後ろ倒し中), updatedAt}],
   tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解', source, rows:[{fmt,total,correct}], total, correct, unitIds, paperId, updatedAt}],
-  papers:[{id, code, subject, date, kind, title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg,fig}],
+  papers:[{id, code, subject, date, kind('週次'|'累積'|'読解'|'模試'), title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg,fig, sec, pts}],
+          examId, examName, left, round, minutes, maxScore(模試のみ),
           refs:[{n, kind, page, path}](資料にする教材ページの参照), imgs:[b64](旧データの写真), status:'printed'|'graded', model, updatedAt}],
   log:{'YYYY-MM-DD':true}, exams:[{id,name,date,unitIds,actual:{教科:点},updatedAt}],
   writing:[{id,date,subject,len,structure,surface,note,updatedAt}],

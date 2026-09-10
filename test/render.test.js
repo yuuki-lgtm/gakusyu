@@ -26,6 +26,8 @@ const SCREENS = (d) => [
   ["テスト/読解", m.WeekTab, { d, save: noop, initial: "read" }],
   ["テスト/記述", m.WeekTab, { d, save: noop, initial: "write" }],
   ["テスト/手入力", m.WeekTab, { d, save: noop, initial: "manual" }],
+  ["テスト/模試", m.WeekTab, { d, save: noop, initial: "mock" }],
+  ["テスト/模試(教科指定)", m.WeekTab, { d, save: noop, initial: "mock:数学" }],
   ["テスト/既定", m.WeekTab, { d, save: noop, initial: null }],
   ["登録/単元", m.RegTab, { d, save: noop, initial: "unit" }],
   ["登録/項目", m.RegTab, { d, save: noop, initial: "item" }],
@@ -227,4 +229,11 @@ test("定期: 14日前は範囲外の後ろ倒し件数が出る", () => {
   const r = m.deferForExam(d);
   const html = render(m.ExamTab, { d: r, save: noop }).html;
   assert.ok(html.includes("まで後ろ倒し"), (html.match(/範囲内の未定着[^<]*/) || [])[0]);
+});
+test("テスト/模試: 定期テストの範囲の教科が出る。空データは登録を促す", () => {
+  const html = render(m.WeekTab, { d: F.demo(), save: noop, initial: "mock" }).html;
+  assert.ok(html.includes("2学期中間") && html.includes("模試を作る（数学・英語）"));
+  assert.ok(!render(m.WeekTab, { d: F.empty(), save: noop, initial: "mock" }).html.includes("模試を作る（") );
+  assert.ok(render(m.WeekTab, { d: F.empty(), save: noop, initial: "mock" }).html.includes("範囲を選んだ定期テストがありません"));
+  assert.ok(render(m.WeekTab, { d: F.demo(), save: noop, initial: "mock:英語" }).html.includes("模試を作る（英語）"));
 });

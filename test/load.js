@@ -13,11 +13,11 @@ const EXPORTS = [
   // 日付など
   "today", "addDays", "diffDays", "pct", "blank",
   // 中核ロジック
-  "migrate", "mergeData", "removeRec", "newItem", "unitById", "sbFetch", "cfgLink", "importCfg", "matPath", "stUpload", "stGet", "stRemove", "pagesToRanges", "isSpreadShape", "assignPages", "splitSpread", "findGutter", "parsePages", "unitPages", "unitForPage", "applyTOC", "unitPageLabel", "materialsForUnits", "matsLabel", "b64ToBlob", "bufToB64", "matsOf", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "lastCumOn", "parseJSON", "genContent", "srcLabel", "annotateB64", "hasPos", "markDesc", "nameItems", "applyGen", "printSet", "gradeSet", "judgeAll", "deferForExam", "deferredFor", "ctxFor", "itemContext", "SELF_LINE",
+  "migrate", "mergeData", "removeRec", "newItem", "unitById", "sbFetch", "cfgLink", "importCfg", "matPath", "stUpload", "stGet", "stRemove", "pagesToRanges", "isSpreadShape", "assignPages", "splitSpread", "findGutter", "parsePages", "unitPages", "unitForPage", "applyTOC", "unitPageLabel", "materialsForUnits", "matsLabel", "b64ToBlob", "bufToB64", "matsOf", "applyJudgment", "retention", "streakDays", "pickUnits", "taught", "nextActions", "lastCumOn", "genPaper", "upcomingExams", "examSubjects", "mocksFor", "mockRound", "refSheets", "paperTitle", "normalizePts", "flattenSections", "parseJSON", "genContent", "srcLabel", "annotateB64", "hasPos", "markDesc", "nameItems", "applyGen", "printSet", "gradeSet", "judgeAll", "deferForExam", "deferredFor", "ctxFor", "itemContext", "SELF_LINE",
   // 印刷
   "escHTML", "safeSvg", "paperHTML", "needBlank", "pdfName", "paperFigs", "usedFigs", "resolveRefs", "fileHTML", "paperText", "genToPaper", "isIOS",
   // 画面
-  "App", "HomeTab", "TodayTab", "TodayMake", "TodayGrade", "TodayCards", "ItemCard", "WeekTab", "MakePapers", "PaperRow", "GradeFlow", "ReadingMaker", "WritingFlow", "ManualTest",
+  "App", "HomeTab", "TodayTab", "TodayMake", "TodayGrade", "TodayCards", "ItemCard", "WeekTab", "MakePapers", "MockMaker", "PaperRow", "GradeFlow", "ReadingMaker", "WritingFlow", "ManualTest",
   "PrintSheet", "RegTab", "UnitReg", "ItemReg", "ItemList", "MaterialReg", "TapReg", "tapHit", "marksOn", "tapsToItems", "markDone", "markDoneUpTo", "applyAutoProgress", "untouchedPages", "buildIndex", "AnaTab", "FormatBlock", "ExamTab", "ExamCard", "ExportTab", "Settings",
 ];
 
