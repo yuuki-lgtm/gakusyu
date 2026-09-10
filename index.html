@@ -26,7 +26,7 @@ input,select,textarea{font-size:16px !important}
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-10 14:19"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 14:22"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1132,6 +1132,7 @@ function TodayGrade({ d, save }) {
   return (<section className="sec">
     {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
       <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
+      <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); setMsg(`${set.length}件を「印刷」に戻しました（判定なし）`); setTimeout(() => setMsg(""), 4000); }} disabled={busy}>全部を印刷に戻す（判定しない）</button></div>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（判定欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
       {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, SONNET)}>もう一度読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (

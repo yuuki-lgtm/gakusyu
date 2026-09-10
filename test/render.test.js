@@ -317,3 +317,6 @@ test("採点に「問題が変」があり、分析に件数が出る", () => {
 test("設定: 「最新版に更新（再読み込み）」がある", () => {
   assert.ok(render(m.Settings, { d: F.demo(), save: noop, setSync: noop }).html.includes("最新版に更新（再読み込み）"));
 });
+test("今日/採点: 「全部を印刷に戻す」がある", () => {
+  assert.ok(render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade" }).html.includes("全部を印刷に戻す（判定しない）"));
+});
