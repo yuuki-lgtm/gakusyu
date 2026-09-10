@@ -1,11 +1,13 @@
 # 学習ループ — 開発の引き継ぎ
 
 中学1年生の定期テスト対策を、親が1日5分＋土曜1時間で回すためのWebアプリ。
-`index.html` 1ファイルで完結（React 18 + Babel standalone をCDNから読む）。GitHub Pages に置き、iPhoneのホーム画面から使う。
+`index.html` 1ファイルで完結（React 18 + Babel standalone をCDNから読む）。GitHub Pages（https://yuuki-lgtm.github.io/gakusyu/）に置き、iPhoneのホーム画面から使う。
+この文書が唯一の仕様書。機能を変えたら、この文書の該当箇所も同じコミットで直す。
 
 ## 依頼者について
 - 勇樹さん。UIデザイナー。コードは書かない。日本語のみ。返答は簡潔に、忖度なし、結論から。
 - 「便利」より「続くか」を最優先する。機能追加の提案は原則しない。削る提案は歓迎される。
+- 依頼は段階に分け、各段階でテストを通して git commit、push まで行う（GitHub Pages に反映されて初めて iPhone で見られる）。
 
 ## 絶対に変えない設計思想
 1. **未定着リストが軸。** 点数ではなく「まだ身についていない項目」を管理する。
@@ -19,6 +21,45 @@
 9. **紙でやらせる。** 画面を見せながら解かせない。問題はPDFで印刷。
 10. **作れない形式（図・資料・長文・記述）も測る。** 学校ワークの結果を形式別に入れれば弱点として見える。
 
+## 1週間の流れ（この順に画面がある）
+- **学期の初め（1回）**: 「登録→教材」でワークと教科書をスキャンして取り込む。「登録→単元」で教科書とワークの目次を撮り、単元とページ範囲を登録する。「設定」で Supabase（同期と教材の保存先）と API キーを入れる。
+- **平日・子ども**: 机の紙（前夜に印刷した類題）を解く → 解答ページを見て「自分の判定」に印 → 学校のワーク。
+- **平日・親（夜5分）**: ホームの「いまやること」の順に、①「今日→採点」で昨日の紙を見てまとめて確定、②「今日→印刷」で明日の分を1つのPDFに、③「登録→落とした項目」でワークの×をページ上でタップして登録。
+- **土曜**: 「テスト→作る」で5教科の確認テストを生成し、1つのPDFで印刷 → 解く → 赤ペンで採点 → 「テスト→撮る」で答案を撮って結果と未定着を自動登録。
+- **日曜**: 「テスト→読解」「テスト→記述」を1本ずつ。
+- **返却時**: 「定期」で実点を入れる。
+- **週1**: 「依頼文」をコピーして相談。
+
+## 画面
+下のタブ: ホーム／今日／テスト／登録／分析／定期／依頼文／設定。`App` が `tab` と `mode`（サブ画面）を持ち、`go(tab, mode)` で遷移する。ホームの「いまやること」は `nextActions(d)` が決める。
+
+### ホーム `HomeTab`
+`nextActions(d)` の先頭1つを大きく、残りを「そのあと」に。順序: 単元未登録 → 進度未設定 → 未採点の答案 → ワークの×を登録 → 子どもの画面判定の確定 → **昨日の分を採点（`printedOn < 今日` の項目）→ 今日の分を印刷（`printSet`）** → 最初の項目 → 週末の進度更新と作問 → 定期テスト14日前 → 3回落ちた項目の診断。
+
+### 今日 `TodayTab`（採点／印刷／カード）
+- **印刷 `TodayMake`**: `printSet(d)`＝明日までに期日が来る未印刷の項目（画面判定中は除く）。`genForItem()` で類題を自動生成（今日作った類題があれば再利用）し、`genToPaper()` で1つの用紙にして `exportPDF()`。成功した項目に `printedOn` を付ける。生成に失敗した項目は次回に回る。「採点待ちの分をもう一度PDFにする」は再生成なしで同じ内容を出す。
+- **採点 `TodayGrade`**: `gradeSet(d)`＝`printedOn` のある項目を古い順に。行ごとに「子ども」→「親」の判定（子どもを押すと親にも入る）。「できなかった」は誤答の種類が必須（前回の種類が初期値）。「まとめて確定」で `judgeAll()`。「やっていない」は `printedOn` を外して次の印刷に戻す。用語は「解けた」で進み、それ以外は「説明もできた」でないと7日止まり（`applyJudgment` のまま）。
+- **カード `TodayCards`**: 従来の1件ずつの画面。`ItemCard` で類題を画面で見る、子どもが画面で判定して `pending` に保存、親が確定、3回落ちた項目の診断。
+
+### テスト `WeekTab`（作る／撮る／読解／記述／手入力）
+- **作る `MakePapers`**: 教科ごとに `pickUnits()`（未定着がある単元と最近出していない単元）か手で選んだ単元で、`materialsForUnits()` の教材ページを「図1〜図N」として添付して作問。問題文が参照した図（「図3」または `fig`）のページだけ `refs` に残す。「今日作った N 教科を1つのPDFに」で `exportPDF(papers)`。各行の `PaperRow`→`PrintSheet` は1教科ずつ。
+- **撮る `GradeFlow`**: 採点済みの答案を撮り、AI が○×を読む。×と空欄を未定着に入れ、形式別の結果を `tests` に入れる。
+- **読解 `ReadingMaker`**: 新規の文章と設問を作る（既存作品は使わない）。落とした設問は「読解の技能」として未定着に。
+- **記述 `WritingFlow`**: 課題を作り、答案を撮って添削。表面の誤りの種類を未定着に。
+- **手入力 `ManualTest`**: 学校のワーク等の結果を形式別に入れる。
+
+### 登録 `RegTab`（単元／落とした項目／未定着一覧／教材）
+- **単元 `UnitReg`**: 「教科書の目次／ワークの目次」を撮って `applyTOC()`（既存の単元名に対応づけてページだけ足す、無ければ新規）。単元は `pages`（教科書）と `wbPages`（ワーク）を別々に持ち、名前の下をタップして直せる。進度は「ここまで」で手動、または `applyAutoProgress()` で自動（ワークの×を登録したページを含む単元）。
+- **落とした項目 `ItemReg` → `TapReg`**: 教科→教材（ワーク／教科書）→ページを開き、×だった問題を指でタップ。赤い印、もう一度で取り消し、ページをまたいで持てる。「まとめて登録」で `tapsToItems()`。保存するのは座標だけ。1倍／2倍／3倍の拡大。登録済みの×は薄い印で出て、タップすると状態と誤答の種類の変更。「このページは×なし（やった）」でページを `doneOn`。教材が無い教科は手入力の1件追加だけ。
+- **未定着一覧 `ItemList`**: 教科ごとに未定着と安定の件数、項目の削除、誤答の種類の変更。仮の名前には「仮」。
+- **教材 `MaterialReg`**: 下の「教材画像」を参照。
+
+### 分析 `AnaTab`／定期 `ExamTab`／依頼文 `ExportTab`／設定 `Settings`
+- 分析: 保持率（30日以上あけた再出題の正答率）、形式別、子どもと親の判定の一致率、誤答の種類の分布。見るだけ。
+- 定期: テストの登録と範囲。範囲内の未定着、未出題の単元、**ワークで手つかずのページ（`untouchedPages`）**、実点と予測のずれ。
+- 依頼文: 学習状況を文章にしてコピー。
+- 設定: 設定を別の端末に渡すリンク（`cfgLink`／`importCfg`、#cfg= で開くか貼り付け）、Supabase（URL・anon キー・共有ID、SQL の案内）、API キー、バックアップ、バージョン。
+
 ## データ構造（v3）
 ```
 { v:3, updatedAt,
@@ -27,78 +68,86 @@
           history:[{d, r:'x'|'o'|'oo', self, etype, etypeSelf}],
           level(0-5), failCount, nextDue, status:'active'|'stable',
           pending:{d, self, selfE, pm}|null, gen, genOn(類題を作った日), printedOn(紙に印刷した日|null), diag,
-          src:{path, kind, page, x, y}|undefined(教材のページとタップ位置), named(false なら仮の名前), updatedAt}],
+          src:{path, kind, page, x, y}|undefined(教材のページとタップ位置。旧データは q=問題番号), named(false なら仮の名前), updatedAt}],
   tests:[{id, subject, date, kind:'週次'|'累積'|'定期'|'読解', source, rows:[{fmt,total,correct}], total, correct, unitIds, paperId, updatedAt}],
   papers:[{id, code, subject, date, kind, title, passage, unitIds, questions:[{n,q,a,unitId,fmt,aim,label,svg,fig}],
           refs:[{n, kind, page, path}](資料にする教材ページの参照), imgs:[b64](旧データの写真), status:'printed'|'graded', model, updatedAt}],
   log:{'YYYY-MM-DD':true}, exams:[{id,name,date,unitIds,actual:{教科:点},updatedAt}],
   writing:[{id,date,subject,len,structure,surface,note,updatedAt}],
-  materials:[{id, subject, kind, page, path, doneOn(やった日|null), idx:{ns:[問題番号], at}|undefined, updatedAt}], deleted:[id] }
+  materials:[{id, subject, kind:'ワーク'|'教科書', page, path, doneOn(やった日|null), idx:{ns:[問題番号], at}|undefined, updatedAt}],
+  deleted:[id] }
 ```
-- 定数: `FORMATS`（出題形式8種）、`ETYPES`（誤答の種類4種）、`INT=[1,3,7,14,30,60]`、`STABLE_LEVEL=4`
+- 定数: `FORMATS`（出題形式8種）、`ETYPES`（誤答の種類4種）、`INT=[1,3,7,14,30,60]`、`STABLE_LEVEL=4`、`MKINDS=["ワーク","教科書"]`、`SUBJ_CODE`、`KIND_CODE`。
 - `applyJudgment(item, r)` が間隔反復の核。変えるときは必ずテストを通す。
-- `migrate()` で旧データ（v2）を引き継ぐ。壊さない。
-- 同期は Supabase の1行に全体をJSONで保存。`mergeData()` で項目単位に新しい方を採用。`deleted` は墓標。
+- 日付は `today()`／`addDays()`／`diffDays()` で、端末のローカル日付の文字列で扱う（`toISOString` は UTC になり日本で1日ずれるので使わない）。
+- `migrate()` で旧データ（v2）を引き継ぐ。`{...blank(), ...d}` で足りない配列を補う。壊さない。
+- 保存は `App.save(next)`。`next` は新しい状態か、`(cur) => 状態` の関数（AI の名前付けなど遅れて戻る更新は必ず関数で。古い `d` で上書きしない）。localStorage の `gakushu_loop_v3` に全体を入れる。画像の base64 は入れない（5MB制限）。
+- 同期は Supabase の `state` テーブル1行に全体をJSONで保存（共有ID = 行の id）。`mergeData()` で配列ごとに id 単位で `updatedAt` の新しい方を採用。`deleted` は墓標。`materials` も同じ。
 
 ## 教材画像（ワーク・教科書）
-- 教材画像は Supabase Storage（非公開バケット `materials`）に置き、端末には索引だけ持つ。家庭内の私的使用に限る。
-- 単位は「教科 × 教材種別（ワーク／教科書）× ページ」。パスは `共有ID/math/wb/12.jpg`（`SUBJ_CODE`・`KIND_CODE`）。共有IDがアクセスの鍵。
-- 取り込みは見開きが標準。画像が横長（幅 > 高さ×1.15）なら `splitSpread()` で綴じ目を推定して左右に切って2ページ（`findGutter()`: 中央付近の暗い帯＝影、無ければ空白の縦帯、無ければ真ん中）、縦長なら1ページとして、番号を順に振る（`assignPages`）。国語など右綴じは右ページが若い番号（教科で自動、切り替え可）。片ページだけの1枚が混ざっても自動で扱う。
-- 索引 `materials:[{id, subject, kind:'ワーク'|'教科書', page, path, updatedAt}]`。同じページの再取り込みは同じ id を上書き。画像の base64 は localStorage に入れない（5MB制限）。
-- 単元は教科書のページ範囲 `pages` とワークのページ範囲 `wbPages` を別々に持つ。`parsePages()` で数値の配列にする。
-- 作問は選んだ単元の教科書・ワークのページを「図1〜図N」として自動で添付する。どちらか片方だけでも、なくても動く。手で写真を撮る欄はない。
-- 問題文が参照した図（「図3」または `fig`）のページだけを用紙の `refs` に参照として持ち、資料ページに印刷する。画像は用紙に持たず、`resolveRefs()` が PDF 生成時・HTML 保存時に Storage から読む。プレビューは枠だけ。
-- ×の登録は「教科→教材→ページを開く→×の問題を指でタップ」。保存するのはタップ位置だけ（`src:{path, kind, page, x, y}`、0〜1の割合）。仮の名前 `named:false` で登録し、`nameItems()` が登録直後にページごとに1回 AI を呼んで名前と形式を付ける。失敗しても仮の名前のまま動き、類題生成のとき `applyGen()` でもう一度付ける。誤答の種類は「知らなかった」が初期値で、一覧と印のポップアップで変えられる。
-- AI に問題を指すときは `annotateB64()` でページ画像に赤い印（複数なら番号つき）を描き込んで渡す。索引や番号の一致は使わない。読み間違いは「別の問題」で作り直す。
-- 索引は裏で持つ。`materials[].doneOn`（×を登録した、または「×なし（やった）」を押した日）と `materials[].idx:{ns:[問題番号], at}`（ページを開いたときに `buildIndex()` が裏で作る。1ページ1回だけで、保存して同期に乗せる。失敗はセッション内で再試行しない。入れ直しで索引は捨て、`doneOn` は引き継ぐ）。用途は `applyAutoProgress()`（やったページを含む単元を自動で「習った」に。手動の「ここまで」は補助）と、定期テスト画面の `untouchedPages()`（範囲内で取り込み済みなのにやっていないページと問題数）だけ。索引が外れていても登録と類題には影響しない。
-- 「答案の写真から候補を出す」方式と「問題番号の入力」方式は廃止。手入力の1件追加は残す。
+- Supabase Storage の非公開バケット `materials` に置き、端末には索引 `materials[]` だけ持つ。家庭内の私的使用に限る。パスは `共有ID/math/wb/12.jpg`（教科×教材種別×ページ）。共有IDがアクセスの鍵。`stUpload`／`stGet`（メモリに40件までキャッシュ）／`stRemove`。
+- 設定タブの SQL でバケットとポリシーを作る（2026-09-10 に実行済み）。
+- 取り込み `MaterialReg`: PDF（pdf.js で1ページずつ画像化）か複数画像。最初のページ番号を入れ、名前順に番号を振る。画像が横長（幅 > 高さ×1.15）なら見開きとして `splitSpread()` で2ページに、縦長なら1ページ（`assignPages`）。切る位置は `findGutter()` が推定（中央付近の暗い縦帯＝綴じ目の影、無ければ空白の縦帯、無ければ真ん中）。国語など右綴じは右ページが若い番号（教科で自動、切り替え可）。同じページの入れ直しは上書き（`doneOn` は引き継ぎ、索引は捨てる）。削除はページ範囲指定か全部、確認つき。
+- 単元との紐づけ: `parsePages("p.12-15, 20")` → 数値の配列。`unitPages(u, kind)`、`unitForPage(units, kind, page)`。
+- 作問への添付: `materialsForUnits(d, subject, units)` が単元のページ範囲に入る教材を集め、多いときは教材ごとに均等に間引く（上限16）。読めなければ添付なしで続ける。
+- 用紙への印刷: 問題が参照したページだけ `refs` に持ち、`resolveRefs()` が PDF 生成時・HTML 保存時に Storage から読んで資料ページに描く。プレビューは枠だけ。
 
-## 画面
-ホーム（いまやること1つ）／今日（採点・印刷・カード）／テスト（作る・撮る・読解・記述・手入力）／登録（単元・項目・一覧・教材）／分析／定期／依頼文／設定
+## ×の登録（タップ）と AI
+- 保存するのはタップ位置（`src:{path, kind, page, x, y}`、0〜1の割合）だけ。仮の名前「ワーク p.12 の×（1）」・`named:false`・誤答の種類「知らなかった」・翌日に出る。
+- 登録直後に `nameItems()` がページごとに1回 AI を呼び、`annotateB64()` でページ画像に番号つきの赤い印を描いて渡して、印ごとの項目名と形式を付ける。失敗しても仮の名前のまま動き、類題生成のとき `applyGen()` でもう一度付ける。
+- 類題 `genForItem()`: 元の問題があれば印つきの画像を渡す（`genContent`）。1項目3問、用語は「〜を書きなさい」の記述形式、その他は「説明させる問い」を1問。読み間違いはカードの「別の問題」で作り直す。
+- 索引は裏で持つ。`doneOn`（×を登録した／「×なし（やった）」を押した日）と `idx`（ページを開いたときに `buildIndex()` が問題番号を書き出す。1ページ1回、失敗はセッション内で再試行しない）。用途は `applyAutoProgress()`（進度の自動判定）と `untouchedPages()`（定期テストの手つかずページ）だけ。索引が外れていても登録と類題には影響しない。
+- 廃止したもの: 「答案の写真から候補を出す」、「問題番号の入力」。手入力の1件追加は残す。
 
-## 「今日」の運用（紙で回す）
-- 夜の2ステップ。ホームの「いまやること」は「昨日の分を採点 → 今日の分を印刷」の順。
-- 印刷: `printSet(d)`（明日までに期日が来る未印刷の項目）の類題を `genForItem()` で自動生成し（1項目3問、用語は「〜を書きなさい」の記述形式、その他は説明の問いを1問足す）、`genToPaper()` で教科・単元の見出し付き1枚のPDFに。解答は別ページ。各項目の最後に「自分の判定」の欄。生成後に `printedOn` を付ける。
-- 採点: `gradeSet(d)`（`printedOn` のある項目）を一覧にし、子どもの判定（紙の印）→親の判定を押して `judgeAll()` でまとめて確定。「やっていない」は印刷前に戻す。判定の中身は `applyJudgment` のまま。
-- カード: 従来の1件ずつの画面（類題を画面で見る、診断）。子どもが画面で判定する運用もここに残る。
+## 印刷（PDF）
+- `paperHTML(p, res)` で用紙HTML。シートは `data-part="q"`（資料・問題）と `"a"`（解答）。`genToPaper(items)` は類題を用紙にする（項目ごとに教科・単元の見出し、説明の問い、「自分の判定」の欄）。
+- `buildPDF(papers)` は用紙の配列を受け、html2canvas + jsPDF でA4に詰める（ブロックごとに画像化、境目で切らない）。各用紙の「資料＋問題」を先に並べ、用紙ごとに奇数ページなら白紙を足して偶数にし、解答は全用紙ぶんを最後に教科で改ページせず詰める。両面印刷1回で解答が必ず別の紙になる。今日の類題PDFも5教科の確認テストも同じ経路。
+- `exportPDF()`: iOS は `navigator.share` で共有シート、それ以外はダウンロード。「HTMLで保存」は予備で、白紙の調整は入らない。
+- 既知の問題: html2canvas は oklab/oklch を読めないので独立 iframe 内で描画。実ブラウザで確認すること。2026-09-10 に Windows Chrome で 2教科6ページと類題3ページ（問題＋白紙＋解答）を確認済み。
 
 ## AI
-- Anthropic API を直接呼ぶ（`anthropic-dangerous-direct-browser-access`）。キーは localStorage。
-- モデルは `claude-opus-5`、失敗時 `claude-sonnet-4-6`。
-- 出力は必ず JSON 指定、`parseJSON()` で取り出す。
-- 用途: 類題生成／診断／採点済み答案の○×読み取り（自作テスト）／目次から単元抽出／タップした問題の項目名付け／ページの問題番号の索引／作問／読解の文章と設問／記述の添削。
-- 教科書・既存作品の文章は複製しない。文章は新規に書く。
+- Anthropic API を直接呼ぶ（`anthropic-dangerous-direct-browser-access`）。キーは localStorage。モデルは `claude-opus-5`、失敗時 `claude-sonnet-4-6`（`callAI`、直近に成功したモデルを先に試す）。
+- 出力は必ず JSON 指定、`parseJSON()` で取り出す。画像は `imgBlock(b64)`。
+- 用途: 類題生成／診断／採点済み答案の○×読み取り／目次から単元抽出／タップした問題の項目名付け／ページの問題番号の索引／作問／読解の文章と設問／記述の添削／設定の接続確認。
+- 教科書・既存作品の文章は複製しない。文章は新規に書く。教材ページは「用語・表現・難易度を合わせる」ためと図の参照のために渡し、本文や設問をそのまま写させない。
 
-## 印刷
-- `paperHTML(p, res)` で用紙HTMLを組み（`res` は `resolveRefs()` が読んだ教材ページの base64）、`buildPDF()` で html2canvas + jsPDF によりA4に詰める（ブロックごとに画像化、境目で切らない）。
-- `buildPDF(papers)` は用紙の配列も受ける。各用紙の「資料＋問題」（`data-part="q"`）を先に並べ、用紙ごとにページ数が奇数なら白紙を足して偶数にし、解答（`data-part="a"`）は全用紙ぶんを最後に、教科で改ページせず1つの流れで詰める。両面印刷1回で解答が別の紙になるため。今日の類題PDFも「今日作った教科をまとめてPDF」も同じ経路。2026-09-10 に Windows Chrome で6ページ（2教科）と3ページ（類題）を確認済み。
-- 既知の問題: html2canvas は oklab/oklch を読めない。対策として独立 iframe 内で描画している。Claude.ai のアーティファクト内ではまだ再現する可能性あり。**実ブラウザで確認すること。**
-- iOS Safari では `navigator.share` でPDFを共有シートへ。
-
-## バージョン
-`index.html` の `VERSION`（ヘッダー右端と設定タブに表示）は、git の pre-commit フック `tools/pre-commit` がコミット日時で自動更新する。別の環境で作業するときは一度 `sh tools/install-hooks.sh` を実行する。
+## 同期・設定
+- Supabase の URL・anon キー・共有ID・API キーは端末ごとの localStorage。iOS はホーム画面のアプリと Safari で保存場所が別。
+- 「設定を別の端末に渡す」: `cfgLink()` が入っているもの全部を `#cfg=base64(JSON)` のリンクにする。開くと起動時に `importCfg()` が取り込む。ホーム画面のアプリには貼り付け欄で。
+- 起動: localStorage → `migrate` → 同期先があれば `pullRemote` と `mergeData` → 表示。保存は1.5秒まとめて `pushRemote`。
 
 ## テスト
-`npm test` で全部走る（`npm install` を一度だけ。node の組み込みテストランナー、追加の枠組みなし）。**修正したら必ず通す。**
-- `test/load.js` — index.html の `<script type="text/babel">` を取り出し、Babel で JSX を変換して node で評価する。localStorage / document / window / navigator は最小のスタブ。関数やコンポーネントを足したら `EXPORTS` に名前を追加する。
-- `test/fixtures.js` — デモ／空／pending あり の3状態のデータ。日付は今日基準の相対。スキーマを変えたらここも直す。
-- `test/render.test.js` — `react-dom/server` の `renderToString` で全タブ・全サブモード（テスト5種、登録4種）と用紙プレビューを3状態で描画。React の警告（console.error）、画面に出る `undefined` / `NaN` も失敗にする。
-- `test/core.test.js` — applyJudgment, retention, migrate, mergeData, paperHTML, pickUnits, Storage の読み書き, parsePages / applyTOC / materialsForUnits / genContent の単体テスト。
-- 実機（iPhone Safari と Mac Chrome）で PDF 生成・写真読み取り・ホーム画面追加を確認する。
+`npm test` で全部走る（`npm install` を一度だけ。node の組み込みテストランナー）。**修正したら必ず通す。** 2026-09-10 時点で194件。
+- `test/load.js` — index.html の `<script type="text/babel">` を取り出し、Babel で JSX を変換して node で評価する。localStorage / document / window / navigator は最小のスタブ。**関数やコンポーネントを足したら `EXPORTS` に名前を追加する。**
+- `test/fixtures.js` — デモ／空／pending あり の3状態。日付は今日基準の相対。スキーマを変えたらここも直す。
+- `test/render.test.js` — `renderToString` で全タブ・全サブモードと用紙プレビューを3状態で描画。React の警告、画面に出る `undefined`／`NaN` も失敗にする。
+- `test/core.test.js` — 純関数の単体テスト（間隔反復、日付、統合、用紙、Storage、教材、タップ登録、索引、PDFの組み方、設定リンク）。`fetch` はスタブで差し替える。
+- 実ブラウザ確認: Chrome 拡張は file:// を開けないので `python -m http.server 8765 --bind 127.0.0.1` で `http://127.0.0.1:8765/index.html`。デモデータは `test/fixtures.js` の `demo()` を localStorage に入れる。教材画像は `_fake/storage/v1/object/authenticated/materials/...` を作って `sb_url` を `http://127.0.0.1:8765/_fake` にすると読める。終わったら消す。
+
+## バージョンと運用
+- `index.html` の `VERSION`（ヘッダー右端と設定タブに表示）は、git の pre-commit フック `tools/pre-commit` がコミット日時で自動更新する。別の環境では一度 `sh tools/install-hooks.sh`。
+- push すると GitHub Pages に1〜2分で反映。iPhone で古いままなら、アプリを完全に終了して開き直す。
+- ブラウザの `alert`／`confirm` は使わない（削除の確認は画面内の2択）。
+
+## 決めたことと理由
+- 教材画像を Storage に置く: 端末の localStorage 5MB を超えないため。用紙も画像を持たず参照だけ。
+- 作問に添付した教材ページのうち、問題が参照したものだけ印刷する: 毎回16ページ印刷すると続かない。
+- 「今日」を紙で回す: 親が口で聞く運用は続かない。子どもが解答を見て自分で判定するのは設計思想8のまま。
+- ×の登録をタップ式にし、索引や番号の一致に依存しない: 索引が外れても登録と類題が止まらない。
+- 見開きを自動判定して綴じ目で切る: 片ページだけの1枚を別に入れる手間をなくす。
+- 日付はローカル: `toISOString` で1日ずれていた既存バグを 2026-09-10 に修正。
 
 ## やらないこと
 - 通知、ゲーミフィケーション、子ども向けダッシュボード、画面上での出題。
+- ピンチ拡大（アプリ全体が誤って拡大されるため。ページ画像は倍率の切り替えで）。
 - 機能を足す前に「続くか」を問う。迷ったら足さない。
 
 ## 次の作業
-1. 教材画像（2026-09-10 実装、5段階すべてコミット済み。テストのみ、実ブラウザ未確認）を実機で確認する。
-   - Supabase の SQL Editor で「設定」タブの SQL のうちバケットとポリシーの分を実行する（既存プロジェクトは state の分は不要）。
-   - 「登録→教材」で PDF と複数画像の取り込み（iPhone Safari で pdf.js が動くか、ページ番号が合うか）。
-   - 「登録→単元」でワークの目次を撮り、既存単元への対応づけとページ範囲の手直し。
-   - 「テスト→作る」で「添付される教材」が出て作問が通るか。図を参照した問題があれば PDF の資料ページに教材のページが入るか。「登録→項目」で教材から×を登録し、翌日の類題に元の問題が効くか。
-   - 「今日→印刷」で類題の自動生成と1枚のPDF（見出し・説明の問い・自分の判定の欄）、翌日「今日→採点」でまとめて確定できるか。
-   - 「登録→落とした項目」でページの×をタップして登録し、数秒後に項目名が付くか。印の当たり判定（22px）が指で押しやすいか。定期テストの画面に手つかずのページが出るか。
-2. iPhone Safari で PDF 生成（共有シート）を確認。Windows Chrome での生成・保存は 2026-09-09 に確認済み。
-3. iPhone Safari で写真読み取り（採点済み答案、目次、ワークの×）を確認。
-4. Supabase 同期を2端末で確認。
-5. コードを整理（1ファイルのままでよいが、関数の順序と重複を直す）。
+1. iPhone で実機確認（2026-09-10 の実装はテストと Windows Chrome のみ）。
+   - 「登録→教材」で見開きの PDF を取り込み、綴じ目の位置とページ番号が合うか。pdf.js が iPhone Safari で動くか。
+   - 「登録→落とした項目」でタップ登録し、数秒後に項目名が付くか。印の当たり判定（22px）が指で押しやすいか。拡大の使い勝手。
+   - 「今日→印刷」で類題の生成と PDF（共有シート）、翌日「今日→採点」でまとめて確定。
+   - 「テスト→作る」で教材の添付、図を参照した問題の資料ページ、「1つのPDFに」。
+   - 「定期」に手つかずのページが出るか。
+2. Supabase 同期を2端末で確認。
+3. コードを整理（1ファイルのままでよいが、関数の順序と重複を直す。テストがあるので壊れれば分かる）。
