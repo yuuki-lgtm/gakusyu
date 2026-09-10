@@ -270,7 +270,7 @@ function App() {
   return (
     <div className="root"><style>{CSS}</style>
       <header className="hd"><div className="hd-t">学習ループ</div>
-        <div className="hd-s">未定着 {active.length} · 今日 {due.length} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日{syncOn() && <span className={"sy " + (sync === "err" ? "ng" : "ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}</div></header>
+        <div className="hd-s">未定着 {active.length} · 今日 {due.length} · 安定 {d.items.length - active.length} · 連続 {streakDays(d.log)}日{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}</div></header>
       <nav className="tabs">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => go(k)}>{l}</button>))}</nav>
       <main className="main">
         {tab === "home" && <HomeTab d={d} go={go} />}
@@ -1434,7 +1434,7 @@ function Settings({ d, save, setSync }) {
 /* ============ CSS ============ */
 
 const CSS = `
-.sy{display:inline-block;vertical-align:middle;margin-left:6px;padding:0 6px;border-radius:2px;font-size:10px;line-height:16px;height:16px;color:#fff;white-space:nowrap;font-weight:400;letter-spacing:0}.sy.ok{background:#2F6F5E}.sy.ng{background:#A8443B}
+.sy{display:inline-block;vertical-align:middle;margin-left:6px;padding:0 6px;border-radius:2px;font-size:10px;line-height:16px;height:16px;color:#fff;white-space:nowrap;font-weight:400;letter-spacing:0}.sy-ok{background:#2F6F5E}.sy-ng{background:#A8443B}
 .ctr{text-align:center;cursor:pointer}.sql{background:#1E2321;color:#D8DED8;font-size:10px;line-height:1.6;padding:10px;border-radius:3px;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;margin:0 0 12px;white-space:pre}
 .msg.fixed{position:sticky;bottom:8px;background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
 .tp{margin-bottom:12px}.tp .btn-sm.wide{margin-top:0}
