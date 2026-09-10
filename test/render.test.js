@@ -154,6 +154,7 @@ test("デモ: 登録/項目 はページで×をタップする画面。ペー�
   const { html } = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" });
   assert.ok(html.includes("正負の数"), "p.10 はワーク p.4-11 の単元");
   assert.ok(html.includes("×だった問題をタップ") && html.includes("手で1つ追加"));
+  assert.ok(html.includes("2倍") && html.includes("3倍"), "拡大の切り替え");
   assert.ok(!html.includes("答案の写真から"), "写真から候補を出す方式は無い");
   const e = render(m.RegTab, { d: F.empty(), save: noop, initial: "item" }).html;
   assert.ok(!e.includes("×だった問題をタップ") && e.includes("手で1つ追加") && e.includes("未定着リストに追加"));

@@ -24,7 +24,7 @@ input,select,textarea{font-size:16px !important}
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useRef } = React;
 
-const VERSION = "2026-09-10 10:29"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-10 10:34"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1331,6 +1331,7 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   const [taps, setTaps] = useState([]); // 未登録の印（ページをまたいで持つ）
   const [sel, setSel] = useState(null); // 登録済みの印をタップしたときの項目 id
   const [msg, setMsg] = useState(""); const [naming, setNaming] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const cur = ms.find((m) => m.page === page) || null;
   const unit = unitForPage(us, kind, page);
   const here = taps.filter((t) => cur && t.path === cur.path);
@@ -1376,10 +1377,11 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
     <div className="pnav"><button className="btn-sm" onClick={() => step(-1)} disabled={pages.indexOf(page) <= 0}>←</button>
       <span className="pcur">p.<input className="pnum" type="number" inputMode="numeric" value={page} onChange={(e) => setPage(parseInt(e.target.value, 10) || 0)} /> {unit ? unit.name : <em className="nv">単元と未対応</em>}{cur && cur.doneOn && <em className="pg"> 済</em>}</span>
       <button className="btn-sm" onClick={() => step(1)} disabled={pages.indexOf(page) < 0 || pages.indexOf(page) >= pages.length - 1}>→</button></div>
-    {cur ? (img ? (<div className="mwrap" onClick={onTap}><img src={img} alt={`${kind} p.${page}`} draggable="false" />
+    <div className="zoom-row"><span>拡大</span>{[1, 2, 3].map((z) => (<button key={z} className={"btn-sm" + (zoom === z ? " on" : "")} onClick={() => setZoom(z)}>{z}倍</button>))}{zoom > 1 && <em className="pg">枠の中を指でずらして、×をタップ</em>}</div>
+    {cur ? (img ? (<div className={"mscroll" + (zoom > 1 ? " z" : "")}><div className="mwrap" onClick={onTap} style={{ width: `${zoom * 100}%` }}><img src={img} alt={`${kind} p.${page}`} draggable="false" />
         {old.map((i) => (<span key={i.id} className={"mk-old" + (i.status === "stable" ? " stable" : "") + (i.id === sel ? " sel" : "")} style={{ left: `${i.src.x * 100}%`, top: `${i.src.y * 100}%` }} />))}
         {here.map((t, k) => (<span key={k} className="mk-new" style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }} />))}
-      </div>) : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
+      </div></div>) : <p className="ph-note">{imgErr || "画像を読み込み中…"}</p>) : <p className="ph-note">p.{page} は取り込まれていません（あるのは p.{pagesToRanges(pages)}）。</p>}
     <p className="ph-note">×だった問題をタップ。もう一度タップで取り消し。薄い印は登録済みで、タップすると状態が見えます。{cur && !cur.doneOn && !here.length && <button className="lnk" onClick={allOk}>このページは×なし（やった）</button>}</p>
     {selItem && (<div className="mpop"><div className="c-label">{selItem.label}</div>
       <div className="ir-meta">{selItem.status === "stable" ? "安定" : "未定着"} · {selItem.failCount}回 · 間隔{INT[selItem.level || 0]}日 · 次回 {selItem.nextDue.slice(5)}{selItem.printedOn ? " · 印刷済み" : ""}</div>
@@ -1695,6 +1697,7 @@ const CSS = `
 .mat-sum{font-size:12px;color:var(--ink2);line-height:1.8;margin:-4px 0 10px}.mat-sum b{color:var(--ink);margin-right:4px}
 .del-ask{background:#FBF3F2;border:1px solid #E4C4C0;border-radius:3px;padding:10px}.del-ask p{font-size:12px;color:#8E3830;margin:0 0 8px;line-height:1.6}.btn-sm.danger{background:#A8443B;border-color:#A8443B;color:#fff;font-weight:700}
 .mat-pre{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;font-size:12px;line-height:1.6}.mat-files{margin:6px 0 0;padding-left:18px;font-size:11px;color:var(--ink3)}
+.mscroll{overflow:auto;-webkit-overflow-scrolling:touch;border-radius:3px}.mscroll.z{max-height:72vh;border:1px solid var(--line)}.zoom-row{display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:11px;color:var(--ink3)}.zoom-row .btn-sm{padding:4px 9px;font-size:11px}.zoom-row .btn-sm.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .mwrap{position:relative;display:block;user-select:none;-webkit-user-select:none;cursor:crosshair}.mwrap img{width:100%;display:block;border:1px solid var(--line);border-radius:3px;background:#fff;-webkit-touch-callout:none}
 .mk-new,.mk-old{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;pointer-events:none;box-sizing:border-box}.mk-new{border:3px solid #A8443B;background:rgba(168,68,59,.2)}.mk-old{border:2px solid #A8443B;background:rgba(168,68,59,.45)}.mk-old.stable{border-color:#2F6F5E;background:rgba(47,111,94,.45)}.mk-old.sel{box-shadow:0 0 0 3px #C08A3E}
 .mpop{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--line);border-radius:3px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
