@@ -126,9 +126,9 @@ test("デモ: 登録/教材 に取り込み済みのページ範囲が出る。�
   const { html } = render(m.MatsTab, { d: F.demo(), save: noop, initial: "mat" });
   assert.ok(html.includes("3ページ（p.10–12）"), "数学ワークの範囲");
   assert.ok(html.includes("1ページ（p.12）"), "数学教科書の範囲");
-  assert.ok(html.includes("を全部削除") && !html.includes("本当に削除する"), "確認は押すまで出ない");
+  assert.ok(!html.includes("を全部削除") && !html.includes("本当に削除する"), "教科を選ぶ前は削除の欄を出さない");
   assert.ok(html.includes("PDF か ページの画像（複数可）を選ぶ") && !html.includes("縦書き（右が若い）") && !html.includes("横長の画像は見開きとして2ページ"), "教科・番号・綴じ方向はファイルを選んだ後に出す");
-  assert.ok(html.includes("消すページ"));
+  assert.ok(!html.includes("消すページ") && html.includes("取り込み済み"));
   const e = render(m.MatsTab, { d: F.empty(), save: noop, initial: "mat" }).html;
   assert.ok(e.includes("なし") && !e.includes("を全部削除"));
 });
@@ -191,7 +191,7 @@ test("バージョンは「その他」の更新ボタンに出る。形式は�
 });
 test("デモ: 教材の取り込みと×の登録に「テスト」の種別が出る。目次の切り替えには出ない", () => {
   const mat = render(m.MatsTab, { d: F.demo(), save: noop, initial: "mat" }).html;
-  assert.ok(mat.includes(">テスト<") && mat.includes("<b>テスト</b>"));
+  assert.ok(mat.includes("<b>テスト</b>"), "取り込み済みの一覧にテストの答案");
   const item = render(m.ItemsTab, { d: F.demo(), save: noop, initial: "item" }).html;
   assert.ok(item.includes(">テスト<"), "数学にはテストの答案が取り込まれている");
   const unit = render(m.MatsTab, { d: F.demo(), save: noop, initial: "unit" }).html;
@@ -447,7 +447,7 @@ test("右下の +: 押すとまず撮る／選ぶ（ファイル入力）。一�
   const mat = render(m.MatsTab, { d: F.demo(), save: noop, initial: "mat" }).html;
   const i1 = mat.indexOf("PDF か ページの画像（複数可）を選ぶ"), i2 = mat.indexOf('class="subj-row"');
   assert.ok(i1 > 0 && (i2 < 0 || i2 > i1), "ファイルを選ぶ前は教科・種別を出さない（または後ろ）");
-  assert.ok(mat.includes("取り込み済み（数学）"));
+  assert.ok(mat.includes("取り込み済み") && !mat.includes('class="subj on"'), "教科は既定なし");
 });
 test("次の紙: 定期テストの14日前で後ろ倒し中の項目があれば、教科ごとの件数を出す", () => {
   const d = F.demo(); d.exams = [{ id: "e9", name: "期末", date: F.day(7), unitIds: ["u1"], actual: {}, updatedAt: "" }];
@@ -463,4 +463,9 @@ test("未定着の一覧: 各行に「いつの紙に出るか」。次の紙: �
   const d2 = F.demo(); d2.items = d2.items.map((i, k) => (k === 0 ? { ...i, nextDue: F.day(5), createdOn: F.T, history: [] } : i));
   const p = render(m.PaperTab, { d: d2, save: noop, initial: "print" }).html;
   assert.ok(p.includes("候補は") && p.includes("期日がまだ先 1 件") && p.includes("未定着 → 一覧"));
+});
+test("取り込み: 教科は既定なし。選ぶまで保存できない。未定着の一覧に「教科を直す」", () => {
+  const h = render(m.MatsTab, { d: F.demo(), save: noop, initial: "mat" }).html;
+  assert.ok(!h.includes('class="subj on"'), "最初はどの教科も選ばれていない");
+  const l = render(m.ItemList, { d: F.demo(), save: noop }).html; assert.ok(l.includes(">教科を直す</button>"));
 });

@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 18:00"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 18:21"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1863,6 +1863,7 @@ function ItemList({ d, save }) {
   const unitOf = (id) => unitById(d, id);
   const [naming, setNaming] = useState(false); const [msg, setMsg] = useState("");
   const [etOpen, setEtOpen] = useState(null); // 誤答の種類の4択を開いている項目
+  const [sbOpen, setSbOpen] = useState(null); // 教科を直す欄を開いている項目（取り込みで教科を間違えた分の救済）
   const [undo, setUndo] = useState(null); const undoT = useRef(null); // 削除した直後の項目。数秒だけ「取り消す」
   const del = (i) => { save(removeRec(d, "items", i.id)); clearTimeout(undoT.current); setUndo(i); undoT.current = setTimeout(() => setUndo(null), 6000); };
   const restore = () => { const it = undo; if (!it) return; clearTimeout(undoT.current); setUndo(null); save((cur) => ({ ...cur, items: [...cur.items.filter((x) => x.id !== it.id), { ...it, updatedAt: now() }], deleted: (cur.deleted || []).filter((x) => x !== it.id) })); };
@@ -1884,11 +1885,13 @@ function ItemList({ d, save }) {
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
         {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日</div><div className={"ir-when " + paperStatus(i).k}>{paperStatus(i).text}</div>
           <div className="ir-chips"><button className={"et et-cur" + (etOpen === i.id ? " on" : "")} onClick={() => setEtOpen(etOpen === i.id ? null : i.id)}>{ETYPES.includes(i.etype) ? i.etype : "誤答の種類 —"}</button>
+            <button className={"et" + (sbOpen === i.id ? " on" : "")} onClick={() => { setSbOpen(sbOpen === i.id ? null : i.id); setEtOpen(null); }}>教科を直す</button>
             {i.fmt !== "知識・用語" && <button className={"et why" + (i.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{i.noWhy ? "説明不要" : "説明あり"}</button>}</div>
+          {sbOpen === i.id && (<div className="mpop et-pop"><div className="c-label">この項目の教科</div><SubjRow value={i.subject} onChange={(sb) => { save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, subject: sb, unitId: "", updatedAt: now() } : x)) }); setSbOpen(null); notify(`「${i.label}」を${sb}に移しました。単元は「単元なし」になります`); }} /></div>)}
           {etOpen === i.id && (<div className="mpop et-pop"><div className="c-label">誤答の種類</div><div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (i.etype === e ? " on" : "")} onClick={() => { save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) }); setEtOpen(null); }}>{e}</button>))}</div></div>)}</div><button className="btn-x" onClick={() => del(i)} aria-label="削除">×</button></div>); })}</div>); })}</>);
 }
 function MaterialReg({ d, save }) {
-  const [subject, setSubject] = useState("数学");
+  const [subject, setSubject] = useState(""); // 既定なし。選び忘れて別の教科に入る事故を防ぐ
   const [kind, setKind] = useState(MKINDS[0]);
   const [start, setStart] = useState("1");
   const [files, setFiles] = useState([]);
@@ -1913,6 +1916,7 @@ function MaterialReg({ d, save }) {
   const upload = async () => {
     if (!syncOn()) { notify("先に「その他→設定」で共有（Supabase）を設定してください。教材画像は共有先にだけ保存します。", "err"); return; }
     const s0 = parseInt(start, 10);
+    if (!subject) { notify("教科を選んでください。", "warn"); return; }
     if (!(s0 >= 1)) { notify("最初のページ番号を入れてください。", "warn"); return; }
     setErr(""); setMsg(""); setBusy("準備中");
     const recs = [];
@@ -1966,13 +1970,22 @@ function MaterialReg({ d, save }) {
         <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>横書き（左が若い）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>縦書き（右が若い）</button></div>
         <Fld label={kind === "テスト" ? "最初の番号（答案の1枚目なら 1。前に取り込んだ分に続けるならその次の番号）" : "最初のページ番号（横長の画像は見開きとして2ページ、縦長は1ページとして順に振ります）"}><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
         {(() => { const s1 = parseInt(start, 10) || 0; const ps = shapes.length === files.length ? assignPages(s1, shapes) : null; const last = ps && ps.length ? ps[ps.length - 1][ps[ps.length - 1].length - 1] : null; return (<>
-        <div>→ {subject}の{kind}{kind === "テスト" ? `（${(TEST_ROLES.find(([r]) => r === role) || ["", ""])[1]}）` : ""} {kind === "テスト" ? "" : "p."}{start}{isPdf ? "〜" : ps ? `〜${last}` : "〜"}</div>
+        <div>→ {subject || "（教科を選んでください）"}の{kind}{kind === "テスト" ? `（${(TEST_ROLES.find(([r]) => r === role) || ["", ""])[1]}）` : ""} {kind === "テスト" ? "" : "p."}{start}{isPdf ? "〜" : ps ? `〜${last}` : "〜"}</div>
         {!isPdf && ps && <ol className="mat-files">{files.slice(0, 6).map((f, k) => (<li key={k}>p.{ps[k].join("・")}　{f.name}</li>))}{files.length > 6 && <li>…ほか {files.length - 6} 枚</li>}</ol>}</>); })()}
         <p className="ph-note">ページ番号が違うときは、上の番号を直してから保存。同じページを入れ直すと上書きされます。</p>
-        <button className="btn-main" onClick={upload}>この内容で保存する</button></div>)}
-      <div className="mat-sum"><b>取り込み済み（{subject}）</b>{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? (k === "テスト" ? TEST_ROLES.map(([r, l]) => { const xs = ms.filter((m) => roleOf(m) === r); return xs.length ? `${l} ${xs.length}枚` : ""; }).filter(Boolean).join("、") : `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）`) : "なし"}</div>); })}</div>
+        <button className="btn-main" onClick={upload} disabled={!subject}>{subject ? "この内容で保存する" : "教科を選ぶと保存できます"}</button></div>)}
     </section>
-    {mine.length > 0 && (<section className="sec"><h3 className="s-h">{subject}の{kind} <span className="cnt">{mine.length}ページ</span></h3>
+    <section className="sec"><h3 className="s-h">取り込み済み</h3>
+      {(() => { const sum = (sb, k) => { const ms = matsOf(d, sb, k); return ms.length ? (k === "テスト" ? TEST_ROLES.map(([r, l]) => { const xs = ms.filter((m) => roleOf(m) === r); return xs.length ? `${l} ${xs.length}枚` : ""; }).filter(Boolean).join("、") : `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）`) : ""; };
+        const has = SUBJECTS.filter((sb) => MKINDS.some((k) => matsOf(d, sb, k).length));
+        return (<>
+          <SubjRow value={subject} onChange={(sb) => { setSubject(sb); setMsg(""); }} />
+          {subject ? (<><div className="mat-sum">{MKINDS.map((k) => (<div key={k}><b>{k}</b> {sum(subject, k) || "なし"}</div>))}</div>
+            <div className="seg sm">{MKINDS.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{k}</button>))}</div></>)
+            : (<div className="mat-sum">{has.length ? has.map((sb) => (<div key={sb}><b>{sb}</b> {MKINDS.map((k) => (sum(sb, k) ? <span key={k}><b>{k}</b> {sum(sb, k)}　</span> : null))}</div>)) : "なし。上で PDF か画像を選んで取り込んでください。"}</div>)}
+        </>); })()}
+    </section>
+    {subject && mine.length > 0 && (<section className="sec"><h3 className="s-h">{subject}の{kind} <span className="cnt">{mine.length}ページ</span></h3>
       <p className="lead">p.{pagesToRanges(mine.map((m) => m.page))}。ページ番号を間違えたときは、同じ番号で入れ直すと上書きされます。余分なページは下で消せます。</p>
       <Fld label="消すページ（空欄なら全部。例: 12-15, 20）"><input value={delPages} onChange={(e) => { setDelPages(e.target.value); setConfirmDel(false); }} placeholder="12-15, 20" /></Fld>
       {confirmDel ? (<div className="del-ask"><p>{subject}の{kind} {delTargets.length}ページ（p.{pagesToRanges(delTargets.map((m) => m.page))}）を共有先から消します。元に戻せません。</p><div className="q-btns"><button className="btn-sm danger" onClick={() => { setConfirmDel(false); remove(delTargets); }} disabled={!!busy}>本当に削除する</button><button className="btn-sm" onClick={() => setConfirmDel(false)}>やめる</button></div></div>)
