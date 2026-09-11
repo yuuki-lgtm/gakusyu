@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 09:16"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 15:06"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -654,7 +654,7 @@ function Hint({ k, children }) {
 }
 function Snacks({ list, onClose }) {
   if (!list.length) return null;
-  return (<div className="snacks">{list.map((sn) => (<div key={sn.id} className={"snack " + sn.kind}>{SNACK_ICON[sn.kind] || SNACK_ICON.ok}<span>{sn.text}</span>{sn.kind === "err" && <button onClick={() => onClose(sn.id)} aria-label="閉じる">×</button>}</div>))}</div>);
+  return (<div className="snacks">{list.map((sn) => (<div key={sn.id} className={"snack " + sn.kind + (sn.out ? " out" : "")}>{SNACK_ICON[sn.kind] || SNACK_ICON.ok}<span>{sn.text}</span>{sn.kind === "err" && <button onClick={() => onClose(sn.id)} aria-label="閉じる">×</button>}</div>))}</div>);
 }
 /* 名前付けの応答を読む。JSON が途中で切れていたり前後に文が付いていても、完成している {"n":…} だけ拾う */
 function parseItemsLoose(text) {
@@ -1064,7 +1064,8 @@ function App() {
   const [snacks, setSnacks] = useState([]);
   const [block, setBlock] = useState(apiBlock);
   useEffect(() => { blockFn = setBlock; setBlock(apiBlock()); return () => { blockFn = null; }; }, []);
-  useEffect(() => { snackFn = (text, kind) => { const id = uid(); setSnacks((l) => [...l.filter((x) => x.kind === "err"), { id, text, kind }]); if (kind !== "err") setTimeout(() => setSnacks((l) => l.filter((x) => x.id !== id)), 4500); }; return () => { snackFn = null; }; }, []);
+  useEffect(() => { snackFn = (text, kind) => { const id = uid(); setSnacks((l) => [...l.filter((x) => x.kind === "err"), { id, text, kind }]);
+    if (kind !== "err") { setTimeout(() => setSnacks((l) => l.map((x) => (x.id === id ? { ...x, out: true } : x))), 4000); setTimeout(() => setSnacks((l) => l.filter((x) => x.id !== id)), 4400); } }; return () => { snackFn = null; }; }, []);
   // 登録直後の名前付けに失敗して「仮」のままの項目を、開いたときに裏で付け直す（同じ項目は1回の起動で1回だけ。ボタンを押す手間を無くす）
   const triedRef = useRef(new Set());
   useEffect(() => { if (!d || !hasKey()) return;
@@ -2222,7 +2223,9 @@ const CSS = `
 .mpop.pop{position:absolute;z-index:5;margin:0;width:240px;max-width:92%;background:var(--card);box-shadow:0 4px 16px rgba(30,35,33,.18);cursor:default}
 .mpop.pop .q-btns{margin-top:8px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}
-.snacks{position:fixed;left:10px;right:10px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:30;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.snacks{position:fixed;left:10px;right:10px;top:calc(8px + env(safe-area-inset-top));z-index:40;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+@keyframes snack-in{from{transform:translateY(-120%);opacity:0}to{transform:none;opacity:1}}@keyframes snack-out{to{transform:translateY(-60%);opacity:0}}
+.snack{animation:snack-in .28s ease-out}.snack.out{animation:snack-out .35s ease-in forwards}
 .root .snacks .snack{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:4px;font-size:12px;line-height:1.55;text-align:left;background:#2F6F5E !important;color:#fff !important;-webkit-text-fill-color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.22)}
 .root .snacks .snack span{flex:1;color:#fff;text-align:left}.sn-i{flex:0 0 18px;width:18px;height:18px;margin-top:1px}.root .snacks .snack.err{background:#7A2D26 !important}.root .snacks .snack.warn{background:#8A5A1E !important}
 .snack button{background:none;border:none;color:#fff;font-size:20px;line-height:1;margin:-8px -8px -8px 0;padding:8px 10px;min-width:36px;min-height:36px;cursor:pointer;font-family:inherit}.lnk{background:none;border:none;padding:0 0 0 6px;font-size:11px;color:#3D6B8E;text-decoration:underline;cursor:pointer;font-family:inherit}
