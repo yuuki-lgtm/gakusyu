@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 15:59"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 17:07"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1054,11 +1054,15 @@ async function exportPDF(papers, onStep) {
    m（サブ画面）付きの遷移（ホームの「次にやること」など）は n を進めて画面を作り直し、m から始める */
 /* 下のメニューバーのアイコン（線画、色は文字色に従う） */
 const TAB_ICONS = {
-  home: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.5 12 4.5l8.5 7M6 9.8V20h4.5v-5h3v5H18V9.8" /></svg>),
-  week: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="15" rx="2" /><path d="M3.5 10.5h17M8 3.5v4M16 3.5v4" /></svg>),
+  home: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M8.5 12.5l2.5 2.5 4.5-5" /></svg>),
+  paper: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4V20.5H6z" /><path d="M14 3.5v4h4M9 12h6M9 15.5h6" /></svg>),
+  items: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6.5h12M8 12h12M8 17.5h12" /><circle cx="4.5" cy="6.5" r="1" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="4.5" cy="17.5" r="1" fill="currentColor" stroke="none" /></svg>),
+  mats: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5a2 2 0 0 1 2-2h13v14H6a2 2 0 0 0-2 2z" /><path d="M4 19.5a2 2 0 0 1 2-2h13M8 7h7" /></svg>),
   more: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none" /></svg>),
 };
-const GROUP_OF = { home: "home", today: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more", guide: "more" };
+const GROUP_OF = { home: "home", paper: "paper", items: "items", mats: "mats", more: "more", ana: "more", export: "more", set: "more", guide: "more" };
+/* 旧の行き先名（today／week／exam／reg）を、いまの画面（紙／教材／未定着）に読み替える。呼び出し側は旧名のままでよい */
+const route = (t, m) => (t === "today" || t === "week" ? ["paper", m] : t === "exam" ? ["mats", "exam"] : t === "reg" ? (m === "mat" || m === "unit" ? ["mats", m] : ["items", m === "item" ? "item" : "list"]) : [t, m]);
 const openScreen = (o, t, m = null) => (m || !o[t] ? { ...o, [t]: { m, n: o[t] ? o[t].n + 1 : 0 } } : o);
 function App() {
   const [d, setD] = useState(null);
@@ -1066,7 +1070,7 @@ function App() {
   const [opened, setOpened] = useState({ home: { m: null, n: 0 } });
   const scrollPos = useRef({}); const rootRef = useRef(null);
   const lastIn = useRef({}); // グループ → 最後に開いていた画面（フックは早期 return より前に置く）
-  const go = (t, m = null) => {
+  const go = (t0, m0 = null) => { const [t, m] = route(t0, m0);
     try { scrollPos.current[tab] = (rootRef.current ? rootRef.current.scrollTop : window.scrollY) || 0; } catch {}
     if (m) scrollPos.current[t] = 0;
     setOpened((o) => openScreen(o, t, m)); setTab(t);
@@ -1113,7 +1117,7 @@ function App() {
   const nextExam = d.exams.filter((e) => e.date >= today()).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
   const left = nextExam ? diffDays(today(), nextExam.date) : null;
   // 下のバーは頻度で3つ。毎日＝ホーム（夜の作業・朝の印刷・今日）、週1＝週末（テスト・模試・定期）、たまに＝その他（登録・分析・依頼文・設定）
-  const tabs = [["home", "ホーム"], ["week", left !== null && left <= 14 ? `テスト あと${left}日` : "テスト"], ["more", "その他"]];
+  const tabs = [["home", "今日"], ["paper", "紙"], ["items", "未定着"], ["mats", "教材"], ["more", "その他"]];
   const group = GROUP_OF[tab] || "home";
   // バーは、そのグループで最後に開いていた画面に戻す（その他→登録→ホーム→その他 なら登録）。いま居るグループをもう一度押すと先頭へ
   lastIn.current[group] = tab;
@@ -1123,21 +1127,20 @@ function App() {
     <div className="root" ref={rootRef}><style>{CSS}</style>
       <header className="hd"><div className="hd-t"><span>学習ループ</span>{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div></header>
       <Banner block={block} go={go} />
-      <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{TAB_ICONS[k]}<span className="tab-l">{l}</span></button>))}</nav>
+      <nav className="tabs bar">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{TAB_ICONS[k]}<span className="tab-l">{l}</span></button>))}</nav>
       <main className="main">
         {Object.keys(opened).map((k) => { const m = opened[k].m; return (<div key={`${k}:${opened[k].n}`} hidden={tab !== k}>
           {k === "home" && <HomeTab d={d} go={go} />}
-          {k === "today" && <TodayTab d={d} save={save} initial={m} go={go} />}
-          {k === "week" && <WeekTab d={d} save={save} initial={m} />}
-          {k === "reg" && <RegTab d={d} save={save} initial={m} />}
+          {k === "paper" && <PaperTab d={d} save={save} initial={m} go={go} />}
+          {k === "items" && <ItemsTab d={d} save={save} initial={m} />}
+          {k === "mats" && <MatsTab d={d} save={save} initial={m} />}
           {k === "ana" && <AnaTab d={d} />}
-          {k === "exam" && <WeekTab d={d} save={save} initial="exam" />}
           {k === "more" && <MoreTab d={d} go={go} />}
           {k === "guide" && <GuideTab go={go} />}
           {k === "export" && <ExportTab d={d} />}
           {k === "set" && <Settings d={d} save={save} setSync={setSync} />}</div>); })}
         <Snacks list={snacks} onClose={(id) => setSnacks((l) => l.filter((x) => x.id !== id))} />
-        {(tab === "home" || tab === "week" || tab === "more") && <Fab go={go} />}
+        {GROUP_OF[tab] === tab && <Fab go={go} />}
       </main></div>
   );
 }
@@ -1153,36 +1156,40 @@ function MorningPrint({ d }) {
     <p className="blk-s">判定はしません。夜に作った類題をそのまま出します。子どもが朝に押してもよい。</p></div>);
 }
 function HomeTab({ d, go }) {
-  const { A, left, nx } = nextActions(d);
+  const { A } = nextActions(d);
   const [p, ...rest] = A;
-  const rangeN = nx ? d.items.filter((i) => i.status === "active" && examRangeIds(d).has(i.unitId)).length : 0; // 次の定期テストの範囲内の未定着
+  const [showAll, setShowAll] = useState(false); const shown = showAll ? rest : rest.slice(0, 3); // 今日はやることだけ。多くて3行、残りは畳む
   return (<div className="pane">
     {p ? (<button className="hero press" onClick={() => go(p.tab, p.mode)}>
       <div className="hero-k">いまやること</div><div className="hero-t">{p.title}</div><div className="hero-w">{p.why}</div>
       <div className="hero-b"><span>{p.t}</span><span className="chev">›</span></div></button>)
       : (<div className="hero quiet"><div className="hero-k">いまやること</div><div className="hero-t">今日はありません</div><div className="hero-w">次の再出題日を待っています。週末になったらテストを作ってください。</div></div>)}
     <MorningPrint d={d} />
-    {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{rest.map((a) => (<button className="nxt press" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span><span className="chev">›</span></button>))}</div>)}
-    {nx ? (<button className="blk exam-line" onClick={() => go("exam")}><span className="hm-k">{nx.name || "定期テスト"}</span><strong className={left <= 14 ? "near" : ""}>あと{left}日</strong><span className="ex-n">範囲の未定着 {rangeN}件{left <= 14 ? " · 範囲外の項目は後ろ倒し中" : ""}</span></button>)
-      : (() => { const act = d.items.filter((i) => i.status === "active"); const by = SUBJECTS.map((sb) => ({ sb, n: act.filter((i) => i.subject === sb).length })).filter((x) => x.n);
-        return (<button className="blk exam-line stack" onClick={() => go("reg", "list")}><div className="st-top"><span className="hm-k">未定着</span><strong>{act.length}件</strong></div>
-          {act.length > 0 && (<><div className="st-bar">{by.map((x) => (<span key={x.sb} style={{ width: `${(x.n / act.length) * 100}%`, background: HUE[x.sb] }} title={`${x.sb} ${x.n}`} />))}</div>
-          <div className="st-leg">{by.map((x) => (<span key={x.sb}><Dot s={x.sb} />{x.sb} {x.n}</span>))}</div></>)}</button>); })()}
+    {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{shown.map((a) => (<button className="nxt press" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span><span className="chev">›</span></button>))}{rest.length > 3 && !showAll && <button className="lnk" onClick={() => setShowAll(true)}>ほか {rest.length - 3} 件を見る</button>}</div>)}
     <p className="guide-row"><button className="btn-sm" onClick={() => go("guide")}>使い方を見る</button></p>
   </div>);
 }
 
-/* ---- 今日 ---- */
-function TodayTab({ d, save, initial, go }) {
-  const gs = gradeSet(d);
-  const [mode, setMode] = useState(initial || (gs.length ? "grade" : "print"));
-  useEffect(() => { if (initial) setMode(initial); }, [initial]);
-  const ps = printSet(d).length;
+/* ---- 紙（類題の紙・5教科テスト・模試・読解・記述。作る・印刷する・採点するは、すべて紙への操作） ---- */
+function PaperTab({ d, save, initial, go }) {
+  // grade/print＝類題の紙、make/cum/manual＝5教科テスト（cum は累積、manual はワークの結果の記録を開く）、mock:数学,英語＝模試、read/write＝読解・記述
+  const asMode = (m) => (!m ? null : m === "cum" || m === "manual" ? "make" : m.startsWith("mock") ? "mock" : m === "read" || m === "write" ? "rw" : m);
+  const preset = initial && initial.startsWith("mock:") ? initial.slice(5).split(",").filter(Boolean) : null;
+  const gs = gradeSet(d), ps = printSet(d).length;
+  const [mode, setMode] = useState(asMode(initial) || (gs.length ? "grade" : "print"));
+  const [rw, setRw] = useState(initial === "write" ? "write" : "read");
+  useEffect(() => { if (initial) { setMode(asMode(initial)); if (initial === "write") setRw("write"); if (initial === "read") setRw("read"); } }, [initial]);
+  const T = [["grade", `採点待ち${gs.length ? ` (${gs.length})` : ""}`], ["print", `明日の紙${ps ? ` (${ps})` : ""}`], ["make", "5教科テスト"], ["mock", "模試"], ["rw", "読解・記述"]];
   return (<div className="pane">
-    <Hint k="today">昨日の紙を撮って採点し、明日の紙を作る、の2つ。子どもは紙に解き、解答を見て右の欄に ○×。行をタップすると類題と解答が見えます。</Hint>
-    <div className="subtabs"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>明日の紙{ps ? ` (${ps})` : ""}</button></div>
+    <Hint k="paper">紙はここ。平日は「採点待ち」（昨日の紙を撮る）と「明日の紙」（類題を作って印刷）。週末は「5教科テスト」を作って印刷し、赤ペンで採点したら一覧で用紙を開いて答案を撮る。定期テスト前は「模試」。</Hint>
+    <div className="subtabs five">{T.map(([k, l]) => (<button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{l}</button>))}</div>
     {mode === "grade" && <TodayGrade d={d} save={save} onNext={() => setMode("print")} />}
     {mode === "print" && <TodayMake d={d} save={save} go={go} />}
+    {mode === "make" && (<><MakePapers d={d} save={save} initialKind={initial === "cum" ? "累積" : "週次"} />
+      <details className="det" open={initial === "manual"}><summary>ワークの結果を記録（学校のワークや問題集）</summary><ManualTest d={d} save={save} /></details></>)}
+    {mode === "mock" && <MockMaker d={d} save={save} preset={preset} onExam={() => go && go("mats", "exam")} />}
+    {mode === "rw" && (<><div className="seg sm"><button className={rw === "read" ? "on" : ""} onClick={() => setRw("read")}>読解</button><button className={rw === "write" ? "on" : ""} onClick={() => setRw("write")}>記述</button></div>
+      {rw === "read" ? <ReadingMaker d={d} save={save} /> : <WritingFlow d={d} save={save} />}</>)}
   </div>);
 }
 function TodayMake({ d, save, go }) {
@@ -1333,30 +1340,6 @@ function LastPageStep({ d, save }) {
   </section>);
 }
 
-/* ---- テスト ---- */
-function WeekTab({ d, save, initial }) {
-  // cum＝累積テストを作る、mock:数学,英語＝模試を教科を選んだ状態で、read/write＝読解・記述の画面、manual＝作るの下の手入力
-  const asMode = (m) => (m === "cum" || m === "manual" ? "make" : m && m.startsWith("mock") ? "mock" : m === "read" || m === "write" ? "rw" : m);
-  const preset = initial && initial.startsWith("mock:") ? initial.slice(5).split(",").filter(Boolean) : null;
-  const [mode, setMode] = useState(asMode(initial) || "make");
-  const [rw, setRw] = useState(initial === "write" ? "write" : "read");
-  useEffect(() => { if (initial) { setMode(asMode(initial)); if (initial === "write") setRw("write"); if (initial === "read") setRw("read"); } }, [initial]);
-  return (
-    <div className="pane">
-      <Hint k="week">週末のテスト。5教科テストを作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。定期テストの登録と範囲もここ。</Hint>
-      <div className="subtabs"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>5教科テスト</button>
-        <button className={mode === "exam" ? "on" : ""} onClick={() => setMode("exam")}>定期テスト</button>
-        <button className={mode === "mock" ? "on" : ""} onClick={() => setMode("mock")}>模試</button>
-        <button className={mode === "rw" ? "on" : ""} onClick={() => setMode("rw")}>読解・記述</button></div>
-      {mode === "make" && (<><MakePapers d={d} save={save} initialKind={initial === "cum" ? "累積" : "週次"} />
-        <details className="det" open={initial === "manual"}><summary>ワークの結果を記録（学校のワークや問題集）</summary><ManualTest d={d} save={save} /></details></>)}
-      {mode === "exam" && <ExamTab d={d} save={save} />}
-      {mode === "mock" && <MockMaker d={d} save={save} preset={preset} onExam={() => setMode("exam")} />}
-      {mode === "rw" && (<><div className="seg sm"><button className={rw === "read" ? "on" : ""} onClick={() => setRw("read")}>読解</button><button className={rw === "write" ? "on" : ""} onClick={() => setRw("write")}>記述</button></div>
-        {rw === "read" ? <ReadingMaker d={d} save={save} /> : <WritingFlow d={d} save={save} />}</>)}
-    </div>
-  );
-}
 function MakePapers({ d, save, initialKind = "週次" }) {
   const [sel, setSel] = useState([...SUBJECTS]);
   const [n, setN] = useState("10");
@@ -1664,17 +1647,27 @@ function ManualTest({ d, save }) {
   </section>);
 }
 
-/* ---- 登録 ---- */
-function RegTab({ d, save, initial }) {
-  const [mode, setMode] = useState(initial || (d.units.length ? "item" : "unit"));
+/* ---- 未定着（項目の一覧と、×の登録。増えるのは登録、減るのは紙で正解したとき） ---- */
+function ItemsTab({ d, save, initial }) {
+  const [mode, setMode] = useState(initial === "item" ? "item" : "list");
+  useEffect(() => { if (initial) setMode(initial === "item" ? "item" : "list"); }, [initial]);
+  return (<div className="pane">
+    <Hint k="items">まだ身についていない項目の一覧。増えるのは「×を登録」（ワークや答案のページで×をタップ）から。減るのは、紙で30日あけて正解したとき。</Hint>
+    <div className="subtabs"><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>一覧</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>×を登録</button></div>
+    {mode === "list" && <ItemList d={d} save={save} />}
+    {mode === "item" && <ItemReg d={d} save={save} />}
+  </div>);
+}
+/* ---- 教材（ワーク・教科書・定期テストの取り込み、目次と単元・進度、定期テストの日付と範囲） ---- */
+function MatsTab({ d, save, initial }) {
+  const [mode, setMode] = useState(initial || ((d.materials || []).length ? "unit" : "mat"));
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
   return (<div className="pane">
-    <Hint k="reg">単元は学期に1回。項目は、平日のワークの×をページで指してタップする場所です。進度はワークの×から自動、拾えなければ「単元」で「ここまで」。自作テストの×は「テスト→撮る」で自動です。</Hint>
-    <div className="subtabs"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元と進度</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着リスト</button><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>教材の取り込み</button></div>
-    {mode === "unit" && <UnitReg d={d} save={save} />}
-    {mode === "item" && <ItemReg d={d} save={save} />}
-    {mode === "list" && <ItemList d={d} save={save} />}
+    <Hint k="mats">学期の初めに1回。ワークと教科書を取り込み、目次から単元を登録して、習ったところまで「ここまで」。定期テストの日付と範囲もここ。</Hint>
+    <div className="subtabs"><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>取り込み</button><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元と進度</button><button className={mode === "exam" ? "on" : ""} onClick={() => setMode("exam")}>定期テスト</button></div>
     {mode === "mat" && <MaterialReg d={d} save={save} />}
+    {mode === "unit" && <UnitReg d={d} save={save} />}
+    {mode === "exam" && <ExamTab d={d} save={save} />}
   </div>);
 }
 function UnitReg({ d, save }) {
@@ -1867,6 +1860,10 @@ function ItemList({ d, save }) {
       try { out.push(`${sub}: ${await nameAndApply(d, add, sub, unitOf, save)}`); } catch (e) { out.push(`${sub}: 付けられませんでした（${e.message || e}）`); } }
     const txt = out.join(" ／ "); notify(txt, /付けられ|失敗/.test(txt) ? "err" : "ok"); setNaming(false); };
   return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
+    {(() => { const act = d.items.filter((i) => i.status === "active"); const by = SUBJECTS.map((sb) => ({ sb, n: act.filter((i) => i.subject === sb).length })).filter((x) => x.n);
+      return (<div className="blk stack"><div className="st-top"><span className="hm-k">未定着</span><strong>{act.length}件</strong></div>
+        {act.length > 0 && (<><div className="st-bar">{by.map((x) => (<span key={x.sb} style={{ width: `${(x.n / act.length) * 100}%`, background: HUE[x.sb] }} title={`${x.sb} ${x.n}`} />))}</div>
+        <div className="st-leg">{by.map((x) => (<span key={x.sb}><Dot s={x.sb} />{x.sb} {x.n}</span>))}</div></>)}</div>); })()}
     {tent.length > 0 && <button className="btn-main rename-all" disabled={naming} onClick={renameAll}>{naming ? "AI が名前を付けています…" : `仮の項目 ${tent.length} 件に名前を付ける（AI）`}</button>}
     {undo && <p className="undo-bar"><span>「{undo.label}」を削除しました</span><button className="lnk" onClick={restore}>取り消す</button></p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
@@ -1987,27 +1984,27 @@ function GuideTab({ go }) {
     </S>
     <S t="週末">
       <ol className="g-ol">
-        <li><b>土曜</b>：「テスト → 5教科テスト」で作って印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」。</li>
-        <li><b>日曜</b>：「テスト → 読解・記述」で1本ずつ。</li>
+        <li><b>土曜</b>：「紙 → 5教科テスト」で作って印刷 → 解く → 赤ペンで採点 → 用紙の行の「この用紙の答案を撮る」。</li>
+        <li><b>日曜</b>：「紙 → 読解・記述」で1本ずつ。</li>
       </ol>
     </S>
     <S t="定期テストの前と後">
       <ol className="g-ol">
-        <li><b>まず登録</b>：「テスト → 定期テスト」で日付と範囲を入れる。14日前からホームに「模試を作る」が出ます。</li>
-        <li><b>前</b>：14・7・3日前に「テスト → 模試」で作って印刷。50分で解かせて採点し、用紙の行で撮る。</li>
-        <li><b>返ってきたら</b>：「その他 → 登録 → 教材の取り込み」で答案を「テスト」として取り込み、「落とした項目」で×をタップ。「テスト → 定期テスト」に点を入れる。</li>
+        <li><b>まず登録</b>：「教材 → 定期テスト」で日付と範囲を入れる。14日前からホームに「模試を作る」が出ます。</li>
+        <li><b>前</b>：14・7・3日前に「紙 → 模試」で作って印刷。50分で解かせて採点し、用紙の行で撮る。</li>
+        <li><b>返ってきたら</b>：「教材 → 取り込み」で答案を「テスト」として取り込み、「未定着 → ×を登録」で×をタップ。「教材 → 定期テスト」に点を入れる。</li>
       </ol>
     </S>
     <S t="最初に1回だけ">
       <ol className="g-ol">
         <li>「その他 → 設定」で API キーと共有（Supabase）を入れる。</li>
-        <li>「その他 → 登録 → 教材の取り込み」でワークをスキャンして入れる（教科書は後でもよい）。</li>
-        <li>「その他 → 登録 → 単元と進度」で目次を撮るか手で単元を入れ、習ったところまで「ここまで」を押す。</li>
+        <li>「教材 → 取り込み」でワークをスキャンして入れる（教科書は後でもよい）。</li>
+        <li>「教材 → 単元と進度」で目次を撮るか手で単元を入れ、習ったところまで「ここまで」を押す。</li>
       </ol>
     </S>
     <S t="困ったとき">
       <ul className="g-ul">
-        <li><b>項目名が「仮」のまま</b>：AI の名前付けに失敗しています。開き直すと自動でやり直します。急ぐなら「未定着リスト」の上のボタン。</li>
+        <li><b>項目名が「仮」のまま</b>：AI の名前付けに失敗しています。開き直すと自動でやり直します。急ぐなら「未定着 → 一覧」の上のボタン。</li>
         <li><b>AI が使えない</b>：画面の上に赤か橙の帯が出ます。書いてある場所（設定や残高）を直せば消えます。</li>
         <li><b>画面が古い</b>：「その他 → 最新版に更新」。</li>
         <li><b>紙が無い朝</b>：ホームの「今日の紙をもう一度PDFに」。</li>
@@ -2019,14 +2016,13 @@ function GuideTab({ go }) {
 function MoreTab({ d, go }) {
   const last = (arr) => (arr && arr.length ? arr.map((x) => x.updatedAt || "").sort().pop() : "");
   const rows = [
-    ["reg", "登録（単元・×・教材）", "落とした項目（ページをタップして登録。夜の作業の外からもここで）・単元と進度・教材の取り込み・未定着リスト。", last(d.units)],
     ["ana", "分析", "保持率・形式別・一致率・問題が変。見るだけ。月1の振り返りに。", ""],
     ["export", "相談用の依頼文", "学習状況を文章にしてコピー。週1の相談に。", ""],
     ["set", "設定", "同期・APIキー・今日の分の上限・バックアップ。", d.backupOn || ""],
   ];
   const reload = () => { try { window.location.replace(window.location.pathname + "?r=" + Date.now()); } catch {} };
   return (<div className="pane">
-    <Hint k="more">たまにしか使わない画面。毎日の操作はホーム、週末の作業は「週末」にあります。</Hint>
+    <Hint k="more">たまにしか使わない画面。毎日の操作は「今日」と「紙」、項目は「未定着」、取り込みは「教材」にあります。</Hint>
     {rows.map(([k, t, w, when]) => (<button className="nxt" key={k} onClick={() => go(k)}><span className="nxt-t">{t}</span><span className="nxt-w">{w}{when ? `　最終 ${String(when).slice(0, 10)}` : ""}</span></button>))}
     <button className="nxt" onClick={() => go("guide")}><span className="nxt-t">使い方</span><span className="nxt-w">このアプリで何をするか、毎日・週末・テスト前にやることを短くまとめたページ。</span></button>
     <button className="nxt" onClick={reload}><span className="nxt-t">最新版に更新（再読み込み）</span><span className="nxt-w">いまは v{VERSION}。画面が古いと感じたら押す。それでも古ければアプリを完全に終了して開き直す。</span></button>
@@ -2268,7 +2264,7 @@ const CSS = `
 .nxt{display:block;width:100%;text-align:left;padding:10px;margin-bottom:6px;border:1px solid var(--line);background:var(--paper);border-radius:3px;cursor:pointer;font-family:inherit}
 .nxt-t{display:block;font-size:13px;font-weight:700;color:var(--ink)}.nxt-w{display:block;font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.5}
 .exam-line{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:inherit;font-size:12px;color:var(--ink2)}.exam-line strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}.exam-line strong.near{color:#8E3830}.exam-line .ex-n{flex:1}
-.exam-line.stack{display:block}.st-top{display:flex;align-items:baseline;gap:10px}.st-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:10px 0 7px;background:var(--line)}.st-bar span{display:block;height:100%}.st-bar span+span{border-left:1px solid #fff}
+.blk.stack{display:block}.st-top{display:flex;align-items:baseline;gap:10px}.st-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:10px 0 7px;background:var(--line)}.st-bar span{display:block;height:100%}.st-bar span+span{border-left:1px solid #fff}
 .st-leg{display:flex;flex-wrap:wrap;gap:3px 12px;font-size:11px;color:var(--ink2);font-variant-numeric:tabular-nums}.st-leg .dot{margin-right:3px}.hm-k{font-size:10px;color:var(--ink3)}.hm-v small{font-size:11px;font-weight:400;color:var(--ink3)}
 
 .guide-row{text-align:center;margin:10px 0 4px}
@@ -2279,10 +2275,10 @@ const CSS = `
 .hd{padding:18px 16px 6px}
 .banner{display:flex;align-items:center;gap:10px;margin:0 12px 6px;padding:9px 12px;border-radius:4px;font-size:12px;line-height:1.5;background:#FBF3F2;border:1px solid #E4C4C0;color:#7A2D26}
 .banner span{flex:1}.banner .lnk{flex:0 0 auto;color:#7A2D26;font-weight:700;padding:0;margin:0}.banner.nokey{background:#FFF7E8;border-color:#E8D3A6;color:#6B4A12}.banner.nokey .lnk{color:#6B4A12}.hd-t{font-size:19px;font-weight:700;letter-spacing:.04em;display:flex;align-items:center}.tabs{display:flex;gap:0;padding:0 0 env(safe-area-inset-bottom);position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0D0C}
-.tabs::after{content:"";position:absolute;left:0;right:0;top:100%;height:400px;background:#0B0D0C} /* iOS の端の跳ね返りでバーの下に地の色が見えないよう、バーの下を黒で埋める */.tabs.three .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;letter-spacing:.02em;padding:8px 4px 7px;margin:0;border:none;border-radius:0;background:none;color:rgba(255,255,255,.5);-webkit-tap-highlight-color:transparent}
+.tabs::after{content:"";position:absolute;left:0;right:0;top:100%;height:400px;background:#0B0D0C} /* iOS の端の跳ね返りでバーの下に地の色が見えないよう、バーの下を黒で埋める */.tabs.bar .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;letter-spacing:.02em;padding:8px 4px 7px;margin:0;border:none;border-radius:0;background:none;color:rgba(255,255,255,.5);-webkit-tap-highlight-color:transparent}
 .tab-i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.tabs.three .tab:active{background:rgba(255,255,255,.08)}
-.tabs.three .tab.on{color:#fff;font-weight:700}
+.tabs.bar .tab:active{background:rgba(255,255,255,.08)}
+.tabs.bar .tab.on{color:#fff;font-weight:700}
 .sub .lead{margin-top:2px}
 .tab{flex:0 0 auto;background:none;border:none;padding:9px 11px;font-size:13px;color:var(--ink3);cursor:pointer;border-top:2px solid transparent;margin-top:-1px;font-family:inherit;white-space:nowrap}
 .tab.on{color:var(--ink);border-top-color:var(--ink);font-weight:700}
@@ -2291,7 +2287,7 @@ const CSS = `
 .msg{font-size:12px;color:#2F6F5E;text-align:center;margin-top:10px}.warn-t{font-size:11px;color:#A8443B;margin:6px 0}.mb{margin-bottom:12px}
 .subj-row{display:flex;gap:5px;margin-bottom:12px}.subj{flex:1;padding:9px 2px;border:1px solid var(--line);background:var(--card);border-radius:3px;font-size:13px;color:var(--ink2);cursor:pointer;font-family:inherit}.subj.on{color:#fff;font-weight:700}
 .seg{display:flex;margin-bottom:14px;border:1px solid var(--line);border-radius:3px;overflow:hidden}.seg button{flex:1;padding:8px 4px;border:none;background:var(--card);font-size:12px;color:var(--ink3);cursor:pointer;font-family:inherit;border-right:1px solid var(--line)}.seg button:last-child{border-right:none}.seg button.on{background:var(--ink);color:#fff;font-weight:700}.seg.sm button{font-size:12px;padding:7px 4px}.seg.one{border-style:dashed}.seg.one span{flex:1;text-align:center;padding:7px 4px;font-size:12px;color:var(--ink2);background:var(--paper)}
-.subtabs{display:flex;gap:2px;margin:0 0 14px;border-bottom:1px solid var(--line);overflow-x:auto}
+.subtabs{display:flex;gap:2px;margin:0 0 14px;border-bottom:1px solid var(--line);overflow-x:auto}.subtabs.five button{font-size:12px;padding:10px 2px}
 .subtabs button{flex:1;padding:10px 4px;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;background:none;font-size:13px;color:var(--ink3);cursor:pointer;font-family:inherit;white-space:nowrap;-webkit-tap-highlight-color:transparent}
 .subtabs button.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:700}
 .sec,.blk{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:13px;margin-bottom:12px}
