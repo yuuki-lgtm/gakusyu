@@ -10,7 +10,7 @@
 <title>学習ループ</title>
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 180 180%27%3E%3Crect width=%27180%27 height=%27180%27 fill=%27%231E2321%27/%3E%3Ccircle cx=%2790%27 cy=%2790%27 r=%2746%27 fill=%27none%27 stroke=%27%23F6F7F5%27 stroke-width=%279%27 stroke-dasharray=%27216 73%27 stroke-linecap=%27round%27 transform=%27rotate(-90 90 90)%27/%3E%3C/svg%3E">
 <style>
-html,body{margin:0;padding:0;background:#F6F7F5;-webkit-text-size-adjust:100%;overscroll-behavior-y:none}
+html,body{margin:0;padding:0;background:#F6F7F5;-webkit-text-size-adjust:100%;overscroll-behavior-y:none;height:100%;overflow:hidden;position:fixed;width:100%}
 #root{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
 input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の入力時の自動ズームは viewport の maximum-scale=1 で止めている（16px にする必要はない） */
 .boot{padding:60px 24px;text-align:center;color:#8A928C;font-size:13px;font-family:-apple-system,"Hiragino Sans",sans-serif;line-height:1.8}
@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 15:56"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 15:59"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1064,14 +1064,14 @@ function App() {
   const [d, setD] = useState(null);
   const [tab, setTab] = useState("home");
   const [opened, setOpened] = useState({ home: { m: null, n: 0 } });
-  const scrollPos = useRef({});
+  const scrollPos = useRef({}); const rootRef = useRef(null);
   const lastIn = useRef({}); // グループ → 最後に開いていた画面（フックは早期 return より前に置く）
   const go = (t, m = null) => {
-    try { scrollPos.current[tab] = window.scrollY || 0; } catch {}
+    try { scrollPos.current[tab] = (rootRef.current ? rootRef.current.scrollTop : window.scrollY) || 0; } catch {}
     if (m) scrollPos.current[t] = 0;
     setOpened((o) => openScreen(o, t, m)); setTab(t);
   };
-  useEffect(() => { try { window.scrollTo(0, scrollPos.current[tab] || 0); } catch {} }, [tab]);
+  useEffect(() => { try { const y = scrollPos.current[tab] || 0; if (rootRef.current) rootRef.current.scrollTop = y; else window.scrollTo(0, y); } catch {} }, [tab]);
 
   const [sync, setSync] = useState("");
   const pushTimer = useRef(null);
@@ -1120,7 +1120,7 @@ function App() {
   const goGroup = (g) => go(g === group ? g : lastIn.current[g] || g);
 
   return (
-    <div className="root"><style>{CSS}</style>
+    <div className="root" ref={rootRef}><style>{CSS}</style>
       <header className="hd"><div className="hd-t"><span>学習ループ</span>{syncOn() && <span className={"sy " + (sync === "err" ? "sy-ng" : "sy-ok")}>{sync === "err" ? "同期エラー" : "同期"}</span>}<span className="ver">v{VERSION}</span></div></header>
       <Banner block={block} go={go} />
       <nav className="tabs three">{tabs.map(([k, l]) => (<button key={k} className={"tab" + (group === k ? " on" : "")} onClick={() => goGroup(k)}>{TAB_ICONS[k]}<span className="tab-l">{l}</span></button>))}</nav>
@@ -2274,7 +2274,7 @@ const CSS = `
 .guide-row{text-align:center;margin:10px 0 4px}
 .guide .g-p{font-size:13px;line-height:1.8;margin:0}.g-ol,.g-ul{margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--ink2)}.g-ol li,.g-ul li{margin-bottom:6px}.g-ol b,.g-ul b{color:var(--ink)}.flow b{color:var(--ink)}
 .root{--ink:#1E2321;--ink2:#5A615C;--ink3:#8A928C;--paper:#F6F7F5;--card:#FFF;--line:#DDE2DD;
- font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);min-height:100%;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
+ font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);position:fixed;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;font-feature-settings:"palt";-webkit-font-smoothing:antialiased}
 .root *{box-sizing:border-box}
 .hd{padding:18px 16px 6px}
 .banner{display:flex;align-items:center;gap:10px;margin:0 12px 6px;padding:9px 12px;border-radius:4px;font-size:12px;line-height:1.5;background:#FBF3F2;border:1px solid #E4C4C0;color:#7A2D26}
