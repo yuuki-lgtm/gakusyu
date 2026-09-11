@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 09:13"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 09:15"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1841,6 +1841,10 @@ function ItemReg({ d, save }) {
 function ItemList({ d, save }) {
   const unitOf = (id) => unitById(d, id);
   const [naming, setNaming] = useState(false); const [msg, setMsg] = useState("");
+  const [etOpen, setEtOpen] = useState(null); // 誤答の種類の4択を開いている項目
+  const [undo, setUndo] = useState(null); const undoT = useRef(null); // 削除した直後の項目。数秒だけ「取り消す」
+  const del = (i) => { save(removeRec(d, "items", i.id)); clearTimeout(undoT.current); setUndo(i); undoT.current = setTimeout(() => setUndo(null), 6000); };
+  const restore = () => { const it = undo; if (!it) return; clearTimeout(undoT.current); setUndo(null); save((cur) => ({ ...cur, items: [...cur.items.filter((x) => x.id !== it.id), { ...it, updatedAt: now() }], deleted: (cur.deleted || []).filter((x) => x !== it.id) })); };
   // 仮の名前のまま（タップ登録で AI の名前付けに失敗した）項目を、教科ごとにまとめて付け直す。ボタンは1つ
   const tent = d.items.filter((i) => i.status === "active" && i.named === false && hasPos(i.src));
   const renameAll = async () => { if (!hasKey()) { notify("APIキーが未設定です（その他→設定）", "err"); return; } setNaming(true);
@@ -1850,11 +1854,13 @@ function ItemList({ d, save }) {
     const txt = out.join(" ／ "); notify(txt, /付けられ|失敗/.test(txt) ? "err" : "ok"); setNaming(false); };
   return (<>{d.items.length === 0 && <p className="empty">まだ項目がありません。</p>}
     {tent.length > 0 && <button className="btn-main rename-all" disabled={naming} onClick={renameAll}>{naming ? "AI が名前を付けています…" : `仮の項目 ${tent.length} 件に名前を付ける（AI）`}</button>}
+    {undo && <p className="undo-bar"><span>「{undo.label}」を削除しました</span><button className="lnk" onClick={restore}>取り消す</button></p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
-        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}{i.noWhy && <em className="tag">説明不要</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
-          <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select>
-          {i.fmt !== "知識・用語" && <button className={"et why" + (i.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{i.noWhy ? "説明不要" : "説明あり"}</button>}</div><button className="btn-x" onClick={() => save(removeRec(d, "items", i.id))}>×</button></div>); })}</div>); })}</>);
+        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
+          <div className="ir-chips"><button className={"et et-cur" + (etOpen === i.id ? " on" : "")} onClick={() => setEtOpen(etOpen === i.id ? null : i.id)}>{ETYPES.includes(i.etype) ? i.etype : "誤答の種類 —"}</button>
+            {i.fmt !== "知識・用語" && <button className={"et why" + (i.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{i.noWhy ? "説明不要" : "説明あり"}</button>}</div>
+          {etOpen === i.id && (<div className="mpop et-pop"><div className="c-label">誤答の種類</div><div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (i.etype === e ? " on" : "")} onClick={() => { save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) }); setEtOpen(null); }}>{e}</button>))}</div></div>)}</div><button className="btn-x" onClick={() => del(i)} aria-label="削除">×</button></div>); })}</div>); })}</>);
 }
 function MaterialReg({ d, save }) {
   const [subject, setSubject] = useState("数学");
@@ -2280,7 +2286,9 @@ const CSS = `
 .root input:focus,.root select:focus,.root textarea:focus{outline:2px solid #3D6B8E;outline-offset:-1px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:13px;margin-bottom:10px}
 .c-meta{font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}.dot{width:7px;height:7px;border-radius:50%;flex:0 0 7px;display:inline-block;margin-right:4px}
-.flag{font-style:normal;background:#A8443B;color:#fff;padding:1px 5px;border-radius:2px;font-size:10px}.early,.lv,.tag{font-style:normal;color:var(--ink3);border:1px solid var(--line);padding:1px 5px;border-radius:2px;font-size:10px}
+.flag{font-style:normal;background:#A8443B;color:#fff;padding:1px 5px;border-radius:2px;font-size:10px}.early,.lv,.tag{font-style:normal;color:var(--ink3);border:1px solid var(--line);padding:1px 5px;border-radius:2px;font-size:10px;white-space:nowrap;display:inline-block;margin-left:4px}
+.ir-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}.ir-chips .et.why{margin:0}.et-pop{margin-top:6px}
+.undo-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;color:var(--ink2);padding:8px 10px;background:#EEF1EE;border-radius:3px;margin-bottom:10px}.undo-bar .lnk{margin:0;font-weight:700;flex:0 0 auto}
 .c-label{font-size:15px;line-height:1.5;margin-bottom:4px}.c-note{font-size:11px;color:var(--ink3);margin-bottom:6px}
 .btn-ai{width:100%;padding:9px;margin-top:6px;border:1px dashed var(--line);background:var(--paper);border-radius:3px;font-size:12px;color:var(--ink2);cursor:pointer;font-family:inherit}.btn-ai:disabled{opacity:.5}.btn-ai.warn{border-color:#D8B0AC;color:#8E3830;background:#FBF3F2}
 .errbox{margin-top:8px;padding:9px;background:#FBF3F2;border:1px solid #E4C4C0;border-radius:3px}.errbox p{font-size:11px;color:#8E3830;margin:0 0 7px;line-height:1.6}

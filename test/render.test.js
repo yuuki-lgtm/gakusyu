@@ -158,7 +158,7 @@ test("TapReg: 単元と対応しないページはその旨を出す。教材が
 });
 test("デモ: 未定着一覧で誤答の種類を変えられる", () => {
   const { html } = render(m.RegTab, { d: F.demo(), save: noop, initial: "list" });
-  assert.ok(html.includes("et-sel") && html.includes("ワーク p.11"));
+  assert.ok(html.includes("et-cur") && html.includes("ワーク p.11"));
 });
 test("デモ: 用紙のプレビューは教材ページの枠を出し、画像は持たない", () => {
   const p = F.demo().papers.find((x) => x.id === "p1");
@@ -293,7 +293,7 @@ test("今日/採点: 元の問題の回は印と説明が出る", () => {
 test("説明不要の切り替え: 未定着一覧と×登録のポップアップ。分析に件数", () => {
   const d = F.demo(); d.items = d.items.map((i) => (i.id === "i4" ? { ...i, noWhy: true } : i));
   const list = render(m.RegTab, { d, save: noop, initial: "list" }).html;
-  assert.ok(list.includes(">説明不要<") && list.includes(">説明あり<") && list.includes('class="tag">説明不要'));
+  assert.ok(list.includes(">説明不要<") && list.includes(">説明あり<") && !list.includes('class="tag">説明不要'), "バッジは出さず切り替え1つ");
   const ana = render(m.AnaTab, { d }).html;
   assert.ok(ana.includes("説明不要の項目") && ana.includes("用語 0、印あり 1"));
 });
@@ -461,4 +461,11 @@ test("×の登録: 教材が1種類だけなら、押せない1つの表示（�
   const d = F.demo(); d.materials = d.materials.filter((mt) => mt.subject !== "数学" || mt.kind === "ワーク");
   const h = render(m.ItemReg, { d, save: noop }).html;
   assert.ok(h.includes('<div class="seg sm one"><span>ワーク</span></div>') && !h.includes('class="on">ワーク</button>'));
+});
+test("未定着リスト: 誤答の種類は小さいチップ（select は無い）。「説明不要」はバッジと切り替えの二重にしない。削除は × のまま", () => {
+  const d = F.demo(); d.items = d.items.map((i, k) => (k === 0 ? { ...i, noWhy: true, fmt: "計算" } : i));
+  const h = render(m.ItemList, { d, save: noop }).html;
+  assert.ok(!h.includes("et-sel") && h.includes('class="et et-cur"'));
+  assert.ok(!h.includes('<em class="tag">説明不要</em>') && h.includes('class="et why on">説明不要</button>'));
+  assert.ok(h.includes('aria-label="削除">×</button>') && !h.includes("取り消す"));
 });
