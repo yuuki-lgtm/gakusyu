@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 18:50"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 18:54"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -45,7 +45,7 @@ const RUBRIC = [["len", "字数を満たした"], ["structure", "段落の型に
 /* 類題を印刷用の用紙に変換 */
 /* 類題を印刷用の用紙に変換。項目ごとに教科・単元の見出し、最後に説明の問いと「自分の判定」の欄 */
 /* 類題の紙の判定: 各問題の右端の四角い欄に、子どもが解答を見て自分で ○ か × を書く（チェック欄の4択は 2026-09-10 に廃止。読み取りが確実で、子どもの手間が少ない） */
-const SELF_NOTE = "解いたら解答を見て、各問題の右の欄に自分で ○ か × を書く（× は ✓ や ／ でもよい）。「説明」の問いは、理由を自分の言葉で言えたら ○。";
+const SELF_NOTE = "解いたら解答を見て、右の欄に自分で ○ か ×（✓ でもよい）。「説明」の問いは、自分の言葉で言えたら ○。";
 
 /* ---- 日付・文字列 ---- */
 /* 日付は端末のローカル日付で扱う（toISOString は UTC になり、日本では日付が1日ずれる） */
@@ -888,7 +888,7 @@ async function refSheets(d, subject) {
 /* ==================== 4. 印刷 ==================== */
 
 /* ---- 用紙HTML ---- */
-const LINES = { 数学: 4, 英語: 2, 国語: 3, 社会: 1, 理科: 2, 回収: 3 };
+const LINES = { 数学: 4, 英語: 2, 国語: 3, 社会: 1, 理科: 2, 今日の紙: 3 };
 const SHEET_CSS = `
 .sw{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;color:#111;font-feature-settings:"palt";text-align:left}
 .sw .sheet{background:#fff}
@@ -959,7 +959,7 @@ function paperHTML(p, res = {}) {
   const anyFig = false;
   const ans = `<div class="${anyFig ? "" : "cols"}">${p.questions.filter((q) => !q.guide).map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.a)}${q.pts ? ` <span class="pts">（${q.pts}点）</span>` : ""}</div></div>`).join("")}</div>`;
   const aim = `<div class="aim"><div style="font-weight:600;margin-bottom:2mm">出題のねらい</div>${p.questions.filter((q) => !q.guide).map((q) => `<div class="arow"><div class="an">${q.n}.</div><div class="at">${escHTML(q.label || q.aim)}${q.aim && q.aim !== q.label ? " — " + escHTML(q.aim) : ""}</div></div>`).join("")}</div>`;
-  return `${ref}<div class="sheet" data-part="q"><div class="ttl"><span>${escHTML(p.subject)}　${escHTML(paperTitle(p))}</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span>${p.minutes ? `<span>${p.minutes}分</span>` : ""}<span>点　　　／${p.maxScore || p.questions.filter((q) => !q.guide).length}</span></div>${p.kind === "類題" ? `<p class="note">${escHTML(SELF_NOTE)}</p>` : ""}${passage}${qs}</div><div class="sheet" data-part="a"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
+  return `${ref}<div class="sheet" data-part="q"><div class="ttl"><span>${p.kind === "類題" && p.subject === "今日の紙" ? "今日の紙" : `${escHTML(p.subject)}　${escHTML(paperTitle(p))}`}</span><small>${escHTML(p.code)}</small></div><div class="hdr"><span>日付　　　／</span><span>名前</span>${p.minutes ? `<span>${p.minutes}分</span>` : ""}${p.kind === "類題" ? "" : `<span>点　　　／${p.maxScore || p.questions.filter((q) => !q.guide).length}</span>`}</div>${p.kind === "類題" ? `<p class="note">${escHTML(SELF_NOTE)}</p>` : ""}${passage}${qs}</div><div class="sheet" data-part="a"><div class="ttl"><span>${escHTML(p.subject)}　解答</span><small>${escHTML(p.code)}</small></div>${ans}${aim}</div>`;
 }
 function fileHTML(p, res = {}) {
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHTML(p.subject)} ${escHTML(p.code)}</title><style>@page{size:A4;margin:17mm 16mm}html,body{margin:0;padding:0}${SHEET_CSS}.sw .sheet{page-break-after:always}.sw .sheet:last-child{page-break-after:auto}#pb{position:fixed;right:16px;bottom:16px;padding:15px 26px;background:#1E2321;color:#fff;border:none;border-radius:5px;font-size:15px;font-family:-apple-system,sans-serif;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35)}@media screen{body{background:#8A928C;padding:14px 0}.sw .sheet{width:210mm;min-height:297mm;margin:0 auto 16px;padding:17mm 16mm;box-sizing:border-box;box-shadow:0 2px 10px rgba(0,0,0,.35)}}@media print{#pb{display:none}}</style></head><body><div class="sw">${paperHTML(p, res)}</div><button id="pb" onclick="window.print()">印刷する</button></body></html>`;
@@ -989,7 +989,7 @@ function genToPaper(items, unitOf) {
     const why = !isTerm && g.why && (i.level || 0) >= 2 ? g.why : ""; // 説明の問いは 7 日の段階から（「解けた」だけでは先に進めない項目）。覚えたてには出さない
     g.problems.forEach((p, k) => { n++; qs.push({ n, sec, q: `${k === 0 ? head : ""}${p.q}`, a: p.a, label: i.label, aim: "", fmt: i.fmt, svg: "", jb: true, itemId: i.id }); });
     if (why) { n++; qs.push({ n, sec, q: `説明：${why}`, a: "（手順の理由が自分の言葉で言えていれば「説明もできた」）", label: i.label, aim: "説明させる問い", fmt: i.fmt, svg: "", jb: true, why: true, itemId: i.id }); } });
-  const subj = items.length === 1 ? items[0].subject : "回収";
+  const subj = items.length === 1 ? items[0].subject : "今日の紙"; // 教科が複数のときの見出し（以前は「回収」）
   return { subject: subj, code: today().slice(5).replace("-", "") + "回", kind: "類題", questions: qs, imgs: [], refs };
 }
 

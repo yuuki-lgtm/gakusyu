@@ -554,9 +554,9 @@ describe("紙で回す（印刷セット・採点セット・一括確定）", (
     assert.ok(p.questions[3].q.startsWith("t1") && p.questions[3].sec === "社会・正負の数" && p.questions[3].jb === true && !p.questions[3].why, "用語も○×の欄、説明の問いは無し");
     assert.ok(m.paperHTML(p).includes('class="sech">数学・正負の数') && m.paperHTML(p).includes('class="sech">社会・正負の数'));
     const one = m.genToPaper([items[0]], () => u); assert.equal(one.questions[0].sec, "正負の数", "1教科なら単元だけ");
-    assert.equal(p.questions[3].n, 4); assert.equal(p.subject, "回収");
-    const h = m.paperHTML(p); assert.equal((h.match(/class="jb"/g) || []).length, 4); assert.ok(h.includes("自分で ○ か × を書く") && !h.includes("自分の判定"));
-    assert.ok(!m.paperHTML({ ...p, kind: "週次" }).includes("自分で ○ か × を書く"), "週次テストには注意書きを出さない");
+    assert.equal(p.questions[3].n, 4); assert.equal(p.subject, "今日の紙");
+    const h = m.paperHTML(p); assert.equal((h.match(/class="jb"/g) || []).length, 4); assert.ok(h.includes("右の欄に自分で ○ か ×") && !h.includes("自分の判定") && !h.includes("点　　　／") && h.includes("<span>今日の紙</span>"), "類題の紙に点の欄は無い。見出しは今日の紙");
+    assert.ok(!m.paperHTML({ ...p, kind: "週次" }).includes("右の欄に自分で") && m.paperHTML({ ...p, kind: "週次" }).includes("点　　　／"), "週次テストには注意書きを出さず、点の欄はある");
   });
   test("ctxFor / itemContext", () => {
     const d = F.demo(); const i = d.items.find((x) => x.id === "i1");
@@ -1423,7 +1423,7 @@ describe("考え方の説明（2回以上落ちた項目）", () => {
     const h = m.paperHTML(p);
     assert.ok(h.includes('class="guide"') && h.includes("考え方（A）") && h.includes("教科書 p.10-30") && h.includes("例題Q") && h.includes("例題A"));
     assert.ok(h.indexOf("考え方の本文") < h.indexOf("q1"), "類題の前に出る");
-    assert.ok(h.includes("／2") && !h.includes("／3"), "満点は問題数だけ");
+    assert.ok(!h.includes("点　　　／"), "類題の紙に点の欄は無い（説明の枠は数えない）");
     assert.equal((h.match(/class="arow"/g) || []).length, 4, "解答とねらいは2問ぶんだけ");
     assert.ok(m.paperText(p).includes("【考え方】考え方の本文"));
   });
