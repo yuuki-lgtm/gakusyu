@@ -1242,7 +1242,7 @@ describe("類題の問題数（段階）", () => {
       await m.genForItem(item({ level: 0, fmt: "計算", history: [] }), null, { siblings: [], stable: [], units: [] });
       await m.genForItem(item({ level: 0, fmt: "知識・用語", history: [] }), null, { siblings: [], stable: [], units: [] });
       const txt = (k) => JSON.stringify(sent[k].messages[0].content);
-      assert.ok(txt(0).includes("本題の問題を1問") && !txt(0).includes("練習問題を3問"));
+      assert.ok(txt(0).includes("狙った問題を1問") && !txt(0).includes("練習問題を3問"));
       assert.ok(txt(1).includes("練習問題を3問"));
       assert.ok(txt(2).includes("問題を1問") && txt(2).includes("用語そのものを書かせる1問"));
     } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
@@ -1613,3 +1613,15 @@ describe("考え方と例題を載せる回", () => {
   });
 });
 
+
+describe("類題は元の問題と同じ型", () => {
+  test("genForItem: 1問でも3問でも「同じ型で数値や語句だけ変える」を指示し、基本形→応用の指示は無い", async () => {
+    const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk"); const sent = [];
+    globalThis.fetch = async (url, opts) => { sent.push(JSON.stringify(JSON.parse(opts.body))); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"problems":[{"q":"q","a":"a"}],"why":""}' }] }) }; };
+    try {
+      await m.genForItem(item({ level: 2, fmt: "計算", history: [] }), null, { siblings: [], stable: [], units: [] });
+      await m.genForItem(item({ level: 0, fmt: "計算", history: [] }), null, { siblings: [], stable: [], units: [] });
+      for (const b of sent) { assert.ok(b.includes("同じ型で、数値や語句だけ変える") && b.includes("問題の型は元の問題と同じ") && !b.includes("最も基本の形") && !b.includes("別の見た目で"), b.slice(0, 200)); }
+    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+});
