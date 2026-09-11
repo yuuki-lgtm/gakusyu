@@ -1240,24 +1240,6 @@ describe("今日の分の量（候補・優先順・上限・繰り越し）", (
   });
 });
 
-describe("一度に多数を登録したときの分散", () => {
-  const mk = (n) => Array.from({ length: n }, (_, k) => m.newItem({ id: "n" + k, subject: "数学", unitId: "u", label: "L" + k }));
-  test("上限の2倍未満なら全部翌日", () => {
-    const r = m.spreadDue(mk(11), m.blank(), 18);
-    assert.ok(r.every((i) => i.nextDue === day(1)));
-  });
-  test("上限の2倍以上なら、上限ずつ翌日・明後日…に分ける", () => {
-    const r = m.spreadDue(mk(14), m.blank(), 18);
-    assert.deepEqual(r.map((i) => i.nextDue), [...Array(6).fill(day(1)), ...Array(6).fill(day(2)), day(3), day(3)]);
-  });
-  test("今日すでに登録した分も数える", () => {
-    const d = { ...m.blank(), items: mk(5).map((i) => ({ ...i, createdOn: T })) };
-    const r = m.spreadDue(mk(7), d, 18);
-    assert.deepEqual(r.map((i) => i.nextDue), [day(1), day(2), day(2), day(2), day(2), day(2), day(2)]);
-    assert.ok(m.spreadDue(mk(6), d, 18).every((i) => i.nextDue === day(1)), "5+6=11 は 12 未満なので分散しない");
-  });
-});
-
 describe("類題の問題数（段階）", () => {
   test("習得中（間隔1・3日）は3問、7日以上は1問、暗記ものは常に1問、落として戻れば3問", () => {
     assert.equal(m.problemCount({ level: 0, fmt: "計算" }), 3); assert.equal(m.problemCount({ level: 1, fmt: "計算" }), 3);
@@ -1626,9 +1608,18 @@ describe("いつの紙に出るか", () => {
     assert.deepEqual(m.paperStatus({ ...base }), { k: "next", text: "明日の紙に出る" });
     assert.deepEqual(m.paperStatus({ ...base, nextDue: day(0) }).k, "next");
     assert.equal(m.paperStatus({ ...base, nextDue: day(3) }).text, `${day(3).slice(5)} の紙に出る`);
-    assert.equal(m.paperStatus({ ...base, nextDue: day(3), createdOn: T, history: [] }).text, `${day(3).slice(5)} の紙に出る（登録が多かったので分散）`);
     assert.equal(m.paperStatus({ ...base, printedOn: day(-1) }).k, "printed");
     assert.equal(m.paperStatus({ ...base, nextDue: day(9), defer: { examId: "e", from: day(1) } }).k, "defer");
     assert.equal(m.paperStatus({ ...base, status: "stable", nextDue: day(30) }).k, "stable");
+  });
+});
+
+describe("登録した項目の期日", () => {
+  test("何件登録しても初回の期日は翌日（分散はしない。量は上限と繰り越しで守る）", () => {
+    const taps = Array.from({ length: 30 }, (_, k) => ({ path: "p", kind: "ワーク", page: 1, x: (k % 10) / 10, y: Math.floor(k / 10) / 10 }));
+    const its = m.tapsToItems(taps, "数学", [], "u");
+    assert.equal(its.length, 30); assert.ok(its.every((i) => i.nextDue === day(1)));
+    const d = { ...m.blank(), items: its }; const pk = m.pickDaily(d, 18);
+    assert.ok(pk.chosen.length >= 1 && pk.chosen.length < 30 && pk.rest.length === 30 - pk.chosen.length, "上限までを今日の分、残りは繰り越し");
   });
 });

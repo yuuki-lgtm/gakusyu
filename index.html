@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 17:41"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 17:46"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -408,13 +408,6 @@ function printSet(d) {
   return d.items.filter((i) => i.status !== "stable" && !i.printedOn && i.nextDue <= lim && i.pending?.d !== today())
     .sort((a, b) => (range.has(b.unitId) - range.has(a.unitId)) || b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
 }
-/* 一度に多数を登録したとき（今日の登録が上限の2倍以上）、初回の期日を翌日から上限ずつ後ろにずらす。全部が翌日に集中しないように */
-function spreadDue(newItems, d, max = dailyMax()) {
-  const perDay = Math.max(3, Math.round(max / 3)); // 新しい項目は3問なので、1日の問題数の上限を3で割った件数
-  const t = today(); const already = (d.items || []).filter((i) => i.createdOn === t).length;
-  if (already + newItems.length < perDay * 2) return newItems;
-  return newItems.map((i, k) => ({ ...i, nextDue: addDays(t, 1 + Math.floor((already + k) / perDay)) }));
-}
 /* その項目が次にいつ紙に出るか（一覧の行に書く。「なぜ明日の紙に出ないか」が見えるように） */
 function paperStatus(i, d = null) {
   const t = today(), tm = addDays(t, 1);
@@ -422,7 +415,7 @@ function paperStatus(i, d = null) {
   if (i.printedOn) return { k: "printed", text: `採点待ち（${i.printedOn.slice(5)} に印刷済み）` };
   if (i.defer && i.nextDue > tm) return { k: "defer", text: `定期テスト後の ${i.nextDue.slice(5)} に（範囲外なので後ろ倒し中）` };
   if (i.nextDue <= tm) return { k: "next", text: "明日の紙に出る" };
-  return { k: "later", text: `${i.nextDue.slice(5)} の紙に出る${i.createdOn === t || (i.history || []).length === 0 ? "（登録が多かったので分散）" : ""}` };
+  return { k: "later", text: `${i.nextDue.slice(5)} の紙に出る` };
 }
 /* 候補のうち上限までを「今日の分」に、残りは繰り越し */
 function pickDaily(d, max = dailyMax()) {
@@ -1512,7 +1505,7 @@ function PaperGrade({ p: paper, d, save }) {
     if (!paper || !marks) return;
     const r = gradeResult(paper, marks);
     const test = { id: uid(), subject: paper.subject, date: today(), kind: paper.kind, source: `自作 ${paper.code}`, ...r, unitIds: paper.unitIds, paperId: paper.id, ...(paper.kind === "模試" ? { examId: paper.examId } : {}), updatedAt: now() };
-    const newItems = spreadDue(paper.questions.filter((qq) => checked[qq.n] && !qq.itemId).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" })), d);
+    const newItems = paper.questions.filter((qq) => checked[qq.n] && !qq.itemId).map((qq) => newItem({ subject: paper.subject, unitId: qq.unitId, label: qq.label || qq.aim, note: qq.aim && qq.aim !== qq.label ? qq.aim : "", fmt: qq.fmt, etype: etypes[qq.n] || "" }));
     const judged = judgeCarried(d, paper, marks, etypes);
     save({ ...judged, tests: [...d.tests, test], items: [...judged.items, ...newItems], papers: d.papers.map((p) => (p.id === paper.id ? { ...p, status: "graded", updatedAt: now() } : p)), log: { ...d.log, [today()]: true } });
     setMarks(null);
@@ -1797,10 +1790,9 @@ function TapReg({ d, save, subject, us, fallbackUnitId, onRegistered }) {
   };
   const commit = () => {
     if (!taps.length) return;
-    const add = spreadDue(tapsToItems(taps, subject, us, fallbackUnitId), d);
+    const add = tapsToItems(taps, subject, us, fallbackUnitId);
     save(applyAutoProgress(markDone({ ...d, items: [...d.items, ...add], log: { ...d.log, [today()]: true } }, taps.map((t) => t.path))));
-    const spread = add.filter((i) => i.nextDue !== addDays(today(), 1)).length;
-    setTaps([]); notify(`${add.length}件を登録しました。${spread ? `多いので ${spread} 件は明後日以降に分散しました。` : "明日の「今日」に出ます"}`);
+    setTaps([]); notify(`${add.length}件を登録しました。明日の紙の候補に入ります（上限を超えた分は翌日に繰り越し）`);
     if (hasKey()) { setNaming(true); nameAndApply(d, add, subject, (id) => us.find((u) => u.id === id), save).then((m) => { notify(m, /付けられ|失敗/.test(m) ? "err" : "ok"); setNaming(false); }); }
   };
   const setEtype = (i, e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) });
