@@ -1223,11 +1223,15 @@ describe("今日の分の量（候補・優先順・上限・繰り越し）", (
     m.stubs.localStorage.setItem("daily_max", "99"); assert.equal(m.dailyMax(), 18);
     m.stubs.localStorage.removeItem("daily_max");
   });
-  test("printSet の優先順: 定期テストの範囲内 → 落とした回数 → 期日が古い", () => {
+  test("printSet の優先順: 定期テストの範囲内 → 再出題・再挑戦（期日が古い順）→ 新しく登録 → 落とした回数", () => {
+    const j = (r, dd) => ({ d: dd, r, self: r, etype: "" });
     const d = { ...m.blank(), exams: [{ id: "e", date: day(10), unitIds: ["in"], actual: {}, updatedAt: "" }],
-      items: [it({ id: "old", unitId: "out", nextDue: day(-5), failCount: 1 }), it({ id: "many", unitId: "out", nextDue: T, failCount: 4 }), it({ id: "range", unitId: "in", nextDue: day(1), failCount: 0 }), it({ id: "new", unitId: "out", nextDue: day(1), failCount: 1 })] };
-    assert.deepEqual(m.printSet(d).map((i) => i.id), ["range", "many", "old", "new"]);
+      items: [it({ id: "old", unitId: "out", nextDue: day(-5), failCount: 1, level: 1, history: [j("o", day(-8))] }), it({ id: "many", unitId: "out", nextDue: T, failCount: 4 }), it({ id: "range", unitId: "in", nextDue: day(1), failCount: 0 }), it({ id: "new", unitId: "out", nextDue: day(1), failCount: 1 }), it({ id: "retry", unitId: "out", nextDue: T, failCount: 2, history: [j("x", day(-1))] })] };
+    assert.deepEqual(m.printSet(d).map((i) => i.id), ["range", "old", "retry", "many", "new"]);
+    assert.deepEqual(["old", "retry", "new"].map((id) => m.candKind(d.items.find((i) => i.id === id)).k), ["review", "retry", "new"]);
+    assert.ok(m.candKind(d.items[0]).text.startsWith("再出題（3日あけて・前回 ○"));
   });
+
   test("pickDaily: 問題数で上限まで（3問の項目も1問の項目も合計）。残りは繰り越し", () => {
     const d = { ...m.blank(), items: Array.from({ length: 9 }, (_, k) => it({ id: "i" + k, nextDue: T, failCount: 9 - k })) };
     const r = m.pickDaily(d, 18);

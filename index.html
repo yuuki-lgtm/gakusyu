@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 18:33"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 18:40"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -403,10 +403,18 @@ const dailyMax = () => { const v = parseInt(LS(DAILY_MAX_KEY), 10); return v >= 
 /* 直近の定期テスト（範囲あり）の範囲の単元 id */
 const examRangeIds = (d) => new Set((upcomingExams(d)[0] || { unitIds: [] }).unitIds);
 /* 明日までに期日が来る未印刷の項目（候補）。優先順: 定期テストの範囲内 → 落とした回数 → 期日が古い */
+/* 候補の種類。judged＝紙で判定した記録（self を持つ）がある。review＝前回 ○ で間隔をあけて戻ってきた、retry＝前回 ×、new＝まだ一度も紙に出ていない */
+function candKind(i) {
+  const js = (i.history || []).filter((h) => h.self !== undefined);
+  if (!js.length) return { k: "new", text: "新しく登録" };
+  const last = js[js.length - 1];
+  return last.r === "x" ? { k: "retry", text: `再挑戦（前回 × ${last.d.slice(5)}）` } : { k: "review", text: `再出題（${INT[Math.min(i.level || 0, INT.length - 1)]}日あけて・前回 ○ ${last.d.slice(5)}）` };
+}
 function printSet(d) {
   const lim = addDays(today(), 1); const range = examRangeIds(d);
+  const rank = (i) => (candKind(i).k === "new" ? 0 : 1); // 忘却曲線で時期が決まっている再出題・再挑戦を、新しく登録した項目より先に
   return d.items.filter((i) => i.status !== "stable" && !i.printedOn && i.nextDue <= lim && i.pending?.d !== today())
-    .sort((a, b) => (range.has(b.unitId) - range.has(a.unitId)) || b.failCount - a.failCount || (a.nextDue < b.nextDue ? -1 : 1));
+    .sort((a, b) => (range.has(b.unitId) - range.has(a.unitId)) || (rank(b) - rank(a)) || (a.nextDue < b.nextDue ? -1 : a.nextDue > b.nextDue ? 1 : 0) || b.failCount - a.failCount);
 }
 /* まだ一度も紙に出ていない項目の期日は翌日に揃える（以前の「分散」で後ろにずれた分の取り消し。後ろ倒し中・印刷済み・安定は触らない） */
 function undoSpread(d) {
@@ -1244,7 +1252,7 @@ function TodayMake({ d, save, go }) {
   const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
   return (<>
     <section className="sec">
-      <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「その他→設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。
+      <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「その他→設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 再出題・再挑戦（期日が古い順）→ 新しく登録 → 落とした回数が多い」。忘却曲線で時期が決まっている再出題を先に出します。外した項目は次の紙に繰り越します。
       {(() => { const act = d.items.filter((i) => i.status === "active"); const st = act.map((i) => paperStatus(i)); const cnt = (k) => st.filter((x) => x.k === k).length;
         const later = act.filter((i) => paperStatus(i).k === "later").map((i) => i.nextDue).sort()[0];
         if (!cnt("later") && !cnt("printed") && !cnt("defer")) return null;
@@ -1253,7 +1261,7 @@ function TodayMake({ d, save, go }) {
         return (<p className="ph-note defer-note">定期テスト{ex ? `「${ex.name || "テスト"}」（${ex.date}）` : ""}の14日前に入ったので、範囲外の {df.length} 件（{by.map(([sb, n]) => `${sb} ${n}`).join("・")}）はテスト翌日まで出しません。範囲は「教材 → 定期テスト」で変えられます。</p>); })()}類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
       {cands.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "次の紙の分はありません。"}</p>
         : (<>{[...SUBJECTS, ...cands.map((i) => i.subject)].filter((sb, k, arr) => arr.indexOf(sb) === k && cands.some((i) => i.subject === sb)).map((sb) => (<div key={sb}><h4 className="sub-h"><Dot s={sb} />{sb}<em className="pg"> {cands.filter((i) => i.subject === sb).length}件</em></h4>
-          {cands.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? <> · 類題あり <button className="lnk" onClick={(e) => { e.preventDefault(); setRedo((r) => new Set([...r, i.id])); }}>作り直す</button></> : redo.has(i.id) ? " · 作り直す" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}</div>))}
+          {cands.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className={"ir-kind " + candKind(i).k}>{candKind(i).text}{i.nextDue < today() ? `・${diffDays(i.nextDue, today())}日遅れ` : ""}</div><div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? <> · 類題あり <button className="lnk" onClick={(e) => { e.preventDefault(); setRedo((r) => new Set([...r, i.id])); }}>作り直す</button></> : redo.has(i.id) ? " · 作り直す" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}</div>))}
           <p className="ph-note">チェック {set.length} 件（{set.reduce((a, i) => a + problemCount(i), 0)} 問）、繰り越し {cands.length - set.length} 件。</p>
           <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `次の紙を作る（${set.length}件 → PDF）`}</button></>)}
       {log.length > 0 && <div className="loglist">{log.map((l, k) => (<div key={k}>{l}</div>))}</div>}
@@ -2361,7 +2369,8 @@ const CSS = `
 .rub{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}.rub-b{display:flex;gap:4px}.rub-b button{width:34px;height:30px;border:1px solid var(--line);background:var(--card);border-radius:3px;cursor:pointer;font-family:inherit}.rub-b button.on{background:var(--ink);color:#fff}
 .mini{margin-top:10px;font-size:11px;color:var(--ink2);line-height:1.8}
 .urow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.urow:last-child{border:none}.u-name{font-size:13px}.u-meta{font-size:11px;color:var(--ink3);margin-top:2px}.never{color:#A8443B;font-weight:700}
-.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-note{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.5}.ir-when{font-size:11px;margin-top:3px;color:var(--ink3)}.ir-when.next{color:#2F6F5E;font-weight:700}.ir-when.printed{color:#C08A3E}.ir-when.defer{color:#8E3830}.btn-main.rename-all{margin-bottom:16px}
+.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-note{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.5}.ir-kind{font-size:11px;margin-top:2px;color:var(--ink3)}.ir-kind.review{color:#2F6F5E;font-weight:700}.ir-kind.retry{color:#8E3830;font-weight:700}
+.ir-when{font-size:11px;margin-top:3px;color:var(--ink3)}.ir-when.next{color:#2F6F5E;font-weight:700}.ir-when.printed{color:#C08A3E}.ir-when.defer{color:#8E3830}.btn-main.rename-all{margin-bottom:16px}
 .ir-meta{font-size:11px;color:var(--ink3);margin-top:2px}
 .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;margin:4px 0 8px}.big small{font-size:12px;color:var(--ink3);font-weight:400}
 .mrow{margin-bottom:9px}.mr-name{font-size:12px;margin-bottom:3px}.mr-bar{height:6px;background:#E7EAE7;border-radius:3px;overflow:hidden}.mr-bar span{display:block;height:100%}.mr-meta{display:flex;gap:10px;font-size:10px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums}.fmn{font-style:normal;font-size:10px;color:#A8443B;margin-left:6px}

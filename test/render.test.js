@@ -472,3 +472,8 @@ test("採点: 子どもの判定が入っていれば行は文だけ（変える
   const h = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html;
   assert.ok(h.includes("子どもが紙に書いた ○× を AI が読み") && h.includes('class="lnk bad-lnk"') && !h.includes('class="et bad"'));
 });
+test("次の紙: 候補の各行に「新しく登録」「再出題」「再挑戦」の印。期日が過ぎていれば遅れの日数", () => {
+  const d = F.demo(); d.items = d.items.map((i, k) => (k === 0 ? { ...i, printedOn: null, nextDue: F.day(-2), level: 1, history: [{ d: F.day(-5), r: "o", self: "o", etype: "" }] } : i));
+  const h = render(m.PaperTab, { d, save: noop, initial: "print" }).html;
+  assert.ok(h.includes('class="ir-kind review">再出題（') && h.includes("2日遅れ") && h.includes('class="ir-kind new">新しく登録'));
+});
