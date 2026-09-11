@@ -1648,3 +1648,15 @@ describe("考え方と例題を載せる回", () => {
     assert.equal(has({ ...base, level: 1, history: [{ d: day(-3), r: "o", self: "o", etype: "" }] }), false, "再出題には載せない");
   });
 });
+
+describe("読み取りの返答", () => {
+  test("readSelfMarks: 途中で切れた JSON でも完成した分は拾う。何も無ければ先頭を添えて失敗", async () => {
+    const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    const items = [{ id: "a", subject: "数学", unitId: "u", label: "A", gen: { problems: [{ q: "q", a: "a" }] } }, { id: "b", subject: "数学", unitId: "u", label: "B", gen: { problems: [{ q: "q", a: "a" }] } }];
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '読み取りました。{"marks":[{"n":1,"self":"o"},{"n":2,"sel' }] }) });
+    try { assert.deepEqual(await m.readSelfMarks([], items, () => null), { 1: "o" });
+      globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: "欄が見つかりません" }] }) });
+      await assert.rejects(() => m.readSelfMarks([], items, () => null), /読み取りの返答を読めませんでした（先頭: 欄が見つかりません/); }
+    finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
+  });
+});

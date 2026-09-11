@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 21:55"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 22:14"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -856,8 +856,12 @@ async function diagnose(i, u, ctx, model = OPUS) {
 async function readSelfMarks(files, items, unitOf, model = null) {
   const imgs = []; for (const f of files) imgs.push(imgBlock(await compressImage(f, 1600, 0.8)));
   const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。各問題の右端に四角い欄があり、子どもが解答を見て自分で印を書いています。○（◎や少し崩れた丸も含む）は正解、× のほか ✓・／・△・塗りつぶしなど「○ でない印」はすべて不正解として読んでください。次の項目ごとに、その項目の問題の欄を読んでください。\n${selfMarksText(items, unitOf)}` }],
-    `項目ごとの判定: 説明の問いを除く問題の欄がすべて ○ なら "o"、1つでも ○ でない印（×・✓・／・△など）があれば "x"、さらに説明の問いの欄も ○ なら "oo"。欄が空の項目は ""。印があるのに ○ か判断できないときは "x"。解答の正誤は判断しない（欄の印だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|""}]}`, 800, model);
-  const out = {}; (parseJSON(t).marks || []).forEach((mk) => { out[Number(mk.n)] = ["x", "o", "oo"].includes(mk.self) ? mk.self : ""; });
+    `項目ごとの判定: 説明の問いを除く問題の欄がすべて ○ なら "o"、1つでも ○ でない印（×・✓・／・△など）があれば "x"、さらに説明の問いの欄も ○ なら "oo"。欄が空の項目は ""。印があるのに ○ か判断できないときは "x"。解答の正誤は判断しない（欄の印だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|""}]}`, 2000, model);
+  // JSON が途中で切れていたり前後に文が付いていても、完成している {"n":…} だけ拾う。何も拾えなければ返答の先頭を添えて失敗にする
+  let marks = null; try { marks = parseJSON(t).marks; } catch {}
+  if (!Array.isArray(marks)) { marks = []; const re = /\{[^{}]*"n"\s*:\s*"?\d+"?[^{}]*\}/g; let mm; while ((mm = re.exec(t))) { try { marks.push(JSON.parse(mm[0])); } catch {} } }
+  if (!marks.length) throw new Error(`読み取りの返答を読めませんでした（先頭: ${String(t).replace(/\s+/g, " ").slice(0, 60)}）`);
+  const out = {}; marks.forEach((mk) => { out[Number(mk.n)] = ["x", "o", "oo"].includes(mk.self) ? mk.self : ""; });
   return out;
 }
 
