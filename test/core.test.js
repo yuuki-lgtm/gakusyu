@@ -1623,3 +1623,13 @@ describe("登録した項目の期日", () => {
     assert.ok(pk.chosen.length >= 1 && pk.chosen.length < 30 && pk.rest.length === 30 - pk.chosen.length, "上限までを今日の分、残りは繰り越し");
   });
 });
+
+describe("分散の取り消し", () => {
+  test("undoSpread: 一度も紙に出ていない項目の期日を翌日に。判定済み・印刷済み・後ろ倒し中・安定は触らない。変更が無ければ同じオブジェクト", () => {
+    const it = (o) => ({ id: o.id, status: "active", nextDue: day(4), history: [], ...o });
+    const d = { ...m.blank(), items: [it({ id: "a" }), it({ id: "b", history: [{ d: day(-2), r: "o" }] }), it({ id: "c", printedOn: day(-1) }), it({ id: "d", defer: { examId: "e", from: day(1) } }), it({ id: "e", status: "stable" }), it({ id: "f", nextDue: day(1) })] };
+    const r = m.undoSpread(d);
+    assert.deepEqual(r.items.map((i) => i.nextDue), [day(1), day(4), day(4), day(4), day(4), day(1)]);
+    const same = { ...d, items: [it({ id: "f", nextDue: day(1) })] }; assert.equal(m.undoSpread(same), same);
+  });
+});
