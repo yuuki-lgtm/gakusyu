@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 15:27"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 15:29"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -2231,7 +2231,7 @@ const CSS = `
 .mpop.pop .q-btns{margin-top:8px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}
 .fab{position:fixed;right:16px;bottom:calc(74px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;border:none;background:var(--ink);display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 6px 16px rgba(30,35,33,.32);z-index:25;cursor:pointer;-webkit-tap-highlight-color:transparent}.fab svg{width:32px;height:32px;display:block}.fab:active{transform:scale(.96)}
-.sheet-bg{position:fixed;inset:0;background:rgba(30,35,33,.4);z-index:35;display:flex;align-items:flex-end}.sheet{width:100%;background:#0B0D0C;color:#fff;border-radius:12px 12px 0 0;padding:14px 8px calc(16px + env(safe-area-inset-bottom))}.sheet h4{margin:0 8px 6px;font-size:12px;color:rgba(255,255,255,.6);font-weight:400}.sheet-pv{display:flex;align-items:center;gap:6px;margin:0 8px 12px;font-size:12px;color:rgba(255,255,255,.75)}.sheet-pv img{width:44px;height:44px;object-fit:cover;border-radius:4px;border:1px solid rgba(255,255,255,.25)}.sheet-row:disabled{color:rgba(255,255,255,.35)}.sheet .ph-note{color:rgba(255,255,255,.6)}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:35;display:flex;align-items:flex-end}.sheet{width:100%;background:rgba(28,28,30,.82);-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);color:#fff;border-radius:16px 16px 0 0;overflow:hidden;padding:14px 8px calc(16px + env(safe-area-inset-bottom));box-shadow:0 -1px 0 rgba(255,255,255,.08)}.sheet h4{margin:0 8px 6px;font-size:12px;color:rgba(255,255,255,.6);font-weight:400}.sheet-pv{display:flex;align-items:center;gap:6px;margin:0 8px 12px;font-size:12px;color:rgba(255,255,255,.75)}.sheet-pv img{width:44px;height:44px;object-fit:cover;border-radius:4px;border:1px solid rgba(255,255,255,.25)}.sheet-row:disabled{color:rgba(255,255,255,.35)}.sheet .ph-note{color:rgba(255,255,255,.6)}
 .mat-head{font-size:13px;font-weight:700;margin-bottom:6px}
 .sheet-row{display:block;width:100%;text-align:left;padding:14px 10px;border:none;border-bottom:1px solid rgba(255,255,255,.14);background:none;font-size:15px;color:#fff;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}.sheet-row:active{background:rgba(255,255,255,.08)}.sheet-row.cancel{border-bottom:none;color:rgba(255,255,255,.6);text-align:center;margin-top:4px}
 .snacks{position:fixed;left:10px;right:10px;top:calc(8px + env(safe-area-inset-top));z-index:40;display:flex;flex-direction:column;gap:6px;pointer-events:none}
