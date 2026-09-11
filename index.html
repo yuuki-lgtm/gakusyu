@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 18:21"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 18:30"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1301,6 +1301,7 @@ function TodayGrade({ d, save, onNext }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [lastFiles, setLastFiles] = useState(null);
   const sec = useElapsed(busy);
   const upd = (id, patch) => setDc((x) => ({ ...x, [id]: { ...(x[id] || {}), ...patch } }));
+  const [editSelf, setEditSelf] = useState(new Set()); // 読み取った子どもの判定を手で直したい項目
   useEffect(() => { const fs = takePending("shots"); if (!fs || !fs.length) return; if (!set.length) { notify("採点待ちの紙がありません。次の紙を作ってから撮ってください。", "warn"); return; } shoot(fs); }, []); // + から撮った写真
   const shoot = async (files, model = null) => {
     if (!files.length) return; setBusy(true); setErr(""); setLastFiles(files);
@@ -1319,6 +1320,7 @@ function TodayGrade({ d, save, onNext }) {
     {set.length === 0 ? <p className="empty">採点待ちはありません。「次の紙」で作ると、ここに並びます。</p> : (<>
       <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
       <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); notify(`${set.length}件を「次の紙」に戻しました（判定なし）`); }} disabled={busy}>全部を次の紙に戻す（判定しない）</button></div>
+      <p className="lead">子どもが紙に書いた ○× を AI が読み、「子ども」の行に入れます。親は違うところだけ直して「まとめて確定」。手で押す場合は「子ども」を先に押すと「親」にも入ります。</p>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（○×の欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
       {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, SONNET)}>もう一度読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (
@@ -1327,10 +1329,11 @@ function TodayGrade({ d, save, onNext }) {
           <button className="c-label tap" onClick={() => setOpen((o) => ({ ...o, [i.id]: !o[i.id] }))}>{i.label}<em className="pg"> {open[i.id] ? "閉じる" : i.failCount >= 3 ? "類題・診断 ▸" : "類題 ▸"}</em></button>
           {open[i.id] && <GradeRowDetail i={i} d={d} save={save} />}
           {!c.skip && (<>
-            <div className="grow-r"><span className="j-who">子ども</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.self === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickSelf(i, r)}>{l}</button>))}</div></div>
+            {c.self && !editSelf.has(i.id) ? (<div className="grow-r"><span className="j-who">子ども</span><span className="j-read">紙の○×: <b>{(JUDGE.find(([r]) => r === c.self) || [])[1]}</b><button className="lnk" onClick={() => setEditSelf((x) => new Set([...x, i.id]))}>変える</button></span></div>)
+            : (<div className="grow-r"><span className="j-who">子ども</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.self === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickSelf(i, r)}>{l}</button>))}</div></div>)}
             <div className="grow-r"><span className="j-who">親</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.r === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickParent(i, r)}>{l}</button>))}</div></div>
             {c.r === "x" && <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (c.etype === e ? " on" : "")} onClick={() => upd(i.id, { etype: e })}>{e}</button>))}</div>}
-            <div className="grow-r"><span className="j-who"></span><button className={"et bad" + (c.bad ? " on" : "")} onClick={() => upd(i.id, { bad: !c.bad, r: null, self: null })}>{c.bad ? "問題が変（判定せず明日作り直す）" : "問題が変"}</button></div>
+            <div className="grow-r"><span className="j-who"></span><button className={"lnk bad-lnk" + (c.bad ? " on" : "")} onClick={() => upd(i.id, { bad: !c.bad, r: null, self: null })}>{c.bad ? "問題が変（判定せず次の紙で作り直す）" : "問題が変"}</button></div>
           </>)}
         </div>); })}
       <button className="btn-main" onClick={commit} disabled={!decided.length || missingE.length > 0}>まとめて確定（{judged.length}件{decided.filter((i) => dc[i.id]?.bad).length ? `＋問題が変 ${decided.filter((i) => dc[i.id]?.bad).length}` : ""}）</button>
@@ -2238,7 +2241,8 @@ const CSS = `
 .msg.fixed{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
 .morning .btn-main{margin-top:0}
 .lp-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.lp-row:last-of-type{border-bottom:none}.sub-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink2);margin:22px 0 4px}.sub-h:first-child{margin-top:6px}.sub-h .pg{font-weight:400}
-.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}.defer-note{background:#FFF7E8;border:1px solid #E8D3A6;color:#6B4A12;border-radius:3px;padding:8px 10px;margin:-4px 0 10px}.next-hint{margin:12px 0 0;text-align:right}.next-hint .lnk{font-size:13px;font-weight:700;color:var(--ink);padding:6px 0}
+.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}.defer-note{background:#FFF7E8;border:1px solid #E8D3A6;color:#6B4A12;border-radius:3px;padding:8px 10px;margin:-4px 0 10px}.j-read{font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:8px}.j-read b{color:var(--ink)}.j-read .lnk{padding:0;font-size:11px}.bad-lnk{font-size:11px;color:var(--ink3);padding:0}.bad-lnk.on{color:#8E3830;font-weight:700}
+.next-hint{margin:12px 0 0;text-align:right}.next-hint .lnk{font-size:13px;font-weight:700;color:var(--ink);padding:6px 0}
 .c-label.tap{display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;color:var(--ink);cursor:pointer}
 .irow.pick{cursor:pointer}.irow.pick input[type=checkbox]{width:auto;margin-top:4px}.irow.pick.on{background:#F3F6F3;margin:0 -13px;padding:8px 13px}
 .grow{padding:10px 0;border-bottom:1px solid var(--line)}.grow:last-of-type{border-bottom:none}.grow.done{background:#F3F6F3;margin:0 -13px;padding:10px 13px}.grow.skip .c-label{color:var(--ink3);text-decoration:line-through}

@@ -469,3 +469,7 @@ test("取り込み: 教科は既定なし。選ぶまで保存できない。未
   assert.ok(!h.includes('class="subj on"'), "最初はどの教科も選ばれていない");
   const l = render(m.ItemList, { d: F.demo(), save: noop }).html; assert.ok(l.includes(">教科を直す</button>"));
 });
+test("採点: 子どもの判定が入っていれば行は文だけ（変えるで戻せる）。問題が変は小さな文字", () => {
+  const h = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html;
+  assert.ok(h.includes("子どもが紙に書いた ○× を AI が読み") && h.includes('class="lnk bad-lnk"') && !h.includes('class="et bad"'));
+});
