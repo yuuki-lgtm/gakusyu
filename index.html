@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 17:56"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 18:00"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -570,7 +570,7 @@ function nextActions(d) {
     if (daily0.chosen.length) A.push({ k: "print", title: `次の紙を作る（${daily0.chosen.length}件${daily0.rest.length ? `・繰り越し ${daily0.rest.length}` : ""}）`, why: "類題を作って PDF に。採点を先に済ませてから。", tab: "today", mode: "print", t: "生成2分＋印刷" });
     if (hasMat && !addedToday) A.push({ k: "items", title: "今日のワークの×を登録する", why: "ページを開いて×をタップ。×が無い日は最後のページだけ。", tab: "reg", mode: "item", t: "2分" });
     if (hasBook && !doneToday) A.push({ k: "last", title: "今日の最後のページを入れる", why: "「p.N までやった」で進度が進みます。×登録の画面の下にあります。", tab: "reg", mode: "item", t: "30秒" });
-    if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと、「テスト」の一覧で用紙を開いて撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: pending.some((p) => p.kind === "模試") && pending.every((p) => p.kind === "模試") ? "mock" : "make", t: "1枚2分" });
+    if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと、「紙」の一覧で用紙を開いて撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: pending.some((p) => p.kind === "模試") && pending.every((p) => p.kind === "模試") ? "mock" : "make", t: "1枚2分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
     const mx = upcomingExams(d)[0]; const md = mx ? mockDue(d, mx, t) : null;
     if (md && md.subjects.length) A.push({ k: "mock", title: `模試を作る（${md.subjects.join("・")}）D-${md.left}`, why: `${md.round}日前の回。本番と同じ形式で50分。赤ペンで採点して「撮る」で読み取る。1日1〜2教科。`, tab: "week", mode: `mock:${md.subjects.join(",")}`, t: "生成3分＋印刷" });
@@ -619,7 +619,7 @@ function apiErrorText(status, msg) {
   return m || `エラー (HTTP ${status})`;
 }
 async function once(model, content, system, maxTokens) {
-  if (!hasKey()) throw new Error("APIキーが未設定です。「設定」タブで登録してください。");
+  if (!hasKey()) throw new Error("APIキーが未設定です。「その他→設定」で登録してください。");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST", headers: API_HEADERS(),
     body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: "user", content }] }),
@@ -1254,7 +1254,7 @@ function TodayMake({ d, save, go }) {
   const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
   return (<>
     <section className="sec">
-      <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。
+      <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「その他→設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。
       {(() => { const act = d.items.filter((i) => i.status === "active"); const st = act.map((i) => paperStatus(i)); const cnt = (k) => st.filter((x) => x.k === k).length;
         const later = act.filter((i) => paperStatus(i).k === "later").map((i) => i.nextDue).sort()[0];
         if (!cnt("later") && !cnt("printed") && !cnt("defer")) return null;
@@ -1316,9 +1316,9 @@ function TodayGrade({ d, save, onNext }) {
   const missingE = set.filter((i) => dc[i.id]?.r === "x" && !dc[i.id]?.etype);
   const commit = () => { const { d: nd, n, bad } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; notify(`${n}件を確定しました。${bad ? `「問題が変」${bad} 件は明日作り直します。` : ""}${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); };
   return (<section className="sec">
-    {set.length === 0 ? <p className="empty">採点待ちはありません。「印刷」から今日の分を作ってください。</p> : (<>
+    {set.length === 0 ? <p className="empty">採点待ちはありません。「次の紙」で作ると、ここに並びます。</p> : (<>
       <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
-      <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); notify(`${set.length}件を「印刷」に戻しました（判定なし）`); }} disabled={busy}>全部を印刷に戻す（判定しない）</button></div>
+      <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); notify(`${set.length}件を「次の紙」に戻しました（判定なし）`); }} disabled={busy}>全部を次の紙に戻す（判定しない）</button></div>
       <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（○×の欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
       {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, SONNET)}>もう一度読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (
@@ -1335,7 +1335,7 @@ function TodayGrade({ d, save, onNext }) {
         </div>); })}
       <button className="btn-main" onClick={commit} disabled={!decided.length || missingE.length > 0}>まとめて確定（{judged.length}件{decided.filter((i) => dc[i.id]?.bad).length ? `＋問題が変 ${decided.filter((i) => dc[i.id]?.bad).length}` : ""}）</button>
       {missingE.length > 0 && <p className="warn-t">「できなかった」には誤答の種類を選んでください（{missingE.length}件）。</p>}
-      {set.length - decided.length > 0 && <p className="ph-note">押していない {set.length - decided.length} 件は採点待ちのまま残ります。「やっていない」を押すと次の印刷に入ります。</p>}
+      {set.length - decided.length > 0 && <p className="ph-note">押していない {set.length - decided.length} 件は採点待ちのまま残ります。「やっていない」を押すと次の紙に入ります。</p>}
       <p className="rule">用語は「解けた」で次へ進みます。それ以外は「説明もできた」でないと7日から先へ進みません。落とすと1日に戻り、項目は消えません。</p>
       {onNext && <p className="next-hint"><button className="lnk" onClick={onNext}>次は次の紙を作る →</button></p>}
     </>)}
@@ -1374,7 +1374,7 @@ function MakePapers({ d, save, initialKind = "週次" }) {
     setLog([]); const made = [];
     for (const s of sel) {
       setBusy(s);
-      try { const units = unitsFor(s); if (!units.length) throw new Error("「習った」単元がありません。「登録」で進度を更新してください"); const { paper: p, note } = await genOne(s); made.push(p); setLog((l) => [...l, `${s}：${p.questions.length}問（${note}）`]); }
+      try { const units = unitsFor(s); if (!units.length) throw new Error("「習った」単元がありません。「教材→単元と進度」で進度を更新してください"); const { paper: p, note } = await genOne(s); made.push(p); setLog((l) => [...l, `${s}：${p.questions.length}問（${note}）`]); }
       catch (e) { setLog((l) => [...l, `${s}：失敗（${e.message}）`]); }
     }
     setBusy("");
@@ -1648,7 +1648,7 @@ function ManualTest({ d, save }) {
     if (!sel.length) { notify("出題した単元を選んでください", "warn"); return; }
     const total = clean.reduce((p, c) => p + c.total, 0), correct = clean.reduce((p, c) => p + c.correct, 0);
     save({ ...d, tests: [...d.tests, { id: uid(), subject, date, kind, source: source.trim(), rows: clean, total, correct, unitIds: sel, updatedAt: now() }], units: d.units.map((u) => (sel.includes(u.id) ? { ...u, lastTestedOn: date, updatedAt: now() } : u)), log: { ...d.log, [today()]: true } });
-    setRows([{ id: uid(), fmt: FORMATS[0], total: "", correct: "" }]); setSource(""); setSel([]); notify("記録しました。落とした項目は「その他→登録」から追加してください。");
+    setRows([{ id: uid(), fmt: FORMATS[0], total: "", correct: "" }]); setSource(""); setSel([]); notify("記録しました。落とした項目は「未定着→×を登録」から追加してください。");
   };
   return (<section className="sec">
     <p className="lead">学校のワークや問題集を使ったときはここに。形式ごとに分けて入れると、図や資料、記述の弱点が見えます。すべて初見が前提です。</p>
@@ -1845,7 +1845,7 @@ function ItemReg({ d, save }) {
   useEffect(() => { setUnitId(us.length ? us[us.length - 1].id : ""); }, [subject, d.units.length]);
   const add = () => { if (!label.trim() || !unitId) { notify("単元と項目を入れてください", "warn"); return; }
     save({ ...d, items: [...d.items, newItem({ subject, unitId, label: label.trim(), note: note.trim(), fmt, etype })], log: { ...d.log, [today()]: true } });
-    setLabel(""); setNote(""); notify("追加しました。明日の「今日」に出ます"); };
+    setLabel(""); setNote(""); notify("追加しました。次の紙に出ます"); };
   return (<section className="sec">
     <p className="lead">{hasMat ? "その日のワークの×を、その夜に登録します。ページを開いて×だった問題をタップし、最後に「まとめて登録」。項目名はAIがあとで付けます。翌日の「今日」に出ます。返却されたテストは「テスト」を選んで同じように。" : "その日のワークの×を、その夜に登録します。「登録→教材」でワークを取り込んでおくと、ページを開いて×をタップするだけで登録できます。取り込むまでは下の手入力で。"}自作テストの×は「テスト→撮る」で自動なので、ここは不要です。</p>
     <SubjRow value={subject} onChange={setSubject} />

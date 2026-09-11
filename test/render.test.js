@@ -319,7 +319,7 @@ test("その他: 「最新版に更新（再読み込み）」が設定の下に
   assert.ok(h.indexOf('<span class="nxt-t">設定</span>') < h.indexOf("最新版に更新（再読み込み）"));
 });
 test("今日/採点: 「全部を印刷に戻す」がある", () => {
-  assert.ok(render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html.includes("全部を印刷に戻す（判定しない）"));
+  assert.ok(render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html.includes("全部を次の紙に戻す（判定しない）"));
 });
 test("今日/印刷: 今日作った類題がある項目に「作り直す」が出る", () => {
   const d = F.demo(); d.items = d.items.map((i) => (i.id === "i5" ? { ...i, gen: { problems: [{ q: "q", a: "a" }, { q: "q", a: "a" }], why: "w" }, genOn: F.T } : i));
