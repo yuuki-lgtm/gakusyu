@@ -481,3 +481,10 @@ test("採点: 子どもの行にボタンは無い（紙の○×を読んだ値�
   const h = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html;
   assert.ok(!/<span class="j-who">子ども<\/span><div class="j-btns/.test(h) && /<span class="j-who">親<\/span><div class="j-btns/.test(h));
 });
+test("採点待ち: 教科ごとの見出しで分ける（次の紙・未定着と同じ並び）。行に教科名は繰り返さない", () => {
+  const d = F.demo(); d.items = d.items.map((i, k) => (k < 3 ? { ...i, printedOn: F.day(-1), printedAs: k + 1, subject: k === 1 ? "英語" : "数学" } : i));
+  const h = render(m.PaperTab, { d, save: noop, initial: "grade" }).html;
+  const heads = [...h.matchAll(/<h4 class="sub-h">.*?<\/span>(数学|英語|社会|理科|国語)<em/g)].map((x) => x[1]);
+  assert.deepEqual(heads, ["数学", "英語"]);
+  assert.ok(!/<div class="c-meta"><span[^>]*><\/span>(数学|英語)・/.test(h));
+});
