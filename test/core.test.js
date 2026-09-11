@@ -1043,6 +1043,12 @@ describe("模試（段階6: ×は未定着へ、模試は再利用しない）",
 
 describe("紙を撮って判定欄を読む", () => {
   const it = (o) => item({ history: [], ...o });
+  test("gradeSet: 同じ日に2回印刷したら別の紙（printedBatch）として続けて並ぶ。printedMarks は紙の問番号と説明の問いの番号", () => {
+    const d = { ...m.blank(), items: [it({ id: "b2", printedOn: T, printedBatch: "2026-09-11T12:00:00Z", printedAs: 2 }), it({ id: "a1", printedOn: T, printedBatch: "2026-09-11T10:00:00Z", printedAs: 1 }), it({ id: "b1", printedOn: T, printedBatch: "2026-09-11T12:00:00Z", printedAs: 1 }), it({ id: "a2", printedOn: T, printedBatch: "2026-09-11T10:00:00Z", printedAs: 2 })] };
+    assert.deepEqual(m.gradeSet(d).map((i) => i.id), ["a1", "a2", "b1", "b2"]);
+    const mk = m.printedMarks({ questions: [{ n: 1, jb: true, itemId: "x" }, { n: 2, jb: true, itemId: "x" }, { n: 3, jb: true, itemId: "x", why: true }, { n: 4, jb: true, itemId: "y" }, { n: 5, itemId: "y" }] });
+    assert.deepEqual(mk, { x: { ns: [1, 2, 3], why: 3 }, y: { ns: [4], why: null } });
+  });
   test("gradeSet は印刷日→紙の順→落とした回数", () => {
     const d = { ...m.blank(), items: [it({ id: "b", printedOn: T, printedAs: 2 }), it({ id: "a", printedOn: T, printedAs: 1 }), it({ id: "z", printedOn: T, failCount: 5 }), it({ id: "o", printedOn: day(-1), printedAs: 3 })] };
     assert.deepEqual(m.gradeSet(d).map((i) => i.id), ["o", "a", "b", "z"]);

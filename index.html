@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 22:30"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 22:35"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -437,9 +437,12 @@ function pickDaily(d, max = dailyMax()) {
   return { chosen, rest: all.slice(chosen.length), all, problems };
 }
 /* 印刷済みで、まだ確定していない項目 */
+const printKey = (i) => `${i.printedOn}|${i.printedBatch || ""}`; // 同じ紙＝同じ印刷日・同じ印刷の回
 function gradeSet(d) {
-  return d.items.filter((i) => i.printedOn).sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : (a.printedAs || 999) - (b.printedAs || 999) || b.failCount - a.failCount));
+  return d.items.filter((i) => i.printedOn).sort((a, b) => (printKey(a) < printKey(b) ? -1 : printKey(a) > printKey(b) ? 1 : (a.printedAs || 999) - (b.printedAs || 999) || b.failCount - a.failCount));
 }
+/* 印刷した紙の問番号を項目ごとに控える（{itemId: {ns:[問番号], why:説明の問いの番号|null}}）。採点待ちはこれを見せる。あとで類題を作り直しても紙の番号のまま */
+function printedMarks(paper) { const out = {}; (paper.questions || []).filter((q) => q.jb && q.itemId).forEach((q) => { const o = (out[q.itemId] = out[q.itemId] || { ns: [], why: null }); o.ns.push(q.n); if (q.why) o.why = q.n; }); return out; }
 /* decisions: {id: {r, self, etype, etypeSelf}} または {id: {skip:true}}。r のあるものだけ判定し、skip は印刷前に戻す */
 function judgeAll(d, decisions) {
   const t = today(); let n = 0, bad = 0;
@@ -1224,14 +1227,16 @@ function TodayMake({ d, save, go }) {
     if (!ok.length) { if (genN) save({ ...d, items, genCount: (d.genCount || 0) + genN }); notify(bad.length ? `作れませんでした。${bad[0]}` : unverified.length ? `検算で不一致が続いたので、今日は作れませんでした（${unverified.join("、")}）。明日もう一度。` : "対象がありません", "err"); setBusy(""); return; }
     try {
       setBusy("PDFを作成");
-      await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`));
-      const pos = new Map(ok.map((i, k) => [i.id, k + 1]));
-      save({ ...d, items: items.map((x) => (pos.has(x.id) ? { ...x, printedOn: today(), printedAs: pos.get(x.id), updatedAt: now() } : x)), genCount: (d.genCount || 0) + genN, log: { ...d.log, [today()]: true } });
+      const paper = genToPaper(ok, unitOf); await exportPDF(paper, (n) => setBusy(`PDFを作成 ${n}`));
+      const pos = new Map(ok.map((i, k) => [i.id, k + 1])); const qn = printedMarks(paper); const batch = now();
+      save({ ...d, items: items.map((x) => (pos.has(x.id) ? { ...x, printedOn: today(), printedAs: pos.get(x.id), printedQ: qn[x.id] || null, printedBatch: batch, updatedAt: now() } : x)), genCount: (d.genCount || 0) + genN, log: { ...d.log, [today()]: true } });
       setLog([`${ok.length}件を1枚にまとめました。印刷して明日の机に。`, ...unverified.map((b) => `検算で2回とも不一致で、元の問題も無いので翌日に回します: ${b}`), ...orig.map((b) => `類題を作れなかったので元の問題を載せました（この回は「説明もできた」でのみ進みます）: ${b}`), ...bad.map((b) => `作れなかった項目（次回に回します）: ${b}`)]);
     } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); }
     setBusy("");
   };
-  const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
+  const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); const paper = genToPaper(ok, unitOf); await exportPDF(paper, (n) => setBusy(`PDFを作成 ${n}`));
+      const pos = new Map(ok.map((i, k) => [i.id, k + 1])); const qn = printedMarks(paper); const batch = now(); // 出した紙の番号に合わせ直す
+      save((cur) => ({ ...cur, items: cur.items.map((x) => (pos.has(x.id) ? { ...x, printedAs: pos.get(x.id), printedQ: qn[x.id] || null, printedBatch: batch, updatedAt: now() } : x)) })); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
   return (<>
     <section className="sec">
       <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「その他→設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 再出題・再挑戦（期日が古い順）→ 新しく登録 → 落とした回数が多い」。忘却曲線で時期が決まっている再出題を先に出します。外した項目は次の紙に繰り越します。
@@ -1276,13 +1281,17 @@ function TodayGrade({ d, save, onNext }) {
   const unitOf = (id) => unitById(d, id);
   const set0 = gradeSet(d);
   const key = set0.map((i) => i.id + ":" + i.printedOn).join(",");
-  const { qnums, hasWhy } = useMemo(() => { const qnums = {}, hasWhy = {}; const byDay = {}; set0.forEach((i) => { (byDay[i.printedOn] = byDay[i.printedOn] || []).push(i); });
-    Object.values(byDay).forEach((its) => { try { genToPaper(its, unitOf).questions.filter((q) => q.jb && q.itemId).forEach((q) => { (qnums[q.itemId] = qnums[q.itemId] || []).push(q.n); if (q.why) hasWhy[q.itemId] = true; }); } catch {} });
-    return { qnums, hasWhy }; }, [key]); // 項目 → その日の紙の問番号、説明の問いの有無
-  const qlabel = (i) => { const ns = qnums[i.id]; return ns && ns.length ? (ns.length === 1 ? `問${ns[0]}` : `問${ns[0]}〜${ns[ns.length - 1]}`) : ""; };
-  const first = (i) => (qnums[i.id] && qnums[i.id].length ? qnums[i.id][0] : 1e9);
-  const set = [...set0].sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : 0) || first(a) - first(b) || (a.printedAs || 0) - (b.printedAs || 0)); // 紙の問番号の順（紙を上から見ながら ✓ を入れる）
-  const days = set.map((i) => i.printedOn).filter((x, k, arr) => arr.indexOf(x) === k);
+  const calc = useMemo(() => { // 印刷時に番号を控えていない旧データだけ、同じ紙ごとに組み直して番号を得る
+    const out = {}; const byG = {}; set0.filter((i) => !i.printedQ).forEach((i) => { (byG[printKey(i)] = byG[printKey(i)] || []).push(i); });
+    Object.values(byG).forEach((its) => { try { Object.assign(out, printedMarks(genToPaper(its, unitOf))); } catch {} });
+    return out; }, [key]);
+  const marks = (i) => i.printedQ || calc[i.id] || null; // {ns, why}: 紙に印刷された問番号
+  const qlabel = (i) => { const ns = marks(i)?.ns; return ns && ns.length ? (ns.length === 1 ? `問${ns[0]}` : `問${ns[0]}〜${ns[ns.length - 1]}`) : ""; };
+  const hasWhy = (i) => !!marks(i)?.why;
+  const first = (i) => (marks(i)?.ns?.length ? marks(i).ns[0] : 1e9);
+  const set = [...set0].sort((a, b) => (printKey(a) < printKey(b) ? -1 : printKey(a) > printKey(b) ? 1 : 0) || first(a) - first(b) || (a.printedAs || 0) - (b.printedAs || 0)); // 紙ごとに、紙の問番号の順（紙を上から見ながら ✓ を入れる）
+  const groups = set.map(printKey).filter((x, k, arr) => arr.indexOf(x) === k);
+  const gTitle = (g) => { const [day, b] = g.split("|"); const same = groups.filter((x) => x.startsWith(day + "|")); return `印刷 ${day.slice(5)} の紙${same.length > 1 ? `（${same.indexOf(g) + 1}枚目${b ? " " + new Date(b).toTimeString().slice(0, 5) : ""}）` : ""}`; };
   const [open, setOpen] = useState({});
   const [dc, setDc] = useState({});
   const upd = (id, patch) => setDc((x) => ({ ...x, [id]: { ...(x[id] || {}), ...patch } }));
@@ -1299,10 +1308,10 @@ function TodayGrade({ d, save, onNext }) {
   };
   return (<section className="sec">
     {set.length === 0 ? <p className="empty">採点待ちはありません。「次の紙」で作ると、ここに並びます。</p> : (<>
-      <p className="lead">紙を上から見て、<strong>間違えた問題の行に「できなかった」の ✓</strong> を入れて「まとめて確定」。✓ の無い行は「解けた」になります（出した問題がすべて正解のときだけ解けた）。{Object.keys(hasWhy).length > 0 && "「説明」の問いにも自分の言葉で答えられていれば「説明もできた」に ✓。"}{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
+      <p className="lead">紙を上から見て、<strong>間違えた問題の行に「できなかった」の ✓</strong> を入れて「まとめて確定」。✓ の無い行は「解けた」になります（出した問題がすべて正解のときだけ解けた）。{set.some(hasWhy) && "「説明」の問いにも自分の言葉で答えられていれば「説明もできた」に ✓。"}{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
       <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); notify(`${set.length}件を「次の紙」に戻しました（判定なし）`); }}>全部を次の紙に戻す（判定しない）</button></div>
-      {days.map((day) => (<div key={day}>{days.length > 1 && <h4 className="sub-h">印刷 {day.slice(5)} の紙<em className="pg"> {set.filter((i) => i.printedOn === day).length}件</em></h4>}
-      {set.filter((i) => i.printedOn === day).map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const et = etOf(i); return (
+      {groups.map((g) => (<div key={g}>{groups.length > 1 && <h4 className="sub-h">{gTitle(g)}<em className="pg"> {set.filter((i) => printKey(i) === g).length}件</em></h4>}
+      {set.filter((i) => printKey(i) === g).map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const et = etOf(i); return (
         <div className={"grow" + (c.skip ? " skip" : c.x ? " ng" : "")} key={i.id}>
           <div className="c-meta">{qlabel(i) && <em className="qno">{qlabel(i)}</em>}<Dot s={i.subject} />{i.subject}{u ? "・" + u.name : ""}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, x: false, oo: false, bad: false })}>{c.skip ? "戻す" : "やっていない"}</button></div>
           <button className="c-label tap" onClick={() => setOpen((o) => ({ ...o, [i.id]: !o[i.id] }))}>{i.label}<em className="pg"> {open[i.id] ? "閉じる" : i.failCount >= 3 ? "類題・診断 ▸" : "類題 ▸"}</em></button>
@@ -1310,7 +1319,7 @@ function TodayGrade({ d, save, onNext }) {
           {!c.skip && !c.bad && (<>
             <div className="grow-r chks">
               <label className={"gchk ng" + (c.x ? " on" : "")}><input type="checkbox" checked={!!c.x} onChange={(e) => upd(i.id, { x: e.target.checked, oo: false })} />できなかった</label>
-              {hasWhy[i.id] && needsWhy(i) && <label className={"gchk ok" + (c.oo ? " on" : "")}><input type="checkbox" checked={!!c.oo} disabled={!!c.x} onChange={(e) => upd(i.id, { oo: e.target.checked })} />説明もできた</label>}
+              {hasWhy(i) && needsWhy(i) && <label className={"gchk ok" + (c.oo ? " on" : "")}><input type="checkbox" checked={!!c.oo} disabled={!!c.x} onChange={(e) => upd(i.id, { oo: e.target.checked })} />説明もできた</label>}
             </div>
             {c.x && <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (et === e ? " on" : "")} onClick={() => upd(i.id, { etype: e })}>{e}</button>))}</div>}
           </>)}

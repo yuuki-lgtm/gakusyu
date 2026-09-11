@@ -499,3 +499,10 @@ test("採点待ち: 各行に紙の問番号（問1〜3 のように）。印刷
   const h = render(m.PaperTab, { d, save: noop, initial: "grade" }).html;
   assert.ok(h.includes('class="qno">問1〜3</em>') && h.includes('class="qno">問4〜6</em>'), h.match(/class="qno">[^<]*/g));
 });
+test("採点待ち: 印刷時に控えた問番号（printedQ）をそのまま出す。類題を作り直しても変わらない。同じ日の2枚目は別の見出し", () => {
+  const d = F.demo(); d.items = d.items.map((i, k) => (k < 2 ? { ...i, printedOn: F.day(-1), printedAs: 1, printedBatch: `2026-09-10T1${k}:00:00Z`, printedQ: { ns: [7, 8, 9], why: 9 }, gen: { problems: [{ q: "a", a: "1" }] } } : { ...i, printedOn: null }));
+  const h = render(m.PaperTab, { d, save: noop, initial: "grade" }).html;
+  assert.equal((h.match(/class="qno">問7〜9<\/em>/g) || []).length, 2, h.match(/class="qno">[^<]*/g));
+  assert.ok(h.includes(`印刷 ${F.day(-1).slice(5)} の紙（1枚目`) && h.includes("（2枚目"), "同じ日の2回目の印刷は別の紙");
+  assert.equal((h.match(/class="gchk ok"/g) || []).length, 2, "printedQ.why で説明の問いの有無を決める");
+});
