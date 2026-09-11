@@ -250,10 +250,9 @@ test("最後のページ: 取り込んだ教科・教材ごとに1行。済み�
   assert.ok(!html.includes("数学のテスト"));
   assert.ok(render(m.LastPageStep, { d: F.empty(), save: noop }).html.includes("取り込んだ教科がありません"));
 });
-test("ホーム: 採点待ちの類題があれば「今日の紙をもう一度PDFに」が出る。無ければ出ない", () => {
-  assert.ok(render(m.HomeTab, { d: F.demo(), go: noop }).html.includes("今日の紙をもう一度PDFに（1件）"));
-  assert.ok(!render(m.HomeTab, { d: F.empty(), go: noop }).html.includes("PDFだけ"));
-  assert.equal(render(m.MorningPrint, { d: F.empty() }).html, "");
+test("今日: 朝の印刷ボタンは置かない（紙→採点待ちの「もう一度PDFにする」が同じ機能）", () => {
+  assert.ok(!render(m.HomeTab, { d: F.demo(), go: noop }).html.includes("もう一度PDFに"));
+  assert.ok(render(m.PaperTab, { d: F.demo(), save: noop, initial: "print" }).html.includes("もう一度PDFにする"));
 });
 test("今日/採点: 行をタップで類題と解答、3回落ちていれば診断が出る", () => {
   const d = F.demo(); d.items = d.items.map((i) => (i.id === "i2" ? { ...i, printedOn: F.day(-1), printedAs: 2, gen: { problems: [{ q: "Q1", a: "A1" }], why: "W" } } : i));
@@ -360,7 +359,7 @@ test("使い方: ホームには「1週間の流れ」を置かず、使い方�
   assert.equal(rows[rows.length - 2], "使い方"); assert.equal(rows[rows.length - 1], "最新版に更新（再読み込み）");
   const g = render(m.GuideTab, { go: noop }).html;
   for (const t of ["このアプリは何をするもの？", "毎日（平日）", "週末", "定期テストの前と後", "最初に1回だけ", "困ったとき"]) assert.ok(g.includes(`<h3 class="s-h">${t}</h3>`), t);
-  for (const t of ["紙 → 5教科テスト", "教材 → 定期テスト", "教材 → 取り込み", "未定着 → ×を登録", "昨日の紙を撮って採点", "今日の紙をもう一度PDFに"]) assert.ok(g.includes(t), t);
+  for (const t of ["紙 → 5教科テスト", "教材 → 定期テスト", "教材 → 取り込み", "未定着 → ×を登録", "昨日の紙を撮って採点", "もう一度PDFにする"]) assert.ok(g.includes(t), t);
   assert.ok(!g.includes("「夜の作業」"), "ウィザードの名前は使わない");
   assert.ok(!g.includes("週末→") && !g.includes("「作る」") && !g.includes("テスト → "));
 });

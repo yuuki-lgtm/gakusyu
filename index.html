@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 18:30"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 18:33"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1155,15 +1155,6 @@ function App() {
 }
 
 /* ---- ホーム ---- */
-/* 朝の「今日の分を印刷する」。判定はせず、印刷済み（採点待ち）の類題をそのままPDFに。子どもが押す用 */
-function MorningPrint({ d }) {
-  const items = gradeSet(d).filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src)));
-  const [busy, setBusy] = useState(""); const [err, setErr] = useState("");
-  if (!items.length) return null;
-  const go = async () => { setErr(""); setBusy("開始"); try { await exportPDF(genToPaper(items, (id) => unitById(d, id)), (n) => setBusy(String(n))); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
-  return (<div className="blk morning"><button className="btn-main" onClick={go} disabled={!!busy}>{busy ? `PDFを作成中… ${busy}` : `今日の紙をもう一度PDFに（${items.length}件）`}</button>
-    <p className="blk-s">判定はしません。夜に作った類題をそのまま出します。子どもが朝に押してもよい。</p></div>);
-}
 function HomeTab({ d, go }) {
   const { A } = nextActions(d);
   const [p, ...rest] = A;
@@ -1173,7 +1164,6 @@ function HomeTab({ d, go }) {
       <div className="hero-k">いまやること</div><div className="hero-t">{p.title}</div><div className="hero-w">{p.why}</div>
       <div className="hero-b"><span>{p.t}</span><span className="chev">›</span></div></button>)
       : (<div className="hero quiet"><div className="hero-k">いまやること</div><div className="hero-t">今日はありません</div><div className="hero-w">次の再出題日を待っています。週末になったらテストを作ってください。</div></div>)}
-    <MorningPrint d={d} />
     {rest.length > 0 && (<div className="blk"><h3>そのあと</h3>{shown.map((a) => (<button className="nxt press" key={a.k} onClick={() => go(a.tab, a.mode)}><span className="nxt-t">{a.title}</span><span className="nxt-w">{a.why}</span><span className="chev">›</span></button>))}{rest.length > 3 && !showAll && <button className="lnk" onClick={() => setShowAll(true)}>ほか {rest.length - 3} 件を見る</button>}</div>)}
     <p className="guide-row"><button className="btn-sm" onClick={() => go("guide")}>使い方を見る</button></p>
   </div>);
@@ -2037,7 +2027,7 @@ function GuideTab({ go }) {
         <li><b>項目名が「仮」のまま</b>：AI の名前付けに失敗しています。開き直すと自動でやり直します。急ぐなら「未定着 → 一覧」の上のボタン。</li>
         <li><b>AI が使えない</b>：画面の上に赤か橙の帯が出ます。書いてある場所（設定や残高）を直せば消えます。</li>
         <li><b>画面が古い</b>：「その他 → 最新版に更新」。</li>
-        <li><b>紙が無い朝</b>：ホームの「今日の紙をもう一度PDFに」。</li>
+        <li><b>紙が無い朝</b>：「紙 → 採点待ち」の下の「もう一度PDFにする」。作り直さず同じ内容が出ます。</li>
       </ul>
     </S>
     <button className="btn-sm" onClick={() => go("more")}>← その他に戻る</button>
