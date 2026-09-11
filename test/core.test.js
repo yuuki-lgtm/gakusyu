@@ -598,7 +598,7 @@ describe("×のタップ登録（座標だけ保存）", () => {
     assert.deepEqual(m.marksOn(d, "fam-demo/math/wb/10.jpg"), []);
     assert.deepEqual(m.marksOn({ items: [{ src: { path: "p", q: "3" } }] }, "p"), [], "番号だけの旧データは印にしない");
   });
-  test("tapsToItems: 仮の名前・「知らなかった」・翌日・座標つき src。単元はページから、無ければ指定の単元", () => {
+  test("tapsToItems: 仮の名前・「知らなかった」・次の紙・座標つき src。単元はページから、無ければ指定の単元", () => {
     const d = F.demo(); const us = d.units.filter((u) => u.subject === "数学");
     const taps = [{ path: "fam-demo/math/wb/10.jpg", kind: "ワーク", page: 10, x: 0.2, y: 0.3 }, { path: "fam-demo/math/wb/10.jpg", kind: "ワーク", page: 10, x: 0.6, y: 0.3 }, { path: "fam-demo/math/wb/99.jpg", kind: "ワーク", page: 99, x: 0.1, y: 0.1 }];
     const its = m.tapsToItems(taps, "数学", us, "u3");
@@ -606,7 +606,7 @@ describe("×のタップ登録（座標だけ保存）", () => {
     assert.deepEqual(its.map((i) => i.label), ["ワーク p.10 の×（1）", "ワーク p.10 の×（2）", "ワーク p.99 の×（1）"]);
     assert.deepEqual(its.map((i) => i.unitId), ["u1", "u1", "u3"]);
     const i = its[0];
-    assert.deepEqual([i.subject, i.etype, i.named, i.fmt, i.level, i.failCount, i.status, i.nextDue], ["数学", "知らなかった", false, "", 0, 1, "active", day(1)]);
+    assert.deepEqual([i.subject, i.etype, i.named, i.fmt, i.level, i.failCount, i.status, i.nextDue], ["数学", "知らなかった", false, "", 0, 1, "active", T]);
     assert.deepEqual(i.src, { path: "fam-demo/math/wb/10.jpg", kind: "ワーク", page: 10, x: 0.2, y: 0.3 });
     assert.deepEqual(i.history, [{ d: T, r: "x", etype: "知らなかった" }]);
     assert.ok(i.id && i.updatedAt && i.createdOn === T);
@@ -781,9 +781,9 @@ describe("共通処理（整理で切り出したもの）", () => {
     assert.deepEqual(r2.items.map((x) => x.id), ["b"]); assert.deepEqual(r2.deleted, ["z", "a", "c"]);
     assert.deepEqual(d.items.length, 3, "元は触らない");
   });
-  test("newItem: 今日 × で登録、明日に出る。渡した値で上書き", () => {
+  test("newItem: 今日 × で登録、次の紙に出る（期日は今日）。渡した値で上書き", () => {
     const i = m.newItem({ subject: "数学", unitId: "u", label: "L", etype: "知らなかった" });
-    assert.deepEqual([i.subject, i.unitId, i.label, i.note, i.fmt, i.level, i.failCount, i.status, i.nextDue, i.createdOn], ["数学", "u", "L", "", "", 0, 1, "active", day(1), T]);
+    assert.deepEqual([i.subject, i.unitId, i.label, i.note, i.fmt, i.level, i.failCount, i.status, i.nextDue, i.createdOn], ["数学", "u", "L", "", "", 0, 1, "active", T, T]);
     assert.deepEqual(i.history, [{ d: T, r: "x", etype: "知らなかった" }]);
     assert.ok(i.id && i.updatedAt);
     assert.equal(m.newItem({ label: "x" }).history[0].etype, "");
@@ -1025,7 +1025,7 @@ describe("模試（段階6: ×は未定着へ、模試は再利用しない）",
   const mk = (subject, round, date = T) => ({ id: "mk" + subject + round, kind: "模試", subject, date, examId: "e1", round, questions: [{ n: 1, fmt: "計算", pts: 100, label: "L", unitId: "u1", aim: "" }], unitIds: ["u1"], status: "printed", updatedAt: "" });
   test("模試の×は newItem で通常の未定着になる（撮る画面と同じ生成）", () => {
     const p = mk("数学", 14); const i = m.newItem({ subject: p.subject, unitId: p.questions[0].unitId, label: p.questions[0].label, fmt: "計算", etype: "知らなかった" });
-    assert.deepEqual([i.status, i.level, i.failCount, i.nextDue], ["active", 0, 1, day(1)]);
+    assert.deepEqual([i.status, i.level, i.failCount, i.nextDue], ["active", 0, 1, T]);
   });
   test("模試の用紙は、週次の判断・累積の間隔・まとめてPDF・今日の印刷に使われない", () => {
     const d = F.demo(); d.papers.push(mk("数学", 14));
@@ -1426,10 +1426,10 @@ describe("考え方の説明（2回以上落ちた項目）", () => {
 });
 
 describe("診断の手順を項目として登録", () => {
-  test("stepToItem: 手順の文が項目名、通過の目安が補足。教科・単元・形式は元の項目から。翌日に出る。AI は呼ばない", () => {
+  test("stepToItem: 手順の文が項目名、通過の目安が補足。教科・単元・形式は元の項目から。次の紙に出る。AI は呼ばない", () => {
     const d = F.demo(); const i = d.items.find((x) => x.id === "i2");
     const ni = m.stepToItem(i, i.diag.steps[0], 0);
-    assert.deepEqual([ni.subject, ni.unitId, ni.label, ni.fmt, ni.etype, ni.named, ni.from, ni.nextDue, ni.level, ni.failCount], ["数学", "u2", "分数のわり算を5問", "図・作図・グラフ", "知らなかった", true, "i2", day(1), 0, 1]);
+    assert.deepEqual([ni.subject, ni.unitId, ni.label, ni.fmt, ni.etype, ni.named, ni.from, ni.nextDue, ni.level, ni.failCount], ["数学", "u2", "分数のわり算を5問", "図・作図・グラフ", "知らなかった", true, "i2", T, 0, 1]);
     assert.ok(ni.note.includes("文字式の表し方（÷） の診断 手順1") && ni.note.includes("通過の目安: 全問正解"));
     assert.equal(m.stepToItem(i, { do: "", check: "" }, 2).label, "文字式の表し方（÷） の前提 3");
     assert.ok(m.printSet({ ...d, items: [...d.items, ni] }).some((x) => x.id === ni.id), "翌日の候補に入る");
@@ -1603,9 +1603,9 @@ describe("+ からの受け渡し", () => {
 });
 
 describe("いつの紙に出るか", () => {
-  test("paperStatus: 明日まで→明日の紙、先→その日付（登録直後なら分散の注記）、印刷済み→採点待ち、後ろ倒し→定期テスト後、安定→累積だけ", () => {
+  test("paperStatus: 明日まで→次の紙、先→その日付（登録直後なら分散の注記）、印刷済み→採点待ち、後ろ倒し→定期テスト後、安定→累積だけ", () => {
     const base = { status: "active", nextDue: day(1), history: [{ d: day(-3), r: "x" }] };
-    assert.deepEqual(m.paperStatus({ ...base }), { k: "next", text: "明日の紙に出る" });
+    assert.deepEqual(m.paperStatus({ ...base }), { k: "next", text: "次の紙に出る" });
     assert.deepEqual(m.paperStatus({ ...base, nextDue: day(0) }).k, "next");
     assert.equal(m.paperStatus({ ...base, nextDue: day(3) }).text, `${day(3).slice(5)} の紙に出る`);
     assert.equal(m.paperStatus({ ...base, printedOn: day(-1) }).k, "printed");
@@ -1615,21 +1615,21 @@ describe("いつの紙に出るか", () => {
 });
 
 describe("登録した項目の期日", () => {
-  test("何件登録しても初回の期日は翌日（分散はしない。量は上限と繰り越しで守る）", () => {
+  test("何件登録しても登録した項目は次の紙の候補（分散はしない。量は上限と繰り越しで守る）", () => {
     const taps = Array.from({ length: 30 }, (_, k) => ({ path: "p", kind: "ワーク", page: 1, x: (k % 10) / 10, y: Math.floor(k / 10) / 10 }));
     const its = m.tapsToItems(taps, "数学", [], "u");
-    assert.equal(its.length, 30); assert.ok(its.every((i) => i.nextDue === day(1)));
+    assert.equal(its.length, 30); assert.ok(its.every((i) => i.nextDue === T));
     const d = { ...m.blank(), items: its }; const pk = m.pickDaily(d, 18);
     assert.ok(pk.chosen.length >= 1 && pk.chosen.length < 30 && pk.rest.length === 30 - pk.chosen.length, "上限までを今日の分、残りは繰り越し");
   });
 });
 
 describe("分散の取り消し", () => {
-  test("undoSpread: 一度も紙に出ていない項目の期日を翌日に。判定済み・印刷済み・後ろ倒し中・安定は触らない。変更が無ければ同じオブジェクト", () => {
+  test("undoSpread: 一度も紙に出ていない項目の期日を今日に。判定済み・印刷済み・後ろ倒し中・安定は触らない。変更が無ければ同じオブジェクト", () => {
     const it = (o) => ({ id: o.id, status: "active", nextDue: day(4), history: [], ...o });
     const d = { ...m.blank(), items: [it({ id: "a" }), it({ id: "b", history: [{ d: day(-2), r: "o" }] }), it({ id: "c", printedOn: day(-1) }), it({ id: "d", defer: { examId: "e", from: day(1) } }), it({ id: "e", status: "stable" }), it({ id: "f", nextDue: day(1) })] };
     const r = m.undoSpread(d);
-    assert.deepEqual(r.items.map((i) => i.nextDue), [day(1), day(4), day(4), day(4), day(4), day(1)]);
-    const same = { ...d, items: [it({ id: "f", nextDue: day(1) })] }; assert.equal(m.undoSpread(same), same);
+    assert.deepEqual(r.items.map((i) => i.nextDue), [T, day(4), day(4), day(4), day(4), T]);
+    const same = { ...d, items: [it({ id: "f", nextDue: T })] }; assert.equal(m.undoSpread(same), same);
   });
 });

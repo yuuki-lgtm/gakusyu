@@ -89,7 +89,7 @@ test("空データ: ホームは単元登録を促す", () => {
   assert.ok(html.includes("単元"));
 });
 test("空データ: 今日は採点待ちも印刷待ちもなし、分析は保持率なし", () => {
-  assert.ok(render(m.PaperTab, { d: F.empty(), save: noop, initial: null }).html.includes("明日の分はありません"));
+  assert.ok(render(m.PaperTab, { d: F.empty(), save: noop, initial: null }).html.includes("次の紙の分はありません"));
   assert.ok(render(m.PaperTab, { d: F.empty(), save: noop, initial: "grade" }).html.includes("採点待ちはありません"));
   assert.ok(render(m.AnaTab, { d: F.empty() }).html.includes("まだ30日以上あけた再出題がありません"));
 });
@@ -98,19 +98,19 @@ test("デモ: 今日/採点 に昨日印刷した項目が並び、既定は採�
   assert.ok(g.includes("負の数のかけ算") && g.includes("まとめて確定") && g.includes("やっていない"));
   assert.ok(!g.includes("指示語の内容を答える"), "未印刷の項目は採点に出ない");
   const p = render(m.PaperTab, { d: F.demo(), save: noop, initial: "print" }).html;
-  assert.ok(p.includes("指示語の内容を答える") && p.includes("六大陸の名前") && p.includes("明日の紙を作る（3件"), (p.match(/明日の紙を作る[^<]*/) || [])[0]);
+  assert.ok(p.includes("指示語の内容を答える") && p.includes("六大陸の名前") && p.includes("次の紙を作る（3件"), (p.match(/次の紙を作る[^<]*/) || [])[0]);
   assert.ok(p.includes("チェック 3 件（9 問）、繰り越し 0 件") && p.includes('type="checkbox" checked=""'));
   assert.ok(!p.includes('ir-label">負の数のかけ算'), "印刷済みは印刷に出ない");
   assert.ok(p.includes("採点待ちの分をもう一度PDFにする"));
 });
-test("デモ: ホームは夜にやることを独立した行で出す。採点 → 明日の紙 → ×の登録 → 最後のページ の順。ウィザード（night）は無い", () => {
+test("デモ: ホームは夜にやることを独立した行で出す。採点 → 次の紙 → ×の登録 → 最後のページ の順。ウィザード（night）は無い", () => {
   const { A } = m.nextActions(F.demo());
   const ks = A.map((a) => a.k);
   assert.ok(!ks.includes("night"));
   const order = ["gradeDaily", "print", "items", "last"].filter((k) => ks.includes(k));
   assert.deepEqual(order, ks.filter((k) => order.includes(k)), "並び順");
   assert.equal(ks[0], "gradeDaily"); assert.ok(A[0].title.includes("昨日の紙を採点する（1件）"));
-  assert.ok(A.find((a) => a.k === "print").title.includes("明日の紙を作る（3件"));
+  assert.ok(A.find((a) => a.k === "print").title.includes("次の紙を作る（3件"));
 });
 test("デモ: 分析に保持率が出る", () => {
   const { html } = render(m.AnaTab, { d: F.demo() });
@@ -335,9 +335,9 @@ test("採点の展開: 診断の各手順に「この手順を項目として登
   const h2 = render(m.GradeRowDetail, { i: done, d, save: noop }).html;
   assert.equal((h2.match(/この手順を項目として登録/g) || []).length, 1); assert.ok(h2.includes("項目として登録済み"));
 });
-test("下のバーは5つ（今日／紙／未定着／教材／その他）。紙は 採点待ち／明日の紙／5教科テスト／模試／読解・記述。教材は 取り込み／単元と進度／定期テスト。その他はメニュー", () => {
+test("下のバーは5つ（今日／紙／未定着／教材／その他）。紙は 採点待ち／次の紙／5教科テスト／模試／読解・記述。教材は 取り込み／単元と進度／定期テスト。その他はメニュー", () => {
   const w = render(m.PaperTab, { d: F.demo(), save: noop, initial: "make" }).html;
-  assert.ok(w.includes("採点待ち") && w.includes("明日の紙") && w.includes(">5教科テスト<") && w.includes(">模試<") && w.includes(">読解・記述<") && w.includes("ワークの結果を記録") && !w.includes(">定期テスト<"));
+  assert.ok(w.includes("採点待ち") && w.includes("次の紙") && w.includes(">5教科テスト<") && w.includes(">模試<") && w.includes(">読解・記述<") && w.includes("ワークの結果を記録") && !w.includes(">定期テスト<"));
   assert.ok(!w.includes(">採点した答案を撮る<"));
   const ex = render(m.MatsTab, { d: F.demo(), save: noop, initial: "exam" }).html; assert.ok(ex.includes("2学期中間") && ex.includes("出題範囲") && ex.includes(">取り込み<") && ex.includes(">単元と進度<") && ex.includes(">定期テスト<"));
   assert.deepEqual(m.route("today", "grade"), ["paper", "grade"]); assert.deepEqual(m.route("week", "cum"), ["paper", "cum"]); assert.deepEqual(m.route("exam"), ["mats", "exam"]);
@@ -436,8 +436,8 @@ test("未定着リスト: 誤答の種類は小さいチップ（select は無�
   assert.ok(!h.includes('<em class="tag">説明不要</em>') && h.includes('class="et why on">説明不要</button>'));
   assert.ok(h.includes('aria-label="削除">×</button>') && !h.includes("取り消す"));
 });
-test("今日: 採点の下に「次は明日の紙を作る →」、明日の紙の下に「次はワークの×を登録する →」。登録→落とした項目の下に今日の最後のページ", () => {
-  const g = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade", go: noop }).html; assert.ok(g.includes("次は明日の紙を作る →"));
+test("今日: 採点の下に「次は次の紙を作る →」、次の紙の下に「次はワークの×を登録する →」。登録→落とした項目の下に今日の最後のページ", () => {
+  const g = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade", go: noop }).html; assert.ok(g.includes("次は次の紙を作る →"));
   const p = render(m.PaperTab, { d: F.demo(), save: noop, initial: "print", go: noop }).html; assert.ok(p.includes("次はワークの×を登録する →"));
   const r = render(m.ItemsTab, { d: F.demo(), save: noop, initial: "item" }).html; assert.ok(r.includes("今日やった最後のページ番号を入れて"));
 });
@@ -449,16 +449,16 @@ test("右下の +: 押すとまず撮る／選ぶ（ファイル入力）。一�
   assert.ok(i1 > 0 && (i2 < 0 || i2 > i1), "ファイルを選ぶ前は教科・種別を出さない（または後ろ）");
   assert.ok(mat.includes("取り込み済み（数学）"));
 });
-test("明日の紙: 定期テストの14日前で後ろ倒し中の項目があれば、教科ごとの件数を出す", () => {
+test("次の紙: 定期テストの14日前で後ろ倒し中の項目があれば、教科ごとの件数を出す", () => {
   const d = F.demo(); d.exams = [{ id: "e9", name: "期末", date: F.day(7), unitIds: ["u1"], actual: {}, updatedAt: "" }];
   const dd = m.deferForExam(d); const n = dd.items.filter((i) => i.defer).length; assert.ok(n > 0, "後ろ倒しが起きる前提");
   const h = render(m.PaperTab, { d: dd, save: noop, initial: "print" }).html;
   assert.ok(h.includes('class="ph-note defer-note"') && h.includes(`範囲外の ${n} 件`) && h.includes("期末"));
   assert.ok(!render(m.PaperTab, { d: F.demo(), save: noop, initial: "print" }).html.includes("defer-note"));
 });
-test("未定着の一覧: 各行に「いつの紙に出るか」。明日の紙: 候補に入っていない件数と理由", () => {
+test("未定着の一覧: 各行に「いつの紙に出るか」。次の紙: 候補に入っていない件数と理由", () => {
   const d = F.demo(); const h = render(m.ItemList, { d, save: noop }).html;
-  assert.ok(h.includes('class="ir-when next">明日の紙に出る') || h.includes('class="ir-when '), "行に状態");
+  assert.ok(h.includes('class="ir-when next">次の紙に出る') || h.includes('class="ir-when '), "行に状態");
   assert.ok(!h.includes("次回 "));
   const d2 = F.demo(); d2.items = d2.items.map((i, k) => (k === 0 ? { ...i, nextDue: F.day(5), createdOn: F.T, history: [] } : i));
   const p = render(m.PaperTab, { d: d2, save: noop, initial: "print" }).html;
