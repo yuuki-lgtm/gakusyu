@@ -477,3 +477,7 @@ test("次の紙: 候補の各行に「新しく登録」「再出題」「再挑
   const h = render(m.PaperTab, { d, save: noop, initial: "print" }).html;
   assert.ok(h.includes('class="ir-kind review">再出題（') && h.includes("2日遅れ") && h.includes('class="ir-kind new">新しく登録'));
 });
+test("採点: 子どもの行にボタンは無い（紙の○×を読んだ値だけ）。押せるのは親の行", () => {
+  const h = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html;
+  assert.ok(!/<span class="j-who">子ども<\/span><div class="j-btns/.test(h) && /<span class="j-who">親<\/span><div class="j-btns/.test(h));
+});
