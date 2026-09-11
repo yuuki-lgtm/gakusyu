@@ -1084,7 +1084,7 @@ describe("夜の作業（続きから再開）", () => {
   test("ホーム: 初期設定が済んでいれば「夜の作業」が先頭。続きがあれば続きの表示", () => {
     const d = F.demo();
     assert.equal(m.nextActions(d).A[0].k, "night");
-    m.nightSave(1); try { assert.ok(m.nextActions(d).A[0].title.includes("続き（2/4 ×を登録）")); } finally { m.nightSave(null); }
+    m.nightSave(1); try { const a0 = m.nextActions(d).A[0]; assert.equal(a0.title, "夜の作業の続き"); assert.ok(a0.why.startsWith("2/4「×を登録」から。")); } finally { m.nightSave(null); }
     assert.equal(m.nextActions(F.empty()).A[0].k, "units");
     const noProg = { ...d, units: d.units.map((u) => ({ ...u, learnedOn: null, learnedBy: undefined })) };
     assert.equal(m.nextActions(noProg).A[0].k, "prog"); assert.equal(m.nextActions(noProg).A[1].k, "night");
@@ -1607,5 +1607,14 @@ describe("使えない状態の帯", () => {
       globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: "2" }] }) });
       await m.callAI("x", "y", 10); assert.equal(m.apiBlock(), null, "成功したら消える");
     } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); m.stubs.localStorage.removeItem("api_block"); }
+  });
+});
+
+describe("画面冒頭の説明", () => {
+  test("hintSeen/markHint: 初回は未読、印を付けたら既読。壊れた値は未読", () => {
+    m.stubs.localStorage.removeItem("hint_seen");
+    assert.equal(m.hintSeen("x"), false); m.markHint("x"); assert.equal(m.hintSeen("x"), true); assert.equal(m.hintSeen("y"), false);
+    m.stubs.localStorage.setItem("hint_seen", "{broken"); assert.equal(m.hintSeen("x"), false);
+    m.stubs.localStorage.removeItem("hint_seen");
   });
 });

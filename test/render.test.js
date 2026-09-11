@@ -124,7 +124,7 @@ test("デモ: 登録/教材 に取り込み済みのページ範囲が出る。�
   assert.ok(html.includes("3ページ（p.10–12）"), "数学ワークの範囲");
   assert.ok(html.includes("1ページ（p.12）"), "数学教科書の範囲");
   assert.ok(html.includes("を全部削除") && !html.includes("本当に削除する"), "確認は押すまで出ない");
-  assert.ok(html.includes("横長の画像は見開きとして2ページ") && html.includes("右ページが若い番号"));
+  assert.ok(html.includes("横長の画像は見開きとして2ページ") && html.includes("縦書き（右が若い）"));
   assert.ok(html.includes("消すページ"));
   const e = render(m.RegTab, { d: F.empty(), save: noop, initial: "mat" }).html;
   assert.ok(e.includes("なし") && !e.includes("を全部削除"));
@@ -252,7 +252,7 @@ for (const [state, make] of Object.entries(STATES)) for (let st = 0; st < 4; st+
 });
 test("最後のページ: 取り込んだ教科・教材ごとに1行。済みの数と最後のページ", () => {
   const html = render(m.LastPageStep, { d: F.demo(), save: noop }).html;
-  assert.ok(html.includes("数学のワーク") && html.includes("済 1/3（p.10 まで）") && html.includes("数学の教科書") && html.includes("英語の教科書"));
+  assert.ok(html.includes("数学のワーク") && html.includes("登録済み 1件／3件（p.10 まで）") && html.includes("数学の教科書") && html.includes("英語の教科書"));
   assert.ok(!html.includes("数学のテスト"));
   assert.ok(render(m.LastPageStep, { d: F.empty(), save: noop }).html.includes("取り込んだ教科がありません"));
 });
@@ -442,4 +442,15 @@ test("ホーム: 定期テストが無いときは未定着の件数の下に教
   assert.equal((h.match(/class="st-bar"><span/g) || []).length, 1);
   for (const sb of subs) { const n = act.filter((i) => i.subject === sb).length; assert.ok(h.includes(`${sb} ${n}</span>`), sb); assert.ok(h.includes(`width:${(n / act.length) * 100}%`), sb + " の幅"); }
   const e = render(m.HomeTab, { d: F.empty(), go: noop }).html; assert.ok(e.includes(">未定着<") && !e.includes("st-bar"));
+});
+test("画面冒頭の説明: 未読なら開いた状態で × 付き、既読なら「?」だけ", () => {
+  m.stubs.localStorage.removeItem("hint_seen");
+  const a = render(m.Hint, { k: "t1", children: "説明です" }).html; assert.ok(a.includes('class="hint open"') && a.includes("説明です") && a.includes(">×</button>"));
+  m.markHint("t1");
+  const b = render(m.Hint, { k: "t1", children: "説明です" }).html; assert.ok(b.includes('class="hint"') && !b.includes("説明です") && b.includes(">?</button>"));
+  m.stubs.localStorage.removeItem("hint_seen");
+});
+test("ホーム: 夜の作業の行は見出し「夜の作業」だけ。手順は説明文に", () => {
+  const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
+  assert.ok(h.includes('<div class="hero-t">夜の作業</div>') && h.includes("採点 → ×の登録 → 最後のページ → 明日の紙。"));
 });

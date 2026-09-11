@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 09:01"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 09:12"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -556,7 +556,7 @@ function nextActions(d) {
     if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
     const ns = nightLoad();
     const toGrade0 = d.items.filter((i) => i.printedOn && i.printedOn < t).length, daily0 = pickDaily(d);
-    A.push({ k: "night", title: ns > 0 ? `夜の作業の続き（${ns + 1}/${NIGHT_STEPS.length} ${NIGHT_STEPS[ns][1]}）` : "夜の作業（採点 → ×の登録 → 最後のページ → 明日の紙）", why: `${toGrade0 ? `採点 ${toGrade0} 件。` : ""}${daily0.chosen.length ? `明日の分 ${daily0.chosen.length} 件${daily0.rest.length ? `（繰り越し ${daily0.rest.length} 件）` : ""}。` : ""}1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。`, tab: "night", t: "5分" });
+    A.push({ k: "night", title: ns > 0 ? "夜の作業の続き" : "夜の作業", why: `${ns > 0 ? `${ns + 1}/${NIGHT_STEPS.length}「${NIGHT_STEPS[ns][1]}」から。` : "採点 → ×の登録 → 最後のページ → 明日の紙。"}${toGrade0 ? `採点 ${toGrade0} 件。` : ""}${daily0.chosen.length ? `明日の分 ${daily0.chosen.length} 件${daily0.rest.length ? `（繰り越し ${daily0.rest.length} 件）` : ""}。` : ""}1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。`, tab: "night", t: "5分" });
     if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと、「テスト」の一覧で用紙を開いて撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: pending.some((p) => p.kind === "模試") && pending.every((p) => p.kind === "模試") ? "mock" : "make", t: "1枚2分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
     const mx = upcomingExams(d)[0]; const md = mx ? mockDue(d, mx, t) : null;
@@ -642,6 +642,16 @@ const SNACK_ICON = {
   err: (<svg className="sn-i" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="rgba(255,255,255,.18)" /><path d="M6.5 6.5l7 7M13.5 6.5l-7 7" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" /></svg>),
   warn: (<svg className="sn-i" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l8 14H2z" fill="rgba(255,255,255,.18)" stroke="#fff" strokeWidth="1.6" strokeLinejoin="round" /><path d="M10 8v4.2M10 14.6v.4" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" /></svg>),
 };
+/* 画面冒頭の説明。初回だけ開いて出し、以後は右上の「?」で開閉。既読は端末（localStorage hint_seen）に記憶 */
+const HINT_KEY = "hint_seen";
+const hintSeen = (k) => { try { return JSON.parse(localStorage.getItem(HINT_KEY) || "[]").includes(k); } catch { return false; } };
+const markHint = (k) => { try { const a = JSON.parse(localStorage.getItem(HINT_KEY) || "[]"); if (!a.includes(k)) localStorage.setItem(HINT_KEY, JSON.stringify([...a, k])); } catch {} };
+function Hint({ k, children }) {
+  const [open, setOpen] = useState(() => !hintSeen(k));
+  useEffect(() => { markHint(k); }, [k]);
+  return open ? (<div className="hint open"><p className="tabhint">{children}</p><button className="hint-q" onClick={() => setOpen(false)} aria-label="説明を閉じる">×</button></div>)
+    : (<div className="hint"><button className="hint-q" onClick={() => setOpen(true)} aria-label="説明を見る">?</button></div>);
+}
 function Snacks({ list, onClose }) {
   if (!list.length) return null;
   return (<div className="snacks">{list.map((sn) => (<div key={sn.id} className={"snack " + sn.kind}>{SNACK_ICON[sn.kind] || SNACK_ICON.ok}<span>{sn.text}</span>{sn.kind === "err" && <button onClick={() => onClose(sn.id)} aria-label="閉じる">×</button>}</div>))}</div>);
@@ -1137,7 +1147,7 @@ function TodayTab({ d, save, initial }) {
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
   const ps = printSet(d).length;
   return (<div className="pane">
-    <p className="tabhint">夜の2ステップ。昨日の紙を見て「採点」→「印刷」で明日の分を1枚に。子どもは紙に解き、解答を見て自分の判定を書く。行をタップすると類題と解答が見えます。</p>
+    <Hint k="today">夜の2ステップ。昨日の紙を見て「採点」→「印刷」で明日の分を1枚に。子どもは紙に解き、解答を見て自分の判定を書く。行をタップすると類題と解答が見えます。</Hint>
     <div className="subtabs"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>明日の紙{ps ? ` (${ps})` : ""}</button></div>
     {mode === "grade" && <TodayGrade d={d} save={save} />}
     {mode === "print" && <TodayMake d={d} save={save} />}
@@ -1199,7 +1209,7 @@ function TodayMake({ d, save }) {
       <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
       {cands.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "明日の分はありません。"}</p>
         : (<>{[...SUBJECTS, ...cands.map((i) => i.subject)].filter((sb, k, arr) => arr.indexOf(sb) === k && cands.some((i) => i.subject === sb)).map((sb) => (<div key={sb}><h4 className="sub-h"><Dot s={sb} />{sb}<em className="pg"> {cands.filter((i) => i.subject === sb).length}件</em></h4>
-          {cands.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? <> · 類題あり <button className="lnk" onClick={(e) => { e.preventDefault(); setRedo((r) => new Set([...r, i.id])); }}>作り直す</button></> : redo.has(i.id) ? " · 作り直す" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}</div>))}
+          {cands.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? <> · 類題あり <button className="lnk" onClick={(e) => { e.preventDefault(); setRedo((r) => new Set([...r, i.id])); }}>作り直す</button></> : redo.has(i.id) ? " · 作り直す" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}</div>))}
           <p className="ph-note">チェック {set.length} 件（{set.reduce((a, i) => a + problemCount(i), 0)} 問）、繰り越し {cands.length - set.length} 件。</p>
           <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `明日の紙を作る（${set.length}件 → PDF）`}</button></>)}
       {log.length > 0 && <div className="loglist">{log.map((l, k) => (<div key={k}>{l}</div>))}</div>}
@@ -1257,7 +1267,7 @@ function TodayGrade({ d, save }) {
       {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, SONNET)}>もう一度読み取る</button>}</div>}
       {set.map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (
         <div className={"grow" + (c.skip ? " skip" : c.r ? " done" : "")} key={i.id}>
-          <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "—"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<em className="lv">印刷 {i.printedOn.slice(5)}{i.printedAs ? ` · 紙の${i.printedAs}番目` : ""}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
+          <div className="c-meta"><Dot s={i.subject} />{i.subject}・{u ? u.name : "単元なし"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<em className="lv">印刷 {i.printedOn.slice(5)}{i.printedAs ? ` · 紙の${i.printedAs}番目` : ""}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
           <button className="c-label tap" onClick={() => setOpen((o) => ({ ...o, [i.id]: !o[i.id] }))}>{i.label}<em className="pg"> {open[i.id] ? "閉じる" : i.failCount >= 3 ? "類題・診断 ▸" : "類題 ▸"}</em></button>
           {open[i.id] && <GradeRowDetail i={i} d={d} save={save} />}
           {!c.skip && (<>
@@ -1310,7 +1320,7 @@ function LastPageStep({ d, save }) {
   return (<section className="sec">
     <p className="lead">今日やった最後のページ番号を入れて「ここまで」。そのページまでが「やった」になり、進度も進みます。×を登録したページは済んでいます。やっていない教科は飛ばして「次へ」。</p>
     {rows.length === 0 && <p className="empty">ワーク・教科書を取り込んだ教科がありません。「次へ」。</p>}
-    {rows.map((x) => (<div className="lp-row" key={x.s + x.k}><Dot s={x.s} /><span className="lp-n">{x.s}の{x.k}</span><span className="lp-d">済 {x.ms.filter((mt) => mt.doneOn).length}/{x.ms.length}{lastDone(x) ? `（p.${lastDone(x)} まで）` : ""}</span><input className="num" type="number" inputMode="numeric" value={val(x)} onChange={(e) => setPg((p) => ({ ...p, [x.s + x.k]: e.target.value }))} /><button className="btn-sm" onClick={() => mark(x)}>ここまで</button></div>))}
+    {rows.map((x) => (<div className="lp-row" key={x.s + x.k}><Dot s={x.s} /><span className="lp-n">{x.s}の{x.k}</span><span className="lp-d">登録済み {x.ms.filter((mt) => mt.doneOn).length}件／{x.ms.length}件{lastDone(x) ? `（p.${lastDone(x)} まで）` : ""}</span><input className="num" type="number" inputMode="numeric" value={val(x)} onChange={(e) => setPg((p) => ({ ...p, [x.s + x.k]: e.target.value }))} /><button className="btn-sm" onClick={() => mark(x)}>ここまで</button></div>))}
   </section>);
 }
 
@@ -1324,7 +1334,7 @@ function WeekTab({ d, save, initial }) {
   useEffect(() => { if (initial) { setMode(asMode(initial)); if (initial === "write") setRw("write"); if (initial === "read") setRw("read"); } }, [initial]);
   return (
     <div className="pane">
-      <p className="tabhint">週末のテスト。5教科テストを作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。定期テストの登録と範囲もここ。</p>
+      <Hint k="week">週末のテスト。5教科テストを作る → 印刷 → 解く → 赤ペンで採点 → 一覧で用紙を開いて答案を撮る、の順です。定期テストの登録と範囲もここ。</Hint>
       <div className="subtabs"><button className={mode === "make" ? "on" : ""} onClick={() => setMode("make")}>5教科テスト</button>
         <button className={mode === "exam" ? "on" : ""} onClick={() => setMode("exam")}>定期テスト</button>
         <button className={mode === "mock" ? "on" : ""} onClick={() => setMode("mock")}>模試</button>
@@ -1648,7 +1658,7 @@ function RegTab({ d, save, initial }) {
   const [mode, setMode] = useState(initial || (d.units.length ? "item" : "unit"));
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
   return (<div className="pane">
-    <p className="tabhint">単元は学期に1回。項目は、平日のワークの×をページで指してタップする場所です。進度はワークの×から自動、拾えなければ「単元」で「ここまで」。自作テストの×は「テスト→撮る」で自動です。</p>
+    <Hint k="reg">単元は学期に1回。項目は、平日のワークの×をページで指してタップする場所です。進度はワークの×から自動、拾えなければ「単元」で「ここまで」。自作テストの×は「テスト→撮る」で自動です。</Hint>
     <div className="subtabs"><button className={mode === "unit" ? "on" : ""} onClick={() => setMode("unit")}>単元と進度</button><button className={mode === "item" ? "on" : ""} onClick={() => setMode("item")}>落とした項目</button><button className={mode === "list" ? "on" : ""} onClick={() => setMode("list")}>未定着リスト</button><button className={mode === "mat" ? "on" : ""} onClick={() => setMode("mat")}>教材の取り込み</button></div>
     {mode === "unit" && <UnitReg d={d} save={save} />}
     {mode === "item" && <ItemReg d={d} save={save} />}
@@ -1842,7 +1852,7 @@ function ItemList({ d, save }) {
     {tent.length > 0 && <button className="btn-main rename-all" disabled={naming} onClick={renameAll}>{naming ? "AI が名前を付けています…" : `仮の項目 ${tent.length} 件に名前を付ける（AI）`}</button>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
-        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}{i.noWhy && <em className="tag">説明不要</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "—"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
+        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}{i.noWhy && <em className="tag">説明不要</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
           <select className="et-sel" value={ETYPES.includes(i.etype) ? i.etype : ""} onChange={(e) => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e.target.value, updatedAt: now() } : x)) })}><option value="">誤答の種類 —</option>{ETYPES.map((e) => (<option key={e}>{e}</option>))}</select>
           {i.fmt !== "知識・用語" && <button className={"et why" + (i.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{i.noWhy ? "説明不要" : "説明あり"}</button>}</div><button className="btn-x" onClick={() => save(removeRec(d, "items", i.id))}>×</button></div>); })}</div>); })}</>);
 }
@@ -1917,7 +1927,7 @@ function MaterialReg({ d, save }) {
       <div className="mat-sum">{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? (k === "テスト" ? TEST_ROLES.map(([r, l]) => { const xs = ms.filter((m) => roleOf(m) === r); return xs.length ? `${l} ${xs.length}枚` : ""; }).filter(Boolean).join("、") : `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）`) : "なし"}</div>); })}</div>
       {kind === "テスト" && (<><div className="seg sm">{TEST_ROLES.map(([r, l]) => (<button key={r} className={role === r ? "on" : ""} onClick={() => setRole(r)}>{l}</button>))}</div>
         <p className="ph-note">問題用紙と答案が別の紙なら、問題用紙を1枚目から、答案も1枚目から、同じ順で入れます。同じ番号同士が対になり、答案の×をタップすると問題用紙も一緒にAIに渡ります。</p></>)}
-      <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>左ページが若い番号（横書き）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>右ページが若い番号（国語など縦書き）</button></div>
+      <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>横書き（左が若い）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>縦書き（右が若い）</button></div>
       <Fld label={kind === "テスト" ? "最初の番号（答案の1枚目なら 1。前に取り込んだ分に続けるならその次の番号）" : "最初のページ番号（横長の画像は見開きとして2ページ、縦長は1ページとして順に振ります）"}><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
       <label className="ph-btn">{busy ? `${busy}… ${sec}秒` : "PDF か ページの画像（複数可）を選ぶ"}<input type="file" accept="image/*,application/pdf" multiple hidden disabled={!!busy} onChange={pick} /></label>
       {files.length > 0 && !busy && (<div className="mat-pre">
@@ -1941,7 +1951,7 @@ function MaterialReg({ d, save }) {
 function GuideTab({ go }) {
   const S = ({ t, children }) => (<section className="sec guide"><h3 className="s-h">{t}</h3>{children}</section>);
   return (<div className="pane">
-    <p className="tabhint">このアプリの使い方。困ったらここに戻ってください。</p>
+    <Hint k="guide">このアプリの使い方。困ったらここに戻ってください。</Hint>
     <S t="このアプリは何をするもの？">
       <p className="g-p">子どもが「まだ覚えていないこと」を集めて、忘れそうな日に紙で出し直すアプリです。親がやるのは1日5分。教えるのではなく、紙を渡して答え合わせを見るだけです。</p>
     </S>
@@ -1992,7 +2002,7 @@ function MoreTab({ d, go }) {
   ];
   const reload = () => { try { window.location.replace(window.location.pathname + "?r=" + Date.now()); } catch {} };
   return (<div className="pane">
-    <p className="tabhint">たまにしか使わない画面。毎日の操作はホーム、週末の作業は「週末」にあります。</p>
+    <Hint k="more">たまにしか使わない画面。毎日の操作はホーム、週末の作業は「週末」にあります。</Hint>
     {rows.map(([k, t, w, when]) => (<button className="nxt" key={k} onClick={() => go(k)}><span className="nxt-t">{t}</span><span className="nxt-w">{w}{when ? `　最終 ${String(when).slice(0, 10)}` : ""}</span></button>))}
     <button className="nxt" onClick={() => go("guide")}><span className="nxt-t">使い方</span><span className="nxt-w">このアプリで何をするか、毎日・週末・テスト前にやることを短くまとめたページ。</span></button>
     <button className="nxt" onClick={reload}><span className="nxt-t">最新版に更新（再読み込み）</span><span className="nxt-w">いまは v{VERSION}。画面が古いと感じたら押す。それでも古ければアプリを完全に終了して開き直す。</span></button>
@@ -2002,7 +2012,7 @@ function MoreTab({ d, go }) {
 /* ---- 分析・定期・依頼文・設定 ---- */
 function AnaTab({ d }) {
   const ret = retention(d.items);
-  const hint = <p className="tabhint">見るだけの画面。操作はありません。上から順に重要です。</p>;
+  const hint = <Hint k="ana">見るだけの画面。操作はありません。上から順に重要です。</Hint>;
   const retBy = SUBJECTS.map((s) => [s, retention(d.items.filter((i) => i.subject === s))]);
   const cum = SUBJECTS.map((s) => [s, d.tests.filter((t) => t.subject === s && t.kind === "累積").sort((a, b) => (a.date < b.date ? -1 : 1)).map((t) => ({ ...t, rate: pct(t.correct, t.total) }))]);
   const agree = useMemo(() => { let a = 0, t = 0; d.items.forEach((i) => (i.history || []).forEach((h) => { if (h.self) { t++; if (h.self === h.r) a++; } })); return { a, t, rate: pct(a, t) }; }, [d.items]);
@@ -2119,7 +2129,7 @@ function ExportTab({ d }) {
       const fm = {}; ts.forEach((t) => (t.rows || []).forEach((x) => { fm[x.fmt] = fm[x.fmt] || [0, 0]; fm[x.fmt][0] += x.correct; fm[x.fmt][1] += x.total; }));
       const fk = Object.entries(fm).sort((a, b) => a[1][0] / a[1][1] - b[1][0] / b[1][1]); if (fk.length) L.push("  形式別: " + fk.map(([f, v]) => `${f} ${pct(v[0], v[1])}%`).join("、"));
       const never = us.filter((u) => !u.lastTestedOn); if (never.length) L.push("  未出題: " + never.map((u) => u.name).join("、"));
-      if (act.length) { L.push("  未定着:"); act.sort((a, b) => b.failCount - a.failCount).forEach((i) => { const u = unitOf(i.unitId); L.push(`    ・${i.label}（${u ? u.name : "—"} / ${i.fmt || ""} / ${i.etype || ""} / ${i.failCount}回${i.note ? " / " + i.note : ""}）`); }); }
+      if (act.length) { L.push("  未定着:"); act.sort((a, b) => b.failCount - a.failCount).forEach((i) => { const u = unitOf(i.unitId); L.push(`    ・${i.label}（${u ? u.name : "単元なし"} / ${i.fmt || ""} / ${i.etype || ""} / ${i.failCount}回${i.note ? " / " + i.note : ""}）`); }); }
       if (st.length) L.push(`  安定: ${st.length}件`);
       const stuck = act.filter((i) => i.failCount >= 3); if (stuck.length) L.push("  ※理解の欠落が疑われる: " + stuck.map((i) => i.label).join("、")); });
     const rd = d.items.filter((i) => i.fmt === "長文読解" && i.status === "active"); if (rd.length) L.push("", "■ 読解で落としている技能: " + rd.map((i) => i.label).join("、"));
@@ -2223,6 +2233,8 @@ const CSS = `
 .taskbox{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:11px;margin:8px 0}.tk-p{font-size:14px;line-height:1.6;margin-bottom:6px;font-weight:700}
 .tr{font-size:12px;line-height:1.9;white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:10px;margin:8px 0}
 .tabhint{font-size:12px;color:var(--ink2);background:#EEF1EE;border-radius:3px;padding:8px 10px;margin:0 0 12px;line-height:1.6}
+.hint{position:relative;display:flex;justify-content:flex-end;margin-bottom:8px}.hint.open{display:block}.hint.open .tabhint{padding-right:36px}
+.hint-q{width:24px;height:24px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink3);font-size:13px;font-weight:700;line-height:1;cursor:pointer;font-family:inherit;padding:0;-webkit-tap-highlight-color:transparent}.hint.open .hint-q{position:absolute;right:8px;top:7px}
 .hero{display:block;width:100%;text-align:left;border:none;font-family:inherit;color:#fff;background:var(--ink);border-radius:6px;padding:18px 16px;margin-bottom:12px;cursor:pointer;box-shadow:0 6px 16px rgba(30,35,33,.28);position:relative;-webkit-tap-highlight-color:transparent}
 .press{transition:transform .08s,box-shadow .08s}.press:active{transform:translateY(1px) scale(.995);box-shadow:0 2px 6px rgba(30,35,33,.2)}
 .chev{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:24px;text-align:center;font-size:26px;line-height:1;color:var(--ink3);font-weight:400}
