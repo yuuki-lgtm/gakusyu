@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 17:07"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 17:13"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1245,7 +1245,9 @@ function TodayMake({ d, save, go }) {
   const reprint = async () => { setErr(""); setBusy("PDFを作成"); try { const ok = printed.filter((i) => (i.gen && i.gen.problems) || (i.printedOrig && hasPos(i.src))); if (!ok.length) throw new Error("類題が残っていません"); await exportPDF(genToPaper(ok, unitOf), (n) => setBusy(`PDFを作成 ${n}`)); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setBusy(""); };
   return (<>
     <section className="sec">
-      <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
+      <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。
+      {(() => { const df = d.items.filter((i) => i.status === "active" && i.defer && i.nextDue > today()); if (!df.length) return null; const ex = (d.exams || []).find((e) => e.id === df[0].defer.examId); const by = SUBJECTS.map((sb) => [sb, df.filter((i) => i.subject === sb).length]).filter((x) => x[1]);
+        return (<p className="ph-note defer-note">定期テスト{ex ? `「${ex.name || "テスト"}」（${ex.date}）` : ""}の14日前に入ったので、範囲外の {df.length} 件（{by.map(([sb, n]) => `${sb} ${n}`).join("・")}）はテスト翌日まで出しません。範囲は「教材 → 定期テスト」で変えられます。</p>); })()}類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
       {cands.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "明日の分はありません。"}</p>
         : (<>{[...SUBJECTS, ...cands.map((i) => i.subject)].filter((sb, k, arr) => arr.indexOf(sb) === k && cands.some((i) => i.subject === sb)).map((sb) => (<div key={sb}><h4 className="sub-h"><Dot s={sb} />{sb}<em className="pg"> {cands.filter((i) => i.subject === sb).length}件</em></h4>
           {cands.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const on = sel.has(i.id); return (<label className={"irow pick" + (on ? " on" : "")} key={i.id}><input type="checkbox" checked={on} onChange={() => toggleSel(i.id)} disabled={!!busy} /><div className="ir-main"><div className="ir-label">{i.label}<em className="pg"> {problemCount(i)}問</em>{!auto.has(i.id) && !on && <em className="pg"> 繰り越し</em>}</div><div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""} · {i.failCount}回{examRangeIds(d).has(i.unitId) ? " · 定期の範囲" : ""}{fresh(i) ? <> · 類題あり <button className="lnk" onClick={(e) => { e.preventDefault(); setRedo((r) => new Set([...r, i.id])); }}>作り直す</button></> : redo.has(i.id) ? " · 作り直す" : ""}{i.nextDue > today() ? ` · 期日 ${i.nextDue.slice(5)}` : i.nextDue < today() ? ` · ${diffDays(i.nextDue, today())}日繰り越し中` : ""}</div></div></label>); })}</div>))}
@@ -2211,7 +2213,7 @@ const CSS = `
 .msg.fixed{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
 .morning .btn-main{margin-top:0}
 .lp-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.lp-row:last-of-type{border-bottom:none}.sub-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink2);margin:22px 0 4px}.sub-h:first-child{margin-top:6px}.sub-h .pg{font-weight:400}
-.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}.next-hint{margin:12px 0 0;text-align:right}.next-hint .lnk{font-size:13px;font-weight:700;color:var(--ink);padding:6px 0}
+.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}.defer-note{background:#FFF7E8;border:1px solid #E8D3A6;color:#6B4A12;border-radius:3px;padding:8px 10px;margin:-4px 0 10px}.next-hint{margin:12px 0 0;text-align:right}.next-hint .lnk{font-size:13px;font-weight:700;color:var(--ink);padding:6px 0}
 .c-label.tap{display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;color:var(--ink);cursor:pointer}
 .irow.pick{cursor:pointer}.irow.pick input[type=checkbox]{width:auto;margin-top:4px}.irow.pick.on{background:#F3F6F3;margin:0 -13px;padding:8px 13px}
 .grow{padding:10px 0;border-bottom:1px solid var(--line)}.grow:last-of-type{border-bottom:none}.grow.done{background:#F3F6F3;margin:0 -13px;padding:10px 13px}.grow.skip .c-label{color:var(--ink3);text-decoration:line-through}

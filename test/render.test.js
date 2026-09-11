@@ -449,3 +449,10 @@ test("右下の +: 押すとまず撮る／選ぶ（ファイル入力）。一�
   assert.ok(i1 > 0 && (i2 < 0 || i2 > i1), "ファイルを選ぶ前は教科・種別を出さない（または後ろ）");
   assert.ok(mat.includes("取り込み済み（数学）"));
 });
+test("明日の紙: 定期テストの14日前で後ろ倒し中の項目があれば、教科ごとの件数を出す", () => {
+  const d = F.demo(); d.exams = [{ id: "e9", name: "期末", date: F.day(7), unitIds: ["u1"], actual: {}, updatedAt: "" }];
+  const dd = m.deferForExam(d); const n = dd.items.filter((i) => i.defer).length; assert.ok(n > 0, "後ろ倒しが起きる前提");
+  const h = render(m.PaperTab, { d: dd, save: noop, initial: "print" }).html;
+  assert.ok(h.includes('class="ph-note defer-note"') && h.includes(`範囲外の ${n} 件`) && h.includes("期末"));
+  assert.ok(!render(m.PaperTab, { d: F.demo(), save: noop, initial: "print" }).html.includes("defer-note"));
+});
