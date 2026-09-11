@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 09:15"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 09:16"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -702,7 +702,7 @@ async function nameItems(items, unitOf, model = null, meta = {}, existing = []) 
       const qb64 = s0.src.qpath ? await stGet(s0.src.qpath) : null;
       stage = "AI";
       t = await callAI([imgBlock(b64), ...(qb64 ? [{ type: "text", text: "【問題用紙】上の答案に対応する問題用紙" }, imgBlock(qb64)] : []), { type: "text", text: `${qb64 ? `1枚目は中学1年${s0.subject}の定期テストの答案（${s0.src.page}枚目）、2枚目はその問題用紙。答案の青い点の印の位置にある答えに対応する問題を、問題用紙から探して読んでください。` : `添付は中学1年${s0.subject}の${s0.src.kind} p.${s0.src.page}。`}${u ? `単元は「${u.name}」。` : ""}青い小さな点の印（${group.length > 1 ? `1〜${group.length}の番号がそれぞれの点の右横にある` : "1つ"}）の位置にある問題を子どもが間違えました。印は問題文や答えの上に小さく置いてあるので、点のある行の問題を読んでください。紙に元からある赤ペンの ○・×・✓・点数は採点の書き込みなので、印の位置の判断には使わず、青い印の無い問題は挙げないでください。印ごとに、その問題を解くのに必要な「身についていないと解けない一点」を項目として書いてください。${exText}` }],
-        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。音声を聞いて答えるリスニングの問題は fmt を「リスニング」にし、listening_total にこの紙のリスニングの問題数（小問ごと）を入れる（無ければ 0）。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false,"same":0}],"listening_total":0}`, 3000, model);
+        `labelは後日その一点だけを聞き直せる粒度（「一次方程式」ではなく「係数が分数の一次方程式」）。label は「〜力」「〜能力」で終わらせず、動詞で止める（「読解力」ではなく「指示語の内容を答える」、「計算力」ではなく「濃度の式を立てる」）。summaryは問題の要約（30字以内。問題文をそのまま写さない）。fmtは ${FORMATS.join("／")} から。rote は「単純計算・つづり・年号・公式や用語の暗記など、なぜそうなるかを説明する内容がないもの」なら true。音声を聞いて答えるリスニングの問題は fmt を「リスニング」にし、listening_total にこの紙のリスニングの問題数（小問ごと）を入れる（無ければ 0）。印の番号順に。JSONのみ: {"items":[{"n":1,"label":"","summary":"","fmt":"","rote":false,"same":0}],"listening_total":0}`, 3000, model);
       stage = "応答"; const parsed = parseItemsLoose(t); const rs = parsed.items || [];
       meta.listening.push({ path, subject: s0.subject, kind: s0.src.kind, page: s0.src.page, total: Number(parsed.listening_total) || 0 });
       group.forEach((i, k) => { const r = rs.find((x) => Number(x.n) === k + 1) || rs[k]; if (r && r.label) { const sm = Number(r.same) > 0 && exList[Number(r.same) - 1] ? exList[Number(r.same) - 1].id : null; out[i.id] = { label: r.label, fmt: FORMATS.includes(r.fmt) ? r.fmt : "", note: r.summary || "", named: true, noWhy: r.rote === true, ...(sm ? { same: sm } : {}) }; } });
@@ -1342,7 +1342,7 @@ function WeekTab({ d, save, initial }) {
       {mode === "make" && (<><MakePapers d={d} save={save} initialKind={initial === "cum" ? "累積" : "週次"} />
         <details className="det" open={initial === "manual"}><summary>ワークの結果を記録（学校のワークや問題集）</summary><ManualTest d={d} save={save} /></details></>)}
       {mode === "exam" && <ExamTab d={d} save={save} />}
-      {mode === "mock" && <MockMaker d={d} save={save} preset={preset} />}
+      {mode === "mock" && <MockMaker d={d} save={save} preset={preset} onExam={() => setMode("exam")} />}
       {mode === "rw" && (<><div className="seg sm"><button className={rw === "read" ? "on" : ""} onClick={() => setRw("read")}>読解</button><button className={rw === "write" ? "on" : ""} onClick={() => setRw("write")}>記述</button></div>
         {rw === "read" ? <ReadingMaker d={d} save={save} /> : <WritingFlow d={d} save={save} />}</>)}
     </div>
@@ -1400,7 +1400,7 @@ function MakePapers({ d, save, initialKind = "週次" }) {
       {papers.map((p) => (<PaperRow key={p.id} p={p} d={d} save={save} />))}</section>)}
   </>);
 }
-function MockMaker({ d, save, preset }) {
+function MockMaker({ d, save, preset, onExam }) {
   const exams = upcomingExams(d);
   const [exId, setExId] = useState(exams[0]?.id || "");
   const ex = exams.find((e) => e.id === exId) || exams[0] || null;
@@ -1427,7 +1427,8 @@ function MockMaker({ d, save, preset }) {
     if (made.length) save({ ...d, papers: [...d.papers, ...made] });
   };
   const pdfAll = async () => { setPdfErr(""); setPdfBusy("開始"); try { await exportPDF(todays, (x) => setPdfBusy(String(x))); } catch (e) { notify(e.message || "PDFを作れませんでした", "err"); } setPdfBusy(""); };
-  if (!exams.length) return <section className="sec"><p className="empty">範囲を選んだ定期テストがありません。「定期」でテストを登録し、出題範囲を選んでください。</p></section>;
+  if (!exams.length) return (<section className="sec"><p className="empty">範囲を選んだ定期テストがありません。定期テストを登録して出題範囲を選ぶと、ここで模試を作れます。</p>
+    {onExam && <button className="btn-main" onClick={onExam}>定期テストを登録する</button>}</section>);
   return (<>
     <section className="sec">
       <p className="lead">定期テストの範囲で、本番と同じ形式（50分・100点満点・配点つき・大問構成）の模試を1教科ずつ作ります。返却されたテストが取り込んであれば、その形式に寄せます。50分で解かせ、赤ペンで採点して「撮る」で読み取ると、100点換算で記録され、×は未定着に入ります。</p>

@@ -1618,3 +1618,13 @@ describe("画面冒頭の説明", () => {
     m.stubs.localStorage.removeItem("hint_seen");
   });
 });
+
+describe("AI の項目名の付け方", () => {
+  test("nameItems の指示に「〜力」で終わらせず動詞で止める規則がある", async () => {
+    const orig = globalThis.fetch; let sent = "";
+    m.stubs.localStorage.setItem("sb_url", "https://x.supabase.co"); m.stubs.localStorage.setItem("sb_key", "k"); m.stubs.localStorage.setItem("anthropic_api_key", "sk");
+    globalThis.fetch = async (url, opts) => { if (url.includes("/storage/")) return { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer }; sent = String(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"items":[]}' }] }) }; };
+    try { await m.nameItems([{ id: "a", subject: "数学", unitId: "u", named: false, src: { path: "fam/math/wb/77.jpg", kind: "ワーク", page: 77, x: 0.2, y: 0.2 } }], () => null); assert.ok(sent.includes("動詞で止める") && sent.includes("濃度の式を立てる"), "指示に規則が入る"); }
+    finally { globalThis.fetch = orig; for (const k of ["sb_url", "sb_key", "anthropic_api_key"]) m.stubs.localStorage.removeItem(k); }
+  });
+});

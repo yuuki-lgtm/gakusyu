@@ -219,7 +219,7 @@ test("テスト/模試: 定期テストの範囲の教科が出る。空デー�
   const html = render(m.WeekTab, { d: F.demo(), save: noop, initial: "mock" }).html;
   assert.ok(html.includes("2学期中間") && html.includes("模試を作る（数学・英語）"));
   assert.ok(!render(m.WeekTab, { d: F.empty(), save: noop, initial: "mock" }).html.includes("模試を作る（") );
-  assert.ok(render(m.WeekTab, { d: F.empty(), save: noop, initial: "mock" }).html.includes("範囲を選んだ定期テストがありません"));
+  const mk = render(m.WeekTab, { d: F.empty(), save: noop, initial: "mock" }).html; assert.ok(mk.includes("範囲を選んだ定期テストがありません") && mk.includes(">定期テストを登録する</button>"), "定期テストのタブへ行くボタン");
   assert.ok(render(m.WeekTab, { d: F.demo(), save: noop, initial: "mock:英語" }).html.includes("模試を作る（英語）"));
 });
 test("テスト/模試: 返却テストがある教科はその旨が出る", () => {
