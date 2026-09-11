@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 18:43"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 18:50"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -971,7 +971,8 @@ function paperText(p) {
 }
 function genToPaper(items, unitOf) {
   const qs = []; let n = 0; const refs = [];
-  const guideOf = (i, sec) => (needsGuide(i) && i.guide && i.guide.explain ? [{ guide: true, sec, q: i.guide.explain, example: i.guide.example, pages: i.guide.pages, label: i.label }] : []);
+  // 考え方と例題は、初回と落として戻ってきた回（再挑戦）だけ。正解して間隔をあけて戻ってきた回（再出題）は白紙再生を確かめる回なので載せない
+  const guideOf = (i, sec) => (needsGuide(i) && i.guide && i.guide.explain && candKind(i).k !== "review" ? [{ guide: true, sec, q: i.guide.explain, example: i.guide.example, pages: i.guide.pages, label: i.label }] : []);
   // 項目の区切りの小見出し。教科が複数あれば「教科・単元」、1教科だけなら単元だけ。単元が無く1教科なら見出しなし
   const multi = new Set(items.map((i) => i.subject)).size > 1;
   const secOf = (i, u) => (multi ? `${i.subject}${u ? "・" + u.name : ""}` : u ? u.name : "");

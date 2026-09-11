@@ -1637,3 +1637,14 @@ describe("分散の取り消し", () => {
     const same = { ...d, items: [it({ id: "f", nextDue: T })] }; assert.equal(m.undoSpread(same), same);
   });
 });
+
+describe("考え方と例題を載せる回", () => {
+  test("初回と再挑戦（前回 ×）には載せ、再出題（前回 ○ で戻ってきた回）には載せない", () => {
+    const u = { id: "u", name: "正負の数" };
+    const base = { id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", failCount: 2, etype: "知らなかった", gen: { problems: [{ q: "q", a: "a" }] }, guide: { explain: "こう考える", example: { q: "eq", a: "ea" }, pages: "p.10" } };
+    const has = (i) => m.genToPaper([i], () => u).questions.some((q) => q.guide);
+    assert.equal(has({ ...base, history: [] }), true, "初回");
+    assert.equal(has({ ...base, level: 0, history: [{ d: day(-1), r: "x", self: "x", etype: "" }] }), true, "再挑戦");
+    assert.equal(has({ ...base, level: 1, history: [{ d: day(-3), r: "o", self: "o", etype: "" }] }), false, "再出題には載せない");
+  });
+});
