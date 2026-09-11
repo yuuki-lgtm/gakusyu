@@ -29,6 +29,7 @@ const SCREENS = (d) => [
   ["テスト/既定", m.WeekTab, { d, save: noop, initial: null }],
   ["テスト/定期", m.WeekTab, { d, save: noop, initial: "exam" }],
   ["その他", m.MoreTab, { d, go: noop }],
+  ["最後のページ", m.LastPageStep, { d, save: noop }],
   ["使い方", m.GuideTab, { go: noop }],
   ["登録/単元", m.RegTab, { d, save: noop, initial: "unit" }],
   ["登録/項目", m.RegTab, { d, save: noop, initial: "item" }],
@@ -102,12 +103,14 @@ test("デモ: 今日/採点 に昨日印刷した項目が並び、既定は採�
   assert.ok(!p.includes('ir-label">負の数のかけ算'), "印刷済みは印刷に出ない");
   assert.ok(p.includes("採点待ちの分をもう一度PDFにする"));
 });
-test("デモ: ホームは「夜の作業」が先頭で、その中身（採点・印刷・×登録）は別の行に並べない", () => {
+test("デモ: ホームは夜にやることを独立した行で出す。採点 → 明日の紙 → ×の登録 → 最後のページ の順。ウィザード（night）は無い", () => {
   const { A } = m.nextActions(F.demo());
   const ks = A.map((a) => a.k);
-  assert.equal(ks[0], "night");
-  for (const k of ["mark", "print", "wb", "today", "confirm"]) assert.ok(!ks.includes(k), k + " は並べない");
-  assert.ok(A[0].why.includes("採点 1 件") && A[0].why.includes("明日の分 3 件"));
+  assert.ok(!ks.includes("night"));
+  const order = ["gradeDaily", "print", "items", "last"].filter((k) => ks.includes(k));
+  assert.deepEqual(order, ks.filter((k) => order.includes(k)), "並び順");
+  assert.equal(ks[0], "gradeDaily"); assert.ok(A[0].title.includes("昨日の紙を採点する（1件）"));
+  assert.ok(A.find((a) => a.k === "print").title.includes("明日の紙を作る（3件"));
 });
 test("デモ: 分析に保持率が出る", () => {
   const { html } = render(m.AnaTab, { d: F.demo() });
@@ -241,15 +244,6 @@ test("今日/採点: 「紙を撮る」があり、紙の順番が出る", () =>
   const html = render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade" }).html;
   assert.ok(html.includes("紙を撮る（○×の欄を読み取る") && html.includes("紙の1番目"));
 });
-for (const [state, make] of Object.entries(STATES)) for (let st = 0; st < 4; st++) test(`描画: 夜の作業 ${st + 1}/4（${state}）`, () => {
-  m.nightSave(st);
-  try { const { html, errors } = render(m.NightFlow, { d: make(), save: noop, go: noop });
-    assert.equal(errors.length, 0, errors.join(", "));
-    assert.ok(!html.includes(`夜の作業 ${st + 1}/4`) && html.includes(`<strong>${m.NIGHT_STEPS[st][1]}</strong>`) && html.includes(st < 3 ? "次へ：" : "終わる"), "「夜の作業 N/4」の小さな表記は出さず、段階名を見出しに");
-    assert.equal(html.includes("に戻る"), m.nightPrev(make(), st) >= 0, "戻る先はやることがある段階だけ");
-    for (const bad of ["undefined", "NaN"]) assert.ok(!html.includes(bad));
-  } finally { m.nightSave(null); }
-});
 test("最後のページ: 取り込んだ教科・教材ごとに1行。済みの数と最後のページ", () => {
   const html = render(m.LastPageStep, { d: F.demo(), save: noop }).html;
   assert.ok(html.includes("数学のワーク") && html.includes("登録済み 1件／3件（p.10 まで）") && html.includes("数学の教科書") && html.includes("英語の教科書"));
@@ -356,15 +350,6 @@ test("その他→登録: 落とした項目が既定で開き、メニューに
   const reg = render(m.RegTab, { d: F.demo(), save: noop, initial: null }).html;
   assert.ok(reg.includes('class="on">落とした項目<') && reg.includes("×だった問題をタップすると印が付き"));
 });
-test("夜の作業の進み具合は番号つきのステップ表示（ボタンではない）", () => {
-  m.nightSave(1);
-  try { const html = render(m.NightFlow, { d: F.demo(), save: noop, go: noop }).html;
-    assert.ok(html.includes('<ol class="steps"') && html.includes('<li class="done">') && html.includes('<li class="on">'));
-    assert.ok(!html.includes("✓") && !html.includes("–") && ["1", "2", "3", "4"].every((n) => html.includes(`<span class="st-n">${n}</span>`)), "番号は常に 1〜4");
-    assert.ok(html.includes('<span class="st-s">済</span>') && html.includes('<span class="st-s">いま</span>'));
-    assert.ok(!html.includes("night-steps")); }
-  finally { m.nightSave(null); }
-});
 test("使い方: ホームには「1週間の流れ」を置かず、使い方への動線だけ。その他の下から2番目に「使い方」。使い方の画面はいまの呼び名を使う", () => {
   const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
   assert.ok(!h.includes("1週間の流れ") && h.includes('class="guide-row"') && h.includes(">使い方を見る</button>") && !h.includes("使い方がわからない"));
@@ -372,22 +357,9 @@ test("使い方: ホームには「1週間の流れ」を置かず、使い方�
   assert.equal(rows[rows.length - 2], "使い方"); assert.equal(rows[rows.length - 1], "最新版に更新（再読み込み）");
   const g = render(m.GuideTab, { go: noop }).html;
   for (const t of ["このアプリは何をするもの？", "毎日（平日）", "週末", "定期テストの前と後", "最初に1回だけ", "困ったとき"]) assert.ok(g.includes(`<h3 class="s-h">${t}</h3>`), t);
-  for (const t of ["テスト → 5教科テスト", "テスト → 定期テスト", "その他 → 登録 → 教材の取り込み", "夜の作業", "今日の紙をもう一度PDFに"]) assert.ok(g.includes(t), t);
+  for (const t of ["テスト → 5教科テスト", "テスト → 定期テスト", "その他 → 登録 → 教材の取り込み", "昨日の紙を撮って採点", "今日の紙をもう一度PDFに"]) assert.ok(g.includes(t), t);
+  assert.ok(!g.includes("「夜の作業」"), "ウィザードの名前は使わない");
   assert.ok(!g.includes("週末→") && !g.includes("「作る」"));
-});
-test("夜の作業: やることが無い段階は飛ばす。空のデータなら最初から「明日の分」、次へは実際の行き先", () => {
-  m.nightSave(null);
-  const e = render(m.NightFlow, { d: F.empty(), save: noop, go: noop }).html;
-  assert.ok(e.includes("<strong>明日の紙</strong>") && e.includes("終わる") && !e.includes("に戻る"));
-  assert.equal((e.match(/<li class="skip past">/g) || []).length, 3, "飛ばして通過した段階は線を緑にするため past を付ける");
-  assert.equal((e.match(/<span class="st-s">飛ばす<\/span>/g) || []).length, 3); assert.ok(!e.includes("–"));
-  const d = F.demo(); const h = render(m.NightFlow, { d, save: noop, go: noop }).html;
-  assert.ok(h.includes("<strong>昨日の採点</strong>") && h.includes("次へ：×を登録 →"));
-  const noMat = { ...d, materials: [] }; const h2 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html;
-  assert.ok(h2.includes("<strong>昨日の採点</strong>") && h2.includes("次へ：明日の紙 →") && (h2.match(/<li class="skip">/g) || []).length === 2, "まだ通過していない飛ばす段階は skip だけ");
-  m.nightSave(2);
-  try { const h3 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html; assert.ok(h3.includes("<strong>最後のページ</strong>") && h3.includes("← 昨日の採点に戻る"), "途中保存は尊重し、戻る先は飛ばした段階を越える"); }
-  finally { m.nightSave(null); }
 });
 test("今日/印刷: 候補は教科ごとに見出しで分かれ、行には教科名を繰り返さない", () => {
   const html = render(m.TodayTab, { d: F.demo(), save: noop, initial: "print" }).html;
@@ -453,10 +425,6 @@ test("画面冒頭の説明: 未読なら開いた状態で × 付き、既読�
   const b = render(m.Hint, { k: "t1", children: "説明です" }).html; assert.ok(b.includes('class="hint"') && !b.includes("説明です") && b.includes(">?</button>"));
   m.stubs.localStorage.removeItem("hint_seen");
 });
-test("ホーム: 夜の作業の行は見出し「夜の作業」だけ。手順は説明文に", () => {
-  const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
-  assert.ok(h.includes('<div class="hero-t">夜の作業</div>') && h.includes("採点 → ×の登録 → 最後のページ → 明日の紙。"));
-});
 test("×の登録: 教材が1種類だけなら、押せない1つの表示（ボタンにしない）", () => {
   const d = F.demo(); d.materials = d.materials.filter((mt) => mt.subject !== "数学" || mt.kind === "ワーク");
   const h = render(m.ItemReg, { d, save: noop }).html;
@@ -468,4 +436,9 @@ test("未定着リスト: 誤答の種類は小さいチップ（select は無�
   assert.ok(!h.includes("et-sel") && h.includes('class="et et-cur"'));
   assert.ok(!h.includes('<em class="tag">説明不要</em>') && h.includes('class="et why on">説明不要</button>'));
   assert.ok(h.includes('aria-label="削除">×</button>') && !h.includes("取り消す"));
+});
+test("今日: 採点の下に「次は明日の紙を作る →」、明日の紙の下に「次はワークの×を登録する →」。登録→落とした項目の下に今日の最後のページ", () => {
+  const g = render(m.TodayTab, { d: F.demo(), save: noop, initial: "grade", go: noop }).html; assert.ok(g.includes("次は明日の紙を作る →"));
+  const p = render(m.TodayTab, { d: F.demo(), save: noop, initial: "print", go: noop }).html; assert.ok(p.includes("次はワークの×を登録する →"));
+  const r = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html; assert.ok(r.includes("今日やった最後のページ番号を入れて"));
 });

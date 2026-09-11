@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 15:06"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 15:09"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -554,9 +554,14 @@ function nextActions(d) {
   else {
     const noProg = SUBJECTS.filter((sub) => d.units.some((u) => u.subject === sub) && !d.units.some((u) => u.subject === sub && u.learnedOn));
     if (noProg.length) A.push({ k: "prog", title: `進度を入れる（${noProg.join("・")}）`, why: "「ここまで習った」が未設定の教科があります。これがないと作問できません。", tab: "reg", mode: "unit", t: "1分" });
-    const ns = nightLoad();
     const toGrade0 = d.items.filter((i) => i.printedOn && i.printedOn < t).length, daily0 = pickDaily(d);
-    A.push({ k: "night", title: ns > 0 ? "夜の作業の続き" : "夜の作業", why: `${ns > 0 ? `${ns + 1}/${NIGHT_STEPS.length}「${NIGHT_STEPS[ns][1]}」から。` : "採点 → ×の登録 → 最後のページ → 明日の紙。"}${toGrade0 ? `採点 ${toGrade0} 件。` : ""}${daily0.chosen.length ? `明日の分 ${daily0.chosen.length} 件${daily0.rest.length ? `（繰り越し ${daily0.rest.length} 件）` : ""}。` : ""}1画面ずつ「次へ」で進みます。途中で閉じても今日の分は続きから。`, tab: "night", t: "5分" });
+    const hasMat = SUBJECTS.some((sub) => MKINDS.some((mk) => matsOf(d, sub, mk).length)), hasBook = SUBJECTS.some((sub) => BOOK_KINDS.some((mk) => matsOf(d, sub, mk).length));
+    const addedToday = d.items.some((i) => i.createdOn === t), doneToday = (d.materials || []).some((mt) => mt.doneOn === t);
+    // 夜にやることは独立した行で（順番は並びで示すだけ。ウィザードは 2026-09-11 に廃止）。採点 → 明日の紙 → ×の登録 → 最後のページ
+    if (toGrade0) A.push({ k: "gradeDaily", title: `昨日の紙を採点する（${toGrade0}件）`, why: "紙を撮れば ○× を読み取ります。違う行だけ直して「まとめて確定」。", tab: "today", mode: "grade", t: "2分" });
+    if (daily0.chosen.length) A.push({ k: "print", title: `明日の紙を作る（${daily0.chosen.length}件${daily0.rest.length ? `・繰り越し ${daily0.rest.length}` : ""}）`, why: "類題を作って PDF に。採点を先に済ませてから。", tab: "today", mode: "print", t: "生成2分＋印刷" });
+    if (hasMat && !addedToday) A.push({ k: "items", title: "今日のワークの×を登録する", why: "ページを開いて×をタップ。×が無い日は最後のページだけ。", tab: "reg", mode: "item", t: "2分" });
+    if (hasBook && !doneToday) A.push({ k: "last", title: "今日の最後のページを入れる", why: "「p.N までやった」で進度が進みます。×登録の画面の下にあります。", tab: "reg", mode: "item", t: "30秒" });
     if (pending.length) A.push({ k: "grade", title: `採点した答案を撮る（${pending.length}枚待ち）`, why: "赤ペンで採点したあと、「テスト」の一覧で用紙を開いて撮れば、結果と未定着項目が自動で入ります。", tab: "week", mode: pending.some((p) => p.kind === "模試") && pending.every((p) => p.kind === "模試") ? "mock" : "make", t: "1枚2分" });
     const toGrade = d.items.filter((i) => i.printedOn && i.printedOn < t), toPrint = printSet(d);
     const mx = upcomingExams(d)[0]; const md = mx ? mockDue(d, mx, t) : null;
@@ -1027,7 +1032,7 @@ const TAB_ICONS = {
   week: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="15" rx="2" /><path d="M3.5 10.5h17M8 3.5v4M16 3.5v4" /></svg>),
   more: (<svg className="tab-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none" /></svg>),
 };
-const GROUP_OF = { home: "home", today: "home", night: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more", guide: "more" };
+const GROUP_OF = { home: "home", today: "home", week: "week", exam: "week", more: "more", reg: "more", ana: "more", export: "more", set: "more", guide: "more" };
 const openScreen = (o, t, m = null) => (m || !o[t] ? { ...o, [t]: { m, n: o[t] ? o[t].n + 1 : 0 } } : o);
 function App() {
   const [d, setD] = useState(null);
@@ -1096,8 +1101,7 @@ function App() {
       <main className="main">
         {Object.keys(opened).map((k) => { const m = opened[k].m; return (<div key={`${k}:${opened[k].n}`} hidden={tab !== k}>
           {k === "home" && <HomeTab d={d} go={go} />}
-          {k === "today" && <TodayTab d={d} save={save} initial={m} />}
-          {k === "night" && <NightFlow d={d} save={save} go={go} />}
+          {k === "today" && <TodayTab d={d} save={save} initial={m} go={go} />}
           {k === "week" && <WeekTab d={d} save={save} initial={m} />}
           {k === "reg" && <RegTab d={d} save={save} initial={m} />}
           {k === "ana" && <AnaTab d={d} />}
@@ -1142,19 +1146,19 @@ function HomeTab({ d, go }) {
 }
 
 /* ---- 今日 ---- */
-function TodayTab({ d, save, initial }) {
+function TodayTab({ d, save, initial, go }) {
   const gs = gradeSet(d);
   const [mode, setMode] = useState(initial || (gs.length ? "grade" : "print"));
   useEffect(() => { if (initial) setMode(initial); }, [initial]);
   const ps = printSet(d).length;
   return (<div className="pane">
-    <Hint k="today">夜の2ステップ。昨日の紙を見て「採点」→「印刷」で明日の分を1枚に。子どもは紙に解き、解答を見て自分の判定を書く。行をタップすると類題と解答が見えます。</Hint>
+    <Hint k="today">昨日の紙を撮って採点し、明日の紙を作る、の2つ。子どもは紙に解き、解答を見て右の欄に ○×。行をタップすると類題と解答が見えます。</Hint>
     <div className="subtabs"><button className={mode === "grade" ? "on" : ""} onClick={() => setMode("grade")}>採点{gs.length ? ` (${gs.length})` : ""}</button><button className={mode === "print" ? "on" : ""} onClick={() => setMode("print")}>明日の紙{ps ? ` (${ps})` : ""}</button></div>
-    {mode === "grade" && <TodayGrade d={d} save={save} />}
-    {mode === "print" && <TodayMake d={d} save={save} />}
+    {mode === "grade" && <TodayGrade d={d} save={save} onNext={() => setMode("print")} />}
+    {mode === "print" && <TodayMake d={d} save={save} go={go} />}
   </div>);
 }
-function TodayMake({ d, save }) {
+function TodayMake({ d, save, go }) {
   const unitOf = (id) => unitById(d, id);
   const cands = printSet(d); const printed = gradeSet(d);
   const [sel, setSel] = useState(() => new Set(pickDaily(d).chosen.map((i) => i.id)));
@@ -1214,6 +1218,7 @@ function TodayMake({ d, save }) {
           <p className="ph-note">チェック {set.length} 件（{set.reduce((a, i) => a + problemCount(i), 0)} 問）、繰り越し {cands.length - set.length} 件。</p>
           <button className="btn-main" onClick={make} disabled={!!busy || !set.length}>{busy ? `${busy}… ${sec}秒` : `明日の紙を作る（${set.length}件 → PDF）`}</button></>)}
       {log.length > 0 && <div className="loglist">{log.map((l, k) => (<div key={k}>{l}</div>))}</div>}
+      {go && <p className="next-hint"><button className="lnk" onClick={() => go("reg", "item")}>次はワークの×を登録する →</button></p>}
     </section>
     {printed.length > 0 && <section className="sec"><h3 className="s-h">採点待ち <span className="cnt">{printed.length}件</span></h3><p className="lead">紙をなくしたときは、同じ内容をもう一度PDFにできます（類題は作り直しません）。</p><button className="btn-sm wide" onClick={reprint} disabled={!!busy}>採点待ちの分をもう一度PDFにする</button></section>}
   </>);
@@ -1238,7 +1243,7 @@ function GradeRowDetail({ i, d, save }) {
         {st.itemId ? <div className="ds-ck">項目として登録済み{d.items.some((x) => x.id === st.itemId) ? "" : "（削除済み）"}</div> : <button className="btn-sm ds-add" onClick={() => { const ni = stepToItem(i, st, n); save((cur) => ({ ...cur, items: [...cur.items, ni].map((x) => (x.id === i.id ? { ...x, diag: { ...x.diag, steps: (x.diag.steps || []).map((s2, k) => (k === n ? { ...s2, itemId: ni.id } : s2)) }, updatedAt: now() } : x)), log: { ...cur.log, [today()]: true } })); }}>この手順を項目として登録（明日の紙に出る）</button>}</div></div>))}</div>)}
   </div>);
 }
-function TodayGrade({ d, save }) {
+function TodayGrade({ d, save, onNext }) {
   const unitOf = (id) => unitById(d, id);
   const set = gradeSet(d);
   const [open, setOpen] = useState({});
@@ -1282,34 +1287,9 @@ function TodayGrade({ d, save }) {
       {missingE.length > 0 && <p className="warn-t">「できなかった」には誤答の種類を選んでください（{missingE.length}件）。</p>}
       {set.length - decided.length > 0 && <p className="ph-note">押していない {set.length - decided.length} 件は採点待ちのまま残ります。「やっていない」を押すと次の印刷に入ります。</p>}
       <p className="rule">用語は「解けた」で次へ進みます。それ以外は「説明もできた」でないと7日から先へ進みません。落とすと1日に戻り、項目は消えません。</p>
+      {onNext && <p className="next-hint"><button className="lnk" onClick={onNext}>次は明日の紙を作る →</button></p>}
     </>)}
   </section>);
-}
-/* ---- 夜の作業（採点 → ×登録 → 最後のページ → 明日の分。1画面ずつ「次へ」。途中で閉じても今日の分は続きから） ---- */
-const NIGHT_KEY = "night_step";
-const NIGHT_STEPS = [["grade", "昨日の採点", "昨日の紙を撮るか、行ごとに押して「まとめて確定」"], ["items", "×を登録", "今日のワークの×をページでタップして「まとめて登録」"], ["last", "最後のページ", "今日やった最後のページまでを「やった」に"], ["print", "明日の紙", "類題を作って1つのPDFに。印刷して机へ"]];
-const nightLoad = (dflt = 0) => { try { const v = JSON.parse(localStorage.getItem(NIGHT_KEY) || "null"); return v && v.d === today() && v.step >= 0 && v.step < NIGHT_STEPS.length ? v.step : dflt; } catch { return dflt; } };
-const nightSave = (step) => { try { if (step === null) localStorage.removeItem(NIGHT_KEY); else localStorage.setItem(NIGHT_KEY, JSON.stringify({ d: today(), step })); } catch {} };
-/* その段階にやることがあるか。無い段階は「次へ」で飛ばす（教材が無い家庭や、まだ紙が無い初日でも明日の分に着く） */
-const nightHas = (d, k) => (k === "grade" ? gradeSet(d).length > 0 : k === "items" ? SUBJECTS.some((sub) => MKINDS.some((mk) => matsOf(d, sub, mk).length)) : k === "last" ? SUBJECTS.some((sub) => BOOK_KINDS.some((mk) => matsOf(d, sub, mk).length)) : true);
-const nightNext = (d, from) => { for (let i = from + 1; i < NIGHT_STEPS.length; i++) if (nightHas(d, NIGHT_STEPS[i][0])) return i; return NIGHT_STEPS.length - 1; };
-const nightPrev = (d, from) => { for (let i = from - 1; i >= 0; i--) if (nightHas(d, NIGHT_STEPS[i][0])) return i; return -1; };
-function NightFlow({ d, save, go }) {
-  const [step, setStep] = useState(() => { const v = nightLoad(null); return v === null ? nightNext(d, -1) : v; }); // 途中なら続きから、初回はやることがある最初の段階から
-  const move = (n) => { setStep(n); nightSave(n); try { window.scrollTo(0, 0); } catch {} };
-  const finish = () => { nightSave(null); go("home"); };
-  const [k, title, hint] = NIGHT_STEPS[step];
-  const next = step < NIGHT_STEPS.length - 1 ? nightNext(d, step) : -1, prev = nightPrev(d, step);
-  return (<div className="pane">
-    <div className="night-h"><strong>{title}</strong><em>{hint}</em></div>
-    <ol className="steps" aria-label="進み具合">{NIGHT_STEPS.map(([kk, t], i) => (<li key={kk} className={i === step ? "on" : !nightHas(d, kk) ? (i < step ? "skip past" : "skip") : i < step ? "done" : ""}><span className="st-n">{i + 1}</span><span className="st-l">{t}</span><span className="st-s">{i === step ? "いま" : !nightHas(d, kk) ? "飛ばす" : i < step ? "済" : ""}</span></li>))}</ol>
-    {k === "grade" && <TodayGrade d={d} save={save} />}
-    {k === "items" && <ItemReg d={d} save={save} />}
-    {k === "last" && <LastPageStep d={d} save={save} />}
-    {k === "print" && <TodayMake d={d} save={save} />}
-    <div className="night-nav">{next >= 0 ? <button className="btn-main" onClick={() => move(next)}>次へ：{NIGHT_STEPS[next][1]} →</button> : <button className="btn-main" onClick={finish}>終わる</button>}
-      {prev >= 0 && <button className="lnk back" onClick={() => move(prev)}>← {NIGHT_STEPS[prev][1]}に戻る</button>}</div>
-  </div>);
 }
 /* 今日やった最後のページ（教科・教材ごとに1行）。ワーク・教科書を取り込んだ教科だけ */
 function LastPageStep({ d, save }) {
@@ -1320,7 +1300,7 @@ function LastPageStep({ d, save }) {
   const mark = (x) => { const page = parseInt(val(x), 10); if (!page) return; const n = x.ms.filter((mt) => mt.page <= page && !mt.doneOn).length; save(applyAutoProgress(markDoneUpTo({ ...d, log: { ...d.log, [today()]: true } }, x.s, x.k, page))); notify(n ? `${x.s}の${x.k} p.${page} までの ${n} ページを「やった」にしました` : `${x.s}の${x.k} p.${page} までは「やった」になっています`); };
   return (<section className="sec">
     <p className="lead">今日やった最後のページ番号を入れて「ここまで」。そのページまでが「やった」になり、進度も進みます。×を登録したページは済んでいます。やっていない教科は飛ばして「次へ」。</p>
-    {rows.length === 0 && <p className="empty">ワーク・教科書を取り込んだ教科がありません。「次へ」。</p>}
+    {rows.length === 0 && <p className="empty">ワーク・教科書を取り込んだ教科がありません。</p>}
     {rows.map((x) => (<div className="lp-row" key={x.s + x.k}><Dot s={x.s} /><span className="lp-n">{x.s}の{x.k}</span><span className="lp-d">登録済み {x.ms.filter((mt) => mt.doneOn).length}件／{x.ms.length}件{lastDone(x) ? `（p.${lastDone(x)} まで）` : ""}</span><input className="num" type="number" inputMode="numeric" value={val(x)} onChange={(e) => setPg((p) => ({ ...p, [x.s + x.k]: e.target.value }))} /><button className="btn-sm" onClick={() => mark(x)}>ここまで</button></div>))}
   </section>);
 }
@@ -1838,6 +1818,7 @@ function ItemReg({ d, save }) {
       <Fld label="どう間違えたか（任意）"><input value={note} onChange={(e) => setNote(e.target.value)} /></Fld>
       <div className="grid2"><Fld label="形式"><select value={fmt} onChange={(e) => setFmt(e.target.value)}>{FORMATS.map((f) => (<option key={f}>{f}</option>))}</select></Fld><Fld label="誤答の種類"><select value={etype} onChange={(e) => setEtype(e.target.value)}>{ETYPES.map((f) => (<option key={f}>{f}</option>))}</select></Fld></div>
       <button className="btn-main" onClick={add}>未定着リストに追加</button></details>
+    <LastPageStep d={d} save={save} />
   </section>);
 }
 function ItemList({ d, save }) {
@@ -1966,7 +1947,7 @@ function GuideTab({ go }) {
     <S t="毎日（平日）">
       <ol className="g-ol">
         <li><b>子ども</b>：机の上の紙を解く → 答えを見て、右の欄に自分で ○ か × を書く → 学校のワークをやる。</li>
-        <li><b>親（夜5分）</b>：ホームの「夜の作業」を押す。①昨日の紙を撮って採点 → ②ワークの×をタップして登録 → ③今日やった最後のページを入れる → ④明日の紙を作って印刷。「次へ」で順に進みます。</li>
+        <li><b>親（夜5分）</b>：ホームに出る順に。昨日の紙を撮って採点 → 明日の紙を作って印刷 → ワークの×をタップして登録 → 今日の最後のページを入れる。押せば直接その画面が開きます。</li>
       </ol>
     </S>
     <S t="週末">
@@ -2198,16 +2179,8 @@ const CSS = `
 .ctr{text-align:center;cursor:pointer}.sql{background:#1E2321;color:#D8DED8;font-size:10px;line-height:1.6;padding:10px;border-radius:3px;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;margin:0 0 12px;white-space:pre}
 .msg.fixed{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));background:#1E2321;color:#fff;padding:9px 12px;border-radius:3px;text-align:center;font-size:12px}
 .morning .btn-main{margin-top:0}
-.night-h{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}.night-h strong{font-size:18px}.night-h em{font-style:normal;font-size:12px;color:var(--ink2)}
-.steps{display:flex;list-style:none;margin:0 0 14px;padding:0}.steps li{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--ink3)}
-.steps li:not(:last-child)::after{content:"";position:absolute;top:11px;left:calc(50% + 13px);right:calc(-50% + 13px);height:1px;background:var(--line)}.steps li.done:not(:last-child)::after,.steps li.past:not(:last-child)::after{background:#2F6F5E}
-.steps li.skip .st-n,.steps li.skip .st-l{opacity:.4}.steps li.skip .st-n{border-style:dashed}
-.st-s{font-size:9px;line-height:1;color:var(--ink3);min-height:9px}.steps li.done .st-s{color:#2F6F5E}.steps li.on .st-s{color:var(--ink);font-weight:700}
-.st-n{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:var(--card);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--ink3)}
-.steps li.on .st-n{background:var(--ink);border-color:var(--ink);color:#fff}.steps li.on .st-l{color:var(--ink);font-weight:700}.steps li.done .st-n{background:#2F6F5E;border-color:#2F6F5E;color:#fff}.steps li.done .st-l{color:#2F6F5E}
-.night-nav{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:8px}.night-nav .btn-main{width:100%;margin-top:0}.lnk.back{font-size:12px;padding:6px 10px;color:var(--ink3);text-decoration:none}
 .lp-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.lp-row:last-of-type{border-bottom:none}.sub-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink2);margin:22px 0 4px}.sub-h:first-child{margin-top:6px}.sub-h .pg{font-weight:400}
-.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}
+.lp-n{flex:1}.lp-d{font-size:11px;color:var(--ink3)}.next-hint{margin:12px 0 0;text-align:right}.next-hint .lnk{font-size:13px;font-weight:700;color:var(--ink);padding:6px 0}
 .c-label.tap{display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;color:var(--ink);cursor:pointer}
 .irow.pick{cursor:pointer}.irow.pick input[type=checkbox]{width:auto;margin-top:4px}.irow.pick.on{background:#F3F6F3;margin:0 -13px;padding:8px 13px}
 .grow{padding:10px 0;border-bottom:1px solid var(--line)}.grow:last-of-type{border-bottom:none}.grow.done{background:#F3F6F3;margin:0 -13px;padding:10px 13px}.grow.skip .c-label{color:var(--ink3);text-decoration:line-through}

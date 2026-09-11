@@ -1071,25 +1071,6 @@ describe("紙を撮って判定欄を読む", () => {
   });
 });
 
-describe("夜の作業（続きから再開）", () => {
-  test("nightSave/nightLoad: 今日の分だけ復元。範囲外や壊れた値は 0。null で消す", () => {
-    m.nightSave(2); assert.equal(m.nightLoad(), 2);
-    m.nightSave(null); assert.equal(m.nightLoad(), 0);
-    m.stubs.localStorage.setItem("night_step", JSON.stringify({ d: day(-1), step: 3 })); assert.equal(m.nightLoad(), 0, "昨日の続きは最初から");
-    m.stubs.localStorage.setItem("night_step", JSON.stringify({ d: T, step: 9 })); assert.equal(m.nightLoad(), 0);
-    m.stubs.localStorage.setItem("night_step", "{broken"); assert.equal(m.nightLoad(), 0);
-    m.stubs.localStorage.removeItem("night_step");
-    assert.equal(m.NIGHT_STEPS.length, 4); assert.deepEqual(m.NIGHT_STEPS.map((x) => x[0]), ["grade", "items", "last", "print"]);
-  });
-  test("ホーム: 初期設定が済んでいれば「夜の作業」が先頭。続きがあれば続きの表示", () => {
-    const d = F.demo();
-    assert.equal(m.nextActions(d).A[0].k, "night");
-    m.nightSave(1); try { const a0 = m.nextActions(d).A[0]; assert.equal(a0.title, "夜の作業の続き"); assert.ok(a0.why.startsWith("2/4「×を登録」から。")); } finally { m.nightSave(null); }
-    assert.equal(m.nextActions(F.empty()).A[0].k, "units");
-    const noProg = { ...d, units: d.units.map((u) => ({ ...u, learnedOn: null, learnedBy: undefined })) };
-    assert.equal(m.nextActions(noProg).A[0].k, "prog"); assert.equal(m.nextActions(noProg).A[1].k, "night");
-  });
-});
 
 describe("類題が作れない項目は元の問題を印刷（A-1）", () => {
   const src = { path: "fam/math/wb/11.jpg", kind: "ワーク", page: 11, x: 0.3, y: 0.4 };
@@ -1494,17 +1475,6 @@ describe("画面の状態を引き継ぐ", () => {
   });
 });
 
-describe("夜の作業の段階の飛ばし", () => {
-  test("nightHas/nightNext/nightPrev: 採点は採点待ちがあるとき、×登録は教材（テスト含む）があるとき、最後のページはワーク・教科書があるとき。明日の分は常に", () => {
-    const e = F.empty(); assert.deepEqual(["grade", "items", "last", "print"].map((k) => m.nightHas(e, k)), [false, false, false, true]);
-    assert.equal(m.nightNext(e, -1), 3); assert.equal(m.nightPrev(e, 3), -1);
-    const d = F.demo(); assert.deepEqual(["grade", "items", "last", "print"].map((k) => m.nightHas(d, k)), [true, true, true, true]);
-    assert.equal(m.nightNext(d, -1), 0); assert.equal(m.nightNext(d, 0), 1); assert.equal(m.nightPrev(d, 3), 2);
-    const ts = { ...e, materials: [{ id: "m1", subject: "英語", kind: "テスト", page: 1, path: "x/ts/1.jpg", updatedAt: "" }] };
-    assert.deepEqual(["items", "last"].map((k) => m.nightHas(ts, k)), [true, false], "テストの答案だけなら×登録はできるが最後のページは無い");
-    assert.equal(m.nightNext(ts, -1), 1); assert.equal(m.nightNext(ts, 1), 3); assert.equal(m.nightPrev(ts, 3), 1);
-  });
-});
 
 describe("○×の欄の読み取り", () => {
   test("selfMarksText: 項目ごとに問題番号と説明の問いの番号。読み取りは o/x/oo だけ受け付ける", async () => {
@@ -1626,5 +1596,19 @@ describe("AI の項目名の付け方", () => {
     globalThis.fetch = async (url, opts) => { if (url.includes("/storage/")) return { ok: true, status: 200, arrayBuffer: async () => Uint8Array.from([1]).buffer }; sent = String(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"items":[]}' }] }) }; };
     try { await m.nameItems([{ id: "a", subject: "数学", unitId: "u", named: false, src: { path: "fam/math/wb/77.jpg", kind: "ワーク", page: 77, x: 0.2, y: 0.2 } }], () => null); assert.ok(sent.includes("動詞で止める") && sent.includes("濃度の式を立てる"), "指示に規則が入る"); }
     finally { globalThis.fetch = orig; for (const k of ["sb_url", "sb_key", "anthropic_api_key"]) m.stubs.localStorage.removeItem(k); }
+  });
+});
+
+describe("ホームの夜の行", () => {
+  test("初期設定が済んでいれば「昨日の紙を採点する」が先頭。単元・進度が無ければそれが先。×登録と最後のページは教材がある家庭だけ", () => {
+    const d = F.demo(); const A = m.nextActions(d).A;
+    assert.equal(A[0].k, "gradeDaily");
+    assert.equal(m.nextActions(F.empty()).A[0].k, "units");
+    const noProg = { ...d, units: d.units.map((u) => ({ ...u, learnedOn: null, learnedBy: undefined })) };
+    assert.equal(m.nextActions(noProg).A[0].k, "prog"); assert.equal(m.nextActions(noProg).A[1].k, "gradeDaily");
+    const noMat = { ...d, materials: [] }; const ks = m.nextActions(noMat).A.map((a) => a.k);
+    assert.ok(!ks.includes("items") && !ks.includes("last"), "教材が無ければ×登録と最後のページの行は出ない");
+    const done = { ...d, materials: d.materials.map((mt) => ({ ...mt, doneOn: T })), items: d.items.map((i, k) => (k === 0 ? { ...i, createdOn: T } : i)) };
+    const ks2 = m.nextActions(done).A.map((a) => a.k); assert.ok(!ks2.includes("items") && !ks2.includes("last"), "今日もう登録・入力していれば出ない");
   });
 });
