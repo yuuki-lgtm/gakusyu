@@ -1619,3 +1619,16 @@ describe("+ からの受け渡し", () => {
     assert.equal(m.isPdfFile({ name: "a.PDF", type: "" }), true); assert.equal(m.isPdfFile({ name: "a.jpg", type: "image/jpeg" }), false); assert.equal(m.isPdfFile({ name: "x", type: "application/pdf" }), true);
   });
 });
+
+describe("いつの紙に出るか", () => {
+  test("paperStatus: 明日まで→明日の紙、先→その日付（登録直後なら分散の注記）、印刷済み→採点待ち、後ろ倒し→定期テスト後、安定→累積だけ", () => {
+    const base = { status: "active", nextDue: day(1), history: [{ d: day(-3), r: "x" }] };
+    assert.deepEqual(m.paperStatus({ ...base }), { k: "next", text: "明日の紙に出る" });
+    assert.deepEqual(m.paperStatus({ ...base, nextDue: day(0) }).k, "next");
+    assert.equal(m.paperStatus({ ...base, nextDue: day(3) }).text, `${day(3).slice(5)} の紙に出る`);
+    assert.equal(m.paperStatus({ ...base, nextDue: day(3), createdOn: T, history: [] }).text, `${day(3).slice(5)} の紙に出る（登録が多かったので分散）`);
+    assert.equal(m.paperStatus({ ...base, printedOn: day(-1) }).k, "printed");
+    assert.equal(m.paperStatus({ ...base, nextDue: day(9), defer: { examId: "e", from: day(1) } }).k, "defer");
+    assert.equal(m.paperStatus({ ...base, status: "stable", nextDue: day(30) }).k, "stable");
+  });
+});

@@ -456,3 +456,11 @@ test("明日の紙: 定期テストの14日前で後ろ倒し中の項目があ�
   assert.ok(h.includes('class="ph-note defer-note"') && h.includes(`範囲外の ${n} 件`) && h.includes("期末"));
   assert.ok(!render(m.PaperTab, { d: F.demo(), save: noop, initial: "print" }).html.includes("defer-note"));
 });
+test("未定着の一覧: 各行に「いつの紙に出るか」。明日の紙: 候補に入っていない件数と理由", () => {
+  const d = F.demo(); const h = render(m.ItemList, { d, save: noop }).html;
+  assert.ok(h.includes('class="ir-when next">明日の紙に出る') || h.includes('class="ir-when '), "行に状態");
+  assert.ok(!h.includes("次回 "));
+  const d2 = F.demo(); d2.items = d2.items.map((i, k) => (k === 0 ? { ...i, nextDue: F.day(5), createdOn: F.T, history: [] } : i));
+  const p = render(m.PaperTab, { d: d2, save: noop, initial: "print" }).html;
+  assert.ok(p.includes("候補は") && p.includes("期日がまだ先 1 件") && p.includes("未定着 → 一覧"));
+});

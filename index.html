@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 17:13"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 17:41"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -414,6 +414,15 @@ function spreadDue(newItems, d, max = dailyMax()) {
   const t = today(); const already = (d.items || []).filter((i) => i.createdOn === t).length;
   if (already + newItems.length < perDay * 2) return newItems;
   return newItems.map((i, k) => ({ ...i, nextDue: addDays(t, 1 + Math.floor((already + k) / perDay)) }));
+}
+/* その項目が次にいつ紙に出るか（一覧の行に書く。「なぜ明日の紙に出ないか」が見えるように） */
+function paperStatus(i, d = null) {
+  const t = today(), tm = addDays(t, 1);
+  if (i.status === "stable") return { k: "stable", text: "安定（月1の累積テストだけ）" };
+  if (i.printedOn) return { k: "printed", text: `採点待ち（${i.printedOn.slice(5)} に印刷済み）` };
+  if (i.defer && i.nextDue > tm) return { k: "defer", text: `定期テスト後の ${i.nextDue.slice(5)} に（範囲外なので後ろ倒し中）` };
+  if (i.nextDue <= tm) return { k: "next", text: "明日の紙に出る" };
+  return { k: "later", text: `${i.nextDue.slice(5)} の紙に出る${i.createdOn === t || (i.history || []).length === 0 ? "（登録が多かったので分散）" : ""}` };
 }
 /* 候補のうち上限までを「今日の分」に、残りは繰り越し */
 function pickDaily(d, max = dailyMax()) {
@@ -1246,6 +1255,10 @@ function TodayMake({ d, save, go }) {
   return (<>
     <section className="sec">
       <p className="lead">明日までに期日が来る項目が候補です。上から {dailyMax()} 問ぶん（「設定」で変えられます。習得中の項目は3問、保持の確認は1問）に自動でチェックが入っています。優先順は「定期テストの範囲内 → 落とした回数が多い → 期日が古い」。外した項目は翌日に繰り越します。
+      {(() => { const act = d.items.filter((i) => i.status === "active"); const st = act.map((i) => paperStatus(i)); const cnt = (k) => st.filter((x) => x.k === k).length;
+        const later = act.filter((i) => paperStatus(i).k === "later").map((i) => i.nextDue).sort()[0];
+        if (!cnt("later") && !cnt("printed") && !cnt("defer")) return null;
+        return (<p className="ph-note">未定着 {act.length} 件のうち、候補は {cnt("next")} 件。ほかは {[cnt("later") ? `期日がまだ先 ${cnt("later")} 件（次は ${later.slice(5)}）` : "", cnt("printed") ? `採点待ち ${cnt("printed")} 件` : "", cnt("defer") ? `定期テスト後 ${cnt("defer")} 件` : ""].filter(Boolean).join("・")}。それぞれの項目がいつ出るかは「未定着 → 一覧」に書いてあります。</p>); })()}
       {(() => { const df = d.items.filter((i) => i.status === "active" && i.defer && i.nextDue > today()); if (!df.length) return null; const ex = (d.exams || []).find((e) => e.id === df[0].defer.examId); const by = SUBJECTS.map((sb) => [sb, df.filter((i) => i.subject === sb).length]).filter((x) => x[1]);
         return (<p className="ph-note defer-note">定期テスト{ex ? `「${ex.name || "テスト"}」（${ex.date}）` : ""}の14日前に入ったので、範囲外の {df.length} 件（{by.map(([sb, n]) => `${sb} ${n}`).join("・")}）はテスト翌日まで出しません。範囲は「教材 → 定期テスト」で変えられます。</p>); })()}類題を作って教科・単元の見出し付きで1つのPDFにし、解答は最後にまとめます。</p>
       {cands.length === 0 ? <p className="empty">{printed.length ? `印刷待ちはありません。${printed.length}件が採点待ちです。` : "明日の分はありません。"}</p>
@@ -1870,7 +1883,7 @@ function ItemList({ d, save }) {
     {undo && <p className="undo-bar"><span>「{undo.label}」を削除しました</span><button className="lnk" onClick={restore}>取り消す</button></p>}
     {SUBJECTS.map((s) => { const act = d.items.filter((i) => i.subject === s && i.status === "active").sort((a, b) => b.failCount - a.failCount); const st = d.items.filter((i) => i.subject === s && i.status === "stable"); if (!act.length && !st.length) return null; return (
       <div className="blk" key={s}><h3 style={{ color: HUE[s] }}>{s} <span className="cnt">未定着 {act.length} / 安定 {st.length}</span></h3>
-        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日 · 次回 {i.nextDue.slice(5)}</div>
+        {act.map((i) => { const u = unitOf(i.unitId); return (<div className="irow" key={i.id}><div className="ir-main"><div className="ir-label">{i.label}{i.named === false && <em className="tag">仮</em>}</div>{i.note && <div className="ir-note">{i.note}</div>}<div className="ir-meta">{u ? u.name : "単元なし"}{i.fmt ? ` · ${i.fmt}` : ""}{srcLabel(i.src) ? ` · ${srcLabel(i.src)}` : ""} · {i.failCount}回 · 間隔{INT[i.level || 0]}日</div><div className={"ir-when " + paperStatus(i).k}>{paperStatus(i).text}</div>
           <div className="ir-chips"><button className={"et et-cur" + (etOpen === i.id ? " on" : "")} onClick={() => setEtOpen(etOpen === i.id ? null : i.id)}>{ETYPES.includes(i.etype) ? i.etype : "誤答の種類 —"}</button>
             {i.fmt !== "知識・用語" && <button className={"et why" + (i.noWhy ? " on" : "")} onClick={() => save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, noWhy: !x.noWhy, updatedAt: now() } : x)) })}>{i.noWhy ? "説明不要" : "説明あり"}</button>}</div>
           {etOpen === i.id && (<div className="mpop et-pop"><div className="c-label">誤答の種類</div><div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (i.etype === e ? " on" : "")} onClick={() => { save({ ...d, items: d.items.map((x) => (x.id === i.id ? { ...x, etype: e, updatedAt: now() } : x)) }); setEtOpen(null); }}>{e}</button>))}</div></div>)}</div><button className="btn-x" onClick={() => del(i)} aria-label="削除">×</button></div>); })}</div>); })}</>);
@@ -2342,7 +2355,7 @@ const CSS = `
 .rub{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}.rub-b{display:flex;gap:4px}.rub-b button{width:34px;height:30px;border:1px solid var(--line);background:var(--card);border-radius:3px;cursor:pointer;font-family:inherit}.rub-b button.on{background:var(--ink);color:#fff}
 .mini{margin-top:10px;font-size:11px;color:var(--ink2);line-height:1.8}
 .urow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.urow:last-child{border:none}.u-name{font-size:13px}.u-meta{font-size:11px;color:var(--ink3);margin-top:2px}.never{color:#A8443B;font-weight:700}
-.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-note{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.5}.btn-main.rename-all{margin-bottom:16px}
+.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-note{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.5}.ir-when{font-size:11px;margin-top:3px;color:var(--ink3)}.ir-when.next{color:#2F6F5E;font-weight:700}.ir-when.printed{color:#C08A3E}.ir-when.defer{color:#8E3830}.btn-main.rename-all{margin-bottom:16px}
 .ir-meta{font-size:11px;color:var(--ink3);margin-top:2px}
 .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;margin:4px 0 8px}.big small{font-size:12px;color:var(--ink3);font-weight:400}
 .mrow{margin-bottom:9px}.mr-name{font-size:12px;margin-bottom:3px}.mr-bar{height:6px;background:#E7EAE7;border-radius:3px;overflow:hidden}.mr-bar span{display:block;height:100%}.mr-meta{display:flex;gap:10px;font-size:10px;color:var(--ink3);margin-top:3px;font-variant-numeric:tabular-nums}.fmn{font-style:normal;font-size:10px;color:#A8443B;margin-left:6px}
