@@ -242,7 +242,7 @@ test("用紙の行: 模試の答案を撮る欄と、用紙の説明に「1回�
 });
 test("今日/採点: 「紙を撮る」があり、紙の順番が出る", () => {
   const html = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html;
-  assert.ok(html.includes("紙を撮る（○×の欄を読み取る") && html.includes("紙の1番目"));
+  assert.ok(html.includes("紙を撮る（○×の欄を読み取る") && /class="qno">問\d/.test(html), "紙の問番号が出る");
 });
 test("最後のページ: 取り込んだ教科・教材ごとに1行。済みの数と最後のページ", () => {
   const html = render(m.LastPageStep, { d: F.demo(), save: noop }).html;
@@ -487,4 +487,9 @@ test("採点待ち: 教科ごとの見出しで分ける（次の紙・未定着
   const heads = [...h.matchAll(/<h4 class="sub-h">.*?<\/span>(数学|英語|社会|理科|国語)<em/g)].map((x) => x[1]);
   assert.deepEqual(heads, ["数学", "英語"]);
   assert.ok(!/<div class="c-meta"><span[^>]*><\/span>(数学|英語)・/.test(h));
+});
+test("採点待ち: 各行に紙の問番号（問1〜3 のように）。印刷日ごとに番号を組み直す", () => {
+  const d = F.demo(); d.items = d.items.map((i, k) => (k < 2 ? { ...i, printedOn: F.day(-1), printedAs: k + 1, gen: { problems: [{ q: "a", a: "1" }, { q: "b", a: "2" }, { q: "c", a: "3" }] } } : i));
+  const h = render(m.PaperTab, { d, save: noop, initial: "grade" }).html;
+  assert.ok(h.includes('class="qno">問1〜3</em>') && h.includes('class="qno">問4〜6</em>'), h.match(/class="qno">[^<]*/g));
 });

@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 19:01"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 19:04"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1294,6 +1294,10 @@ function GradeRowDetail({ i, d, save }) {
 function TodayGrade({ d, save, onNext }) {
   const unitOf = (id) => unitById(d, id);
   const set = gradeSet(d);
+  const qnums = useMemo(() => { const out = {}; const byDay = {}; set.forEach((i) => { (byDay[i.printedOn] = byDay[i.printedOn] || []).push(i); });
+    Object.values(byDay).forEach((its) => { try { genToPaper(its, unitOf).questions.filter((q) => q.jb && q.itemId).forEach((q) => { (out[q.itemId] = out[q.itemId] || []).push(q.n); }); } catch {} });
+    return out; }, [set.map((i) => i.id + ":" + i.printedOn).join(",")]); // 項目 → その日の紙の問番号
+  const qlabel = (i) => { const ns = qnums[i.id]; return ns && ns.length ? (ns.length === 1 ? `問${ns[0]}` : `問${ns[0]}〜${ns[ns.length - 1]}`) : ""; };
   const [open, setOpen] = useState({});
   const [dc, setDc] = useState({});
   const [msg, setMsg] = useState("");
@@ -1324,7 +1328,7 @@ function TodayGrade({ d, save, onNext }) {
       {[...SUBJECTS, ...set.map((i) => i.subject)].filter((sb, k, arr) => arr.indexOf(sb) === k && set.some((i) => i.subject === sb)).map((sb) => (<div key={sb}><h4 className="sub-h"><Dot s={sb} />{sb}<em className="pg"> {set.filter((i) => i.subject === sb).length}件</em></h4>
       {set.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (
         <div className={"grow" + (c.skip ? " skip" : c.r ? " done" : "")} key={i.id}>
-          <div className="c-meta">{u ? u.name : "単元なし"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<em className="lv">印刷 {i.printedOn.slice(5)}{i.printedAs ? ` · 紙の${i.printedAs}番目` : ""}</em><button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
+          <div className="c-meta">{u ? u.name : "単元なし"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<em className="lv">印刷 {i.printedOn.slice(5)}</em>{qlabel(i) && <em className="qno">{qlabel(i)}</em>}<button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
           <button className="c-label tap" onClick={() => setOpen((o) => ({ ...o, [i.id]: !o[i.id] }))}>{i.label}<em className="pg"> {open[i.id] ? "閉じる" : i.failCount >= 3 ? "類題・診断 ▸" : "類題 ▸"}</em></button>
           {open[i.id] && <GradeRowDetail i={i} d={d} save={save} />}
           {!c.skip && (<>
@@ -2369,7 +2373,8 @@ const CSS = `
 .rub{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}.rub-b{display:flex;gap:4px}.rub-b button{width:34px;height:30px;border:1px solid var(--line);background:var(--card);border-radius:3px;cursor:pointer;font-family:inherit}.rub-b button.on{background:var(--ink);color:#fff}
 .mini{margin-top:10px;font-size:11px;color:var(--ink2);line-height:1.8}
 .urow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.urow:last-child{border:none}.u-name{font-size:13px}.u-meta{font-size:11px;color:var(--ink3);margin-top:2px}.never{color:#A8443B;font-weight:700}
-.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-note{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.5}.ir-kind{font-size:11px;margin-top:2px;color:var(--ink3)}.ir-kind.review{color:#2F6F5E;font-weight:700}.ir-kind.retry{color:#8E3830;font-weight:700}
+.irow{display:flex;align-items:flex-start;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}.irow:last-child{border:none}.ir-main{flex:1;min-width:0}.ir-label{font-size:13px;line-height:1.45}.ir-note{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.5}.qno{font-style:normal;font-size:12px;font-weight:700;color:var(--ink);border:1px solid var(--ink);border-radius:2px;padding:1px 6px;margin-left:6px}
+.ir-kind{font-size:11px;margin-top:2px;color:var(--ink3)}.ir-kind.review{color:#2F6F5E;font-weight:700}.ir-kind.retry{color:#8E3830;font-weight:700}
 .ir-when{font-size:11px;margin-top:3px;color:var(--ink3)}.ir-when.next{color:#2F6F5E;font-weight:700}.ir-when.printed{color:#C08A3E}.ir-when.defer{color:#8E3830}.btn-main.rename-all{margin-bottom:16px}
 .ir-meta{font-size:11px;color:var(--ink3);margin-top:2px}
 .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;margin:4px 0 8px}.big small{font-size:12px;color:var(--ink3);font-weight:400}
