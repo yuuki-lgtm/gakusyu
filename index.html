@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 17:51"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 17:56"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1184,11 +1184,11 @@ function PaperTab({ d, save, initial, go }) {
   // grade/print＝類題の紙、make/cum/manual＝5教科テスト（cum は累積、manual はワークの結果の記録を開く）、mock:数学,英語＝模試、read/write＝読解・記述
   const asMode = (m) => (!m ? null : m === "cum" || m === "manual" ? "make" : m.startsWith("mock") ? "mock" : m === "read" || m === "write" ? "rw" : m);
   const preset = initial && initial.startsWith("mock:") ? initial.slice(5).split(",").filter(Boolean) : null;
-  const gs = gradeSet(d), ps = printSet(d).length;
+  const gs = gradeSet(d);
   const [mode, setMode] = useState(asMode(initial) || (gs.length ? "grade" : "print"));
   const [rw, setRw] = useState(initial === "write" ? "write" : "read");
   useEffect(() => { if (initial) { setMode(asMode(initial)); if (initial === "write") setRw("write"); if (initial === "read") setRw("read"); } }, [initial]);
-  const T = [["grade", `採点待ち${gs.length ? ` (${gs.length})` : ""}`], ["print", `次の紙${ps ? ` (${ps})` : ""}`], ["make", "5教科テスト"], ["mock", "模試"], ["rw", "読解・記述"]];
+  const T = [["grade", `採点待ち${gs.length ? ` (${gs.length})` : ""}`], ["print", "次の紙"], ["make", "5教科テスト"], ["mock", "模試"], ["rw", "読解・記述"]];
   return (<div className="pane">
     <Hint k="paper">紙はここ。平日は「採点待ち」（昨日の紙を撮る）と「次の紙」（類題を作って印刷）。週末は「5教科テスト」を作って印刷し、赤ペンで採点したら一覧で用紙を開いて答案を撮る。定期テスト前は「模試」。</Hint>
     <div className="subtabs five">{T.map(([k, l]) => (<button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{l}</button>))}</div>
