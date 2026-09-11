@@ -240,9 +240,10 @@ test("用紙の行: 模試の答案を撮る欄と、用紙の説明に「1回�
   const ps = render(m.PrintSheet, { paper: mk }).html;
   assert.ok(ps.includes("1回きり") && ps.includes("模試（2学期中間）"));
 });
-test("今日/採点: 「紙を撮る」があり、紙の順番が出る", () => {
+test("今日/採点: 「紙を撮る」は無く、各行に「できなかった」のチェック。紙の問番号が出る", () => {
   const html = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html;
-  assert.ok(html.includes("紙を撮る（○×の欄を読み取る") && /class="qno">問\d/.test(html), "紙の問番号が出る");
+  assert.ok(!html.includes("紙を撮る") && !html.includes("j-btns") && html.includes('class="gchk ng"') && /class="qno">問\d/.test(html), "紙の問番号が出る");
+  assert.ok(html.includes("まとめて確定（できなかった 0・解けた "), "✓ の無い行は解けた");
 });
 test("最後のページ: 取り込んだ教科・教材ごとに1行。済みの数と最後のページ", () => {
   const html = render(m.LastPageStep, { d: F.demo(), save: noop }).html;
@@ -359,7 +360,7 @@ test("使い方: ホームには「1週間の流れ」を置かず、使い方�
   assert.equal(rows[rows.length - 2], "使い方"); assert.equal(rows[rows.length - 1], "最新版に更新（再読み込み）");
   const g = render(m.GuideTab, { go: noop }).html;
   for (const t of ["このアプリは何をするもの？", "毎日（平日）", "週末", "定期テストの前と後", "最初に1回だけ", "困ったとき"]) assert.ok(g.includes(`<h3 class="s-h">${t}</h3>`), t);
-  for (const t of ["紙 → 5教科テスト", "教材 → 定期テスト", "教材 → 取り込み", "未定着 → ×を登録", "昨日の紙を撮って採点", "もう一度PDFにする"]) assert.ok(g.includes(t), t);
+  for (const t of ["紙 → 5教科テスト", "教材 → 定期テスト", "教材 → 取り込み", "未定着 → ×を登録", "昨日の紙の間違いに ✓ を入れて採点", "もう一度PDFにする"]) assert.ok(g.includes(t), t);
   assert.ok(!g.includes("「夜の作業」"), "ウィザードの名前は使わない");
   assert.ok(!g.includes("週末→") && !g.includes("「作る」") && !g.includes("テスト → "));
 });
@@ -468,25 +469,30 @@ test("取り込み: 教科は既定なし。選ぶまで保存できない。未
   assert.ok(!h.includes('class="subj on"'), "最初はどの教科も選ばれていない");
   const l = render(m.ItemList, { d: F.demo(), save: noop }).html; assert.ok(l.includes(">教科を直す</button>"));
 });
-test("採点: 子どもの判定が入っていれば行は文だけ（変えるで戻せる）。問題が変は小さな文字", () => {
+test("採点: 説明文は「間違えた問題の行に ✓」。問題が変は小さな文字", () => {
   const h = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html;
-  assert.ok(h.includes("子どもが紙に書いた ○× を AI が読み") && h.includes('class="lnk bad-lnk"') && !h.includes('class="et bad"'));
+  assert.ok(h.includes("間違えた問題の行に「できなかった」の ✓") && h.includes('class="lnk bad-lnk"') && !h.includes('class="et bad"') && !h.includes("AI"));
 });
 test("次の紙: 候補の各行に「新しく登録」「再出題」「再挑戦」の印。期日が過ぎていれば遅れの日数", () => {
   const d = F.demo(); d.items = d.items.map((i, k) => (k === 0 ? { ...i, printedOn: null, nextDue: F.day(-2), level: 1, history: [{ d: F.day(-5), r: "o", self: "o", etype: "" }] } : i));
   const h = render(m.PaperTab, { d, save: noop, initial: "print" }).html;
   assert.ok(h.includes('class="ir-kind review">再出題（') && h.includes("2日遅れ") && h.includes('class="ir-kind new">新しく登録'));
 });
-test("採点: 子どもの行にボタンは無い（紙の○×を読んだ値だけ）。押せるのは親の行", () => {
-  const h = render(m.PaperTab, { d: F.demo(), save: noop, initial: "grade" }).html;
-  assert.ok(!/<span class="j-who">子ども<\/span><div class="j-btns/.test(h) && /<span class="j-who">親<\/span><div class="j-btns/.test(h));
-});
-test("採点待ち: 教科ごとの見出しで分ける（次の紙・未定着と同じ並び）。行に教科名は繰り返さない", () => {
-  const d = F.demo(); d.items = d.items.map((i, k) => (k < 3 ? { ...i, printedOn: F.day(-1), printedAs: k + 1, subject: k === 1 ? "英語" : "数学" } : i));
+test("採点: 子ども・親の行は無い。説明の問いがある項目にだけ「説明もできた」", () => {
+  const d = F.demo(); d.items = d.items.map((i, k) => (k < 2 ? { ...i, printedOn: F.day(-1), printedAs: k + 1, level: k === 0 ? 2 : 0, fmt: "計算", noWhy: false, gen: { problems: [{ q: "a", a: "1" }], why: "w" } } : { ...i, printedOn: null }));
   const h = render(m.PaperTab, { d, save: noop, initial: "grade" }).html;
-  const heads = [...h.matchAll(/<h4 class="sub-h">.*?<\/span>(数学|英語|社会|理科|国語)<em/g)].map((x) => x[1]);
-  assert.deepEqual(heads, ["数学", "英語"]);
-  assert.ok(!/<div class="c-meta"><span[^>]*><\/span>(数学|英語)・/.test(h));
+  assert.ok(!h.includes("j-who") && (h.match(/class="gchk ng"/g) || []).length === 2 && (h.match(/class="gchk ok"/g) || []).length === 1, h.match(/class="gchk[^"]*"/g));
+});
+test("採点待ち: 教科で分けず、紙の問番号の順に並べる。行に教科名。印刷日が2日以上あれば日ごとの見出し", () => {
+  const d = F.demo(); d.items = d.items.map((i, k) => (k < 3 ? { ...i, printedOn: F.day(-1), printedAs: 3 - k, subject: k === 1 ? "英語" : "数学", label: `L${k}`, gen: { problems: [{ q: "a", a: "1" }] } } : { ...i, printedOn: null }));
+  const h = render(m.PaperTab, { d, save: noop, initial: "grade" }).html;
+  assert.ok(!h.includes('class="sub-h"'), "1日ぶんなら見出し無し");
+  const ns = [...h.matchAll(/class="qno">問(\d+)/g)].map((x) => Number(x[1])); assert.equal(ns.length, 3); assert.deepEqual(ns, [...ns].sort((a, b) => a - b), "紙の問番号の昇順");
+  assert.ok(/<div class="c-meta"><em class="qno">問1[^<]*<\/em><span[^>]*><\/span>数学・/.test(h), "行の先頭に問番号、次に教科");
+  d.items = d.items.map((i, k) => (k === 0 ? { ...i, printedOn: F.day(-2) } : i));
+  const h2 = render(m.PaperTab, { d, save: noop, initial: "grade" }).html;
+  assert.ok(h2.includes(`印刷 ${F.day(-2).slice(5)} の紙`) && h2.includes(`印刷 ${F.day(-1).slice(5)} の紙`), "日ごとの見出し");
+
 });
 test("採点待ち: 各行に紙の問番号（問1〜3 のように）。印刷日ごとに番号を組み直す", () => {
   const d = F.demo(); d.items = d.items.map((i, k) => (k < 2 ? { ...i, printedOn: F.day(-1), printedAs: k + 1, gen: { problems: [{ q: "a", a: "1" }, { q: "b", a: "2" }, { q: "c", a: "3" }] } } : i));

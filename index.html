@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 22:19"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 22:30"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -39,7 +39,6 @@ const MKINDS = ["ワーク", "教科書", "テスト"]; // 教材種別。テス
 const BOOK_KINDS = ["教科書", "ワーク"]; // 目次があり、単元とページ範囲を結びつけるもの
 const SUBJ_CODE = { 数学: "math", 英語: "eng", 社会: "soc", 理科: "sci", 国語: "jpn" };
 const KIND_CODE = { ワーク: "wb", 教科書: "tb", テスト: "ts" };
-const JUDGE = [["x", "できなかった", "ng"], ["o", "解けた", "mid"], ["oo", "説明もできた", "okb"]];
 const READ_TYPES = ["指示語の内容", "接続語の選択", "理由の説明", "要旨・主張", "心情の読み取り", "語句の意味", "段落の役割"];
 const RUBRIC = [["len", "字数を満たした"], ["structure", "段落の型に沿った"], ["surface", "助詞・送り仮名・脱字がない"]];
 /* 類題を印刷用の用紙に変換 */
@@ -441,14 +440,6 @@ function pickDaily(d, max = dailyMax()) {
 function gradeSet(d) {
   return d.items.filter((i) => i.printedOn).sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : (a.printedAs || 999) - (b.printedAs || 999) || b.failCount - a.failCount));
 }
-/* 紙の判定欄の読み取り。AI に渡す項目の一覧（紙の順、見出しと最初の問題で位置を示す） */
-const selfMarksText = (items, unitOf) => { const p = genToPaper(items, unitOf); return items.map((i, k) => { const u = unitOf(i.unitId); const qs = p.questions.filter((q) => q.itemId === i.id && q.jb); const nums = qs.filter((q) => !q.why).map((q) => q.n); const w = qs.find((q) => q.why); return `${k + 1}. 【${i.subject}${u ? "・" + u.name : ""}】 問${nums.join("・") || "—"}${w ? `（説明は問${w.n}）` : ""}`; }).join("\n"); };
-/* 読み取った印（{n: "x"|"o"|"oo"|""}）を採点画面の判定に。子どもの判定＝親の判定の初期値。× なら前回の誤答の種類 */
-function applySelfMarks(items, marks) {
-  const out = {};
-  items.forEach((i, k) => { const r = marks[k + 1]; if (r === "bad") { out[i.id] = { bad: true, self: null, r: null, skip: false }; } else if (r === "x" || r === "o" || r === "oo") { const rr = r === "oo" && !needsWhy(i) ? "o" : r; out[i.id] = { self: rr, r: rr, etype: rr === "x" ? i.etype || "" : "", skip: false }; } });
-  return out;
-}
 /* decisions: {id: {r, self, etype, etypeSelf}} または {id: {skip:true}}。r のあるものだけ判定し、skip は印刷前に戻す */
 function judgeAll(d, decisions) {
   const t = today(); let n = 0, bad = 0;
@@ -574,7 +565,7 @@ function nextActions(d) {
     const hasMat = SUBJECTS.some((sub) => MKINDS.some((mk) => matsOf(d, sub, mk).length)), hasBook = SUBJECTS.some((sub) => BOOK_KINDS.some((mk) => matsOf(d, sub, mk).length));
     const addedToday = d.items.some((i) => i.createdOn === t), doneToday = (d.materials || []).some((mt) => mt.doneOn === t);
     // 夜にやることは独立した行で（順番は並びで示すだけ。ウィザードは 2026-09-11 に廃止）。採点 → 次の紙 → ×の登録 → 最後のページ
-    if (toGrade0) A.push({ k: "gradeDaily", title: `昨日の紙を採点する（${toGrade0}件）`, why: "紙を撮れば ○× を読み取ります。違う行だけ直して「まとめて確定」。", tab: "today", mode: "grade", t: "2分" });
+    if (toGrade0) A.push({ k: "gradeDaily", title: `昨日の紙を採点する（${toGrade0}件）`, why: "間違えた問題の行に ✓ を入れて「まとめて確定」。✓ の無い行は「解けた」。", tab: "today", mode: "grade", t: "2分" });
     if (daily0.chosen.length) A.push({ k: "print", title: `次の紙を作る（${daily0.chosen.length}件${daily0.rest.length ? `・繰り越し ${daily0.rest.length}` : ""}）`, why: "類題を作って PDF に。採点を先に済ませてから。", tab: "today", mode: "print", t: "生成2分＋印刷" });
     if (hasMat && !addedToday) A.push({ k: "items", title: "今日のワークの×を登録する", why: "ページを開いて×をタップ。×が無い日は最後のページだけ。", tab: "reg", mode: "item", t: "2分" });
     if (hasBook && !doneToday) A.push({ k: "last", title: "今日の最後のページを入れる", why: "「p.N までやった」で進度が進みます。×登録の画面の下にあります。", tab: "reg", mode: "item", t: "30秒" });
@@ -674,8 +665,8 @@ function Hint({ k, children }) {
     : (<div className="hint"><button className="hint-q" onClick={() => setOpen(true)} aria-label="説明を見る">?</button></div>);
 }
 /* 右下の +（ホーム・テスト・その他の第一階層だけ）。まず撮る／選ぶ、次に「これは何ですか」。OOUI: 紙（オブジェクト）が先、操作は種類から決まる。
-   選んだファイルは pending に置き、行き先の画面が開いた時に読む（採点＝読み取り開始、用紙＝用紙を開いた時に読み取り、教材＝読み込み済みで開く、目次＝教科と種類を選んで読み取り） */
-const pending = { shots: null, answer: null, mat: null, toc: null };
+   選んだファイルは pending に置き、行き先の画面が開いた時に読む（用紙＝用紙を開いた時に読み取り、教材＝読み込み済みで開く、目次＝教科と種類を選んで読み取り） */
+const pending = { answer: null, mat: null, toc: null };
 const takePending = (k) => { const v = pending[k]; pending[k] = null; return v; };
 const isPdfFile = (f) => /pdf$/i.test(f.type || f.name || "");
 function Fab({ go }) {
@@ -691,11 +682,10 @@ function Fab({ go }) {
       <input type="file" accept="image/*,application/pdf" multiple hidden onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) setTimeout(() => setFiles(fs), 250); }} /></label>
     {files && (<div className={"sheet-bg" + (closing ? " out" : "")} onClick={close}><div className={"sheet" + (closing ? " out" : "")} onClick={(e) => e.stopPropagation()}>
       <div className="sheet-pv"><div className="pv-row"><div className="pv-imgs" ref={imgsRef}>{urls.map((u, k) => (<img key={k} src={u} alt="" />))}{Array.from({ length: Math.max(0, nfit - urls.length) }, (_, k) => (<span key={"e" + k} className="pv-empty" />))}</div><label className="pv-add" aria-label="もう1枚撮る・追加で選ぶ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" /></svg><input type="file" accept="image/*,application/pdf" multiple hidden onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) setFiles((cur) => [...(cur || []), ...fs]); }} /></label></div><span className="pv-n">{hasPdf ? `PDF ${files.filter(isPdfFile).length}件` : ""}{hasPdf && files.length > files.filter(isPdfFile).length ? "・" : ""}{files.length - files.filter(isPdfFile).length ? `写真 ${files.length - files.filter(isPdfFile).length}枚` : ""}</span></div>
-      <button className="sheet-row" disabled={hasPdf} onClick={() => pick("shots", "today", "grade")}>昨日の紙（類題）→ 採点する</button>
       <button className="sheet-row" disabled={hasPdf} onClick={() => pick("answer", "week", "make")}>テストの答案 → 用紙を選んで採点する</button>
       <button className="sheet-row" onClick={() => pick("mat", "reg", "mat")}>教材（ワーク・教科書・定期テスト）→ 取り込む</button>
       <button className="sheet-row" disabled={hasPdf} onClick={() => pick("toc", "reg", "unit")}>目次 → 単元を登録する</button>
-      {hasPdf && <p className="ph-note">PDF は教材としてだけ取り込めます。採点と目次は写真で。</p>}
+      {hasPdf && <p className="ph-note">PDF は教材としてだけ取り込めます。目次は写真で。</p>}
       <button className="sheet-row cancel" onClick={close}>閉じる</button></div></div>)}
   </>);
 }
@@ -852,19 +842,6 @@ async function diagnose(i, u, ctx, model = OPUS) {
     `日本の中学1年生を教える講師。causeは最も可能性が高い原因1つ。prereqは戻るべき前提の単元（小学校範囲でも可）。stepsは3〜4段階、各段階は「何をやらせるか」だけ短く。checkは通過の判定方法。\nJSONのみ: {"cause":"","prereq":"","steps":[{"do":"","check":""}]}`, 2000, model);
   return parseJSON(t);
 }
-/* 「今日の分」の紙を撮って、各項目の「自分の判定」の印（□ できなかった／□ 解けた／□ 説明もできた）を読む。戻り値は {n: "x"|"o"|"oo"|""} */
-async function readSelfMarks(files, items, unitOf, model = null) {
-  const imgs = []; for (const f of files) imgs.push(imgBlock(await compressImage(f, 1600, 0.8)));
-  const t = await callAI([...imgs, { type: "text", text: `添付は子どもが解いた類題の紙（${files.length}枚）。各問題の右端に四角い欄があり、子どもが解答を見て自分で印を書いています。○（◎や少し崩れた丸も含む）は正解、× のほか ✓・／・△・塗りつぶしなど「○ でない印」はすべて不正解として読んでください。次の項目ごとに、その項目の問題の欄を読んでください。\n${selfMarksText(items, unitOf)}` }],
-    `項目ごとの判定: 説明の問いを除く問題の欄がすべて ○ なら "o"、1つでも ○ でない印（×・✓・／・△など）があれば "x"、さらに説明の問いの欄も ○ なら "oo"。欄が空の項目は ""。印があるのに ○ か判断できないときは "x"。解答の正誤は判断しない（欄の印だけを読む）。JSONのみ: {"marks":[{"n":1,"self":"x"|"o"|"oo"|""}]}`, 8000, model);
-  // JSON が途中で切れていたり前後に文が付いていても、完成している {"n":…} だけ拾う。何も拾えなければ返答の先頭を添えて失敗にする
-  let marks = null; try { marks = parseJSON(t).marks; } catch {}
-  if (!Array.isArray(marks)) { marks = []; const re = /\{[^{}]*"n"\s*:\s*"?\d+"?[^{}]*\}/g; let mm; while ((mm = re.exec(t))) { try { marks.push(JSON.parse(mm[0])); } catch {} } }
-  if (!marks.length) throw new Error(`読み取りの返答を読めませんでした（先頭: ${String(t).replace(/\s+/g, " ").slice(0, 60)}）`);
-  const out = {}; marks.forEach((mk) => { out[Number(mk.n)] = ["x", "o", "oo"].includes(mk.self) ? mk.self : ""; });
-  return out;
-}
-
 /* ---- 模試（定期テストの範囲で、1教科ずつ） ---- */
 const upcomingExams = (d) => (d.exams || []).filter((e) => e.date >= today() && (e.unitIds || []).length).sort((a, b) => (a.date < b.date ? -1 : 1));
 const examSubjects = (d, ex) => SUBJECTS.filter((s) => d.units.some((u) => u.subject === s && ex.unitIds.includes(u.id)));
@@ -1193,7 +1170,7 @@ function PaperTab({ d, save, initial, go }) {
   useEffect(() => { if (initial) { setMode(asMode(initial)); if (initial === "write") setRw("write"); if (initial === "read") setRw("read"); } }, [initial]);
   const T = [["grade", `採点待ち${gs.length ? ` (${gs.length})` : ""}`], ["print", "次の紙"], ["make", "5教科テスト"], ["mock", "模試"], ["rw", "読解・記述"]];
   return (<div className="pane">
-    <Hint k="paper">紙はここ。平日は「採点待ち」（昨日の紙を撮る）と「次の紙」（類題を作って印刷）。週末は「5教科テスト」を作って印刷し、赤ペンで採点したら一覧で用紙を開いて答案を撮る。定期テスト前は「模試」。</Hint>
+    <Hint k="paper">紙はここ。平日は「採点待ち」（昨日の紙の間違いに ✓）と「次の紙」（類題を作って印刷）。週末は「5教科テスト」を作って印刷し、赤ペンで採点したら一覧で用紙を開いて答案を撮る。定期テスト前は「模試」。</Hint>
     <div className="subtabs five">{T.map(([k, l]) => (<button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{l}</button>))}</div>
     {mode === "grade" && <TodayGrade d={d} save={save} onNext={() => setMode("print")} />}
     {mode === "print" && <TodayMake d={d} save={save} go={go} />}
@@ -1297,54 +1274,50 @@ function GradeRowDetail({ i, d, save }) {
 }
 function TodayGrade({ d, save, onNext }) {
   const unitOf = (id) => unitById(d, id);
-  const set = gradeSet(d);
-  const qnums = useMemo(() => { const out = {}; const byDay = {}; set.forEach((i) => { (byDay[i.printedOn] = byDay[i.printedOn] || []).push(i); });
-    Object.values(byDay).forEach((its) => { try { genToPaper(its, unitOf).questions.filter((q) => q.jb && q.itemId).forEach((q) => { (out[q.itemId] = out[q.itemId] || []).push(q.n); }); } catch {} });
-    return out; }, [set.map((i) => i.id + ":" + i.printedOn).join(",")]); // 項目 → その日の紙の問番号
+  const set0 = gradeSet(d);
+  const key = set0.map((i) => i.id + ":" + i.printedOn).join(",");
+  const { qnums, hasWhy } = useMemo(() => { const qnums = {}, hasWhy = {}; const byDay = {}; set0.forEach((i) => { (byDay[i.printedOn] = byDay[i.printedOn] || []).push(i); });
+    Object.values(byDay).forEach((its) => { try { genToPaper(its, unitOf).questions.filter((q) => q.jb && q.itemId).forEach((q) => { (qnums[q.itemId] = qnums[q.itemId] || []).push(q.n); if (q.why) hasWhy[q.itemId] = true; }); } catch {} });
+    return { qnums, hasWhy }; }, [key]); // 項目 → その日の紙の問番号、説明の問いの有無
   const qlabel = (i) => { const ns = qnums[i.id]; return ns && ns.length ? (ns.length === 1 ? `問${ns[0]}` : `問${ns[0]}〜${ns[ns.length - 1]}`) : ""; };
+  const first = (i) => (qnums[i.id] && qnums[i.id].length ? qnums[i.id][0] : 1e9);
+  const set = [...set0].sort((a, b) => (a.printedOn < b.printedOn ? -1 : a.printedOn > b.printedOn ? 1 : 0) || first(a) - first(b) || (a.printedAs || 0) - (b.printedAs || 0)); // 紙の問番号の順（紙を上から見ながら ✓ を入れる）
+  const days = set.map((i) => i.printedOn).filter((x, k, arr) => arr.indexOf(x) === k);
   const [open, setOpen] = useState({});
   const [dc, setDc] = useState({});
-  const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [lastFiles, setLastFiles] = useState(null);
-  const sec = useElapsed(busy);
   const upd = (id, patch) => setDc((x) => ({ ...x, [id]: { ...(x[id] || {}), ...patch } }));
-  useEffect(() => { const fs = takePending("shots"); if (!fs || !fs.length) return; if (!set.length) { notify("採点待ちの紙がありません。次の紙を作ってから撮ってください。", "warn"); return; } shoot(fs); }, []); // + から撮った写真
-  const shoot = async (files, model = null) => {
-    if (!files.length) return; setBusy(true); setErr(""); setLastFiles(files);
-    try { const marks = await readSelfMarks(files, set, unitOf, model); const patch = applySelfMarks(set, marks); const n = Object.keys(patch).length;
-      setDc((x) => ({ ...x, ...patch })); notify(n ? `${n}件の判定を読み取りました。違う行だけ直して「まとめて確定」。` : "印を読み取れませんでした。手で押してください。", n ? "ok" : "warn"); }
-    catch (e) { setErr(e.message || "読み取れませんでした"); }
-    setBusy(false);
+  const result = (i) => { const c = dc[i.id] || {}; return c.skip || c.bad ? null : c.x ? "x" : c.oo ? "oo" : "o"; }; // ✓ の無い行は「解けた」
+  const etOf = (i) => dc[i.id]?.etype || i.etype || "";
+  const wrong = set.filter((i) => result(i) === "x");
+  const okN = set.filter((i) => result(i) === "o" || result(i) === "oo").length;
+  const missingE = wrong.filter((i) => !etOf(i));
+  const skipped = set.filter((i) => dc[i.id]?.skip); const bads = set.filter((i) => dc[i.id]?.bad);
+  const commit = () => {
+    const dec = {}; set.forEach((i) => { const c = dc[i.id] || {}; if (c.skip) dec[i.id] = { skip: true }; else if (c.bad) dec[i.id] = { bad: true }; else { const r = result(i); dec[i.id] = { r, etype: r === "x" ? etOf(i) : "" }; } });
+    const { d: nd, n, bad } = judgeAll(d, dec); save(nd); setDc({});
+    notify(`${n}件を確定しました（できなかった ${wrong.length}件）。${bad ? `「問題が変」${bad} 件は次の紙で作り直します。` : ""}${skipped.length ? `「やっていない」${skipped.length} 件は次の紙に戻しました。` : ""}`);
   };
-  const pickSelf = (i, r) => upd(i.id, { self: r, r, etype: r === "x" ? (dc[i.id]?.etype || i.etype || "") : "", skip: false });
-  const pickParent = (i, r) => upd(i.id, { r, etype: r === "x" ? (dc[i.id]?.etype || i.etype || "") : "", skip: false });
-  const decided = set.filter((i) => dc[i.id]?.r || dc[i.id]?.skip || dc[i.id]?.bad);
-  const judged = decided.filter((i) => dc[i.id]?.r);
-  const missingE = set.filter((i) => dc[i.id]?.r === "x" && !dc[i.id]?.etype);
-  const commit = () => { const { d: nd, n, bad } = judgeAll(d, dc); save(nd); setDc({}); const rest = set.length - decided.length; notify(`${n}件を確定しました。${bad ? `「問題が変」${bad} 件は明日作り直します。` : ""}${rest ? `残り ${rest} 件は採点待ちのままです。` : ""}`); };
   return (<section className="sec">
     {set.length === 0 ? <p className="empty">採点待ちはありません。「次の紙」で作ると、ここに並びます。</p> : (<>
-      <p className="lead">紙を撮ると、子どもが付けた「自分の判定」の印を読み取って入れます。違う行だけ親の欄を直して「まとめて確定」。<strong>出した問題がすべて正解で「解けた」（習得中は3問、保持の確認は1問）、説明の問いにも答えられていれば「説明もできた」。</strong>{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
-      <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); notify(`${set.length}件を「次の紙」に戻しました（判定なし）`); }} disabled={busy}>全部を次の紙に戻す（判定しない）</button></div>
-      <p className="lead">子どもが紙に書いた ○× を AI が読み、「子ども」に入れます。親は違うところだけ直して「まとめて確定」。撮らない場合は親の行を押すだけです。</p>
-      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : "紙を撮る（○×の欄を読み取る。複数枚可）"}<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => shoot(Array.from(e.target.files || []))} /></label>
-      {err && <div className="errbox"><p>{err}</p>{lastFiles && <button className="btn-sm" onClick={() => shoot(lastFiles, SONNET)}>もう一度読み取る</button>}</div>}
-      {[...SUBJECTS, ...set.map((i) => i.subject)].filter((sb, k, arr) => arr.indexOf(sb) === k && set.some((i) => i.subject === sb)).map((sb) => (<div key={sb}><h4 className="sub-h"><Dot s={sb} />{sb}<em className="pg"> {set.filter((i) => i.subject === sb).length}件</em></h4>
-      {set.filter((i) => i.subject === sb).map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const isTerm = !needsWhy(i); return (
-        <div className={"grow" + (c.skip ? " skip" : c.r ? " done" : "")} key={i.id}>
-          <div className="c-meta">{u ? u.name : "単元なし"}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<em className="lv">印刷 {i.printedOn.slice(5)}</em>{qlabel(i) && <em className="qno">{qlabel(i)}</em>}<button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, r: null, self: null })}>{c.skip ? "戻す" : "やっていない"}</button></div>
+      <p className="lead">紙を上から見て、<strong>間違えた問題の行に「できなかった」の ✓</strong> を入れて「まとめて確定」。✓ の無い行は「解けた」になります（出した問題がすべて正解のときだけ解けた）。{Object.keys(hasWhy).length > 0 && "「説明」の問いにも自分の言葉で答えられていれば「説明もできた」に ✓。"}{set.some((i) => i.printedOrig) && "「元の問題」の行は、類題が作れず元の問題をもう一度解いた回です。「解けた」では間隔が伸びず、「説明もできた」でだけ進みます。"}</p>
+      <div className="q-btns"><button className="btn-sm" onClick={() => { const dec = {}; set.forEach((i) => { dec[i.id] = { skip: true }; }); const { d: nd } = judgeAll(d, dec); save(nd); setDc({}); notify(`${set.length}件を「次の紙」に戻しました（判定なし）`); }}>全部を次の紙に戻す（判定しない）</button></div>
+      {days.map((day) => (<div key={day}>{days.length > 1 && <h4 className="sub-h">印刷 {day.slice(5)} の紙<em className="pg"> {set.filter((i) => i.printedOn === day).length}件</em></h4>}
+      {set.filter((i) => i.printedOn === day).map((i) => { const u = unitOf(i.unitId); const c = dc[i.id] || {}; const et = etOf(i); return (
+        <div className={"grow" + (c.skip ? " skip" : c.x ? " ng" : "")} key={i.id}>
+          <div className="c-meta">{qlabel(i) && <em className="qno">{qlabel(i)}</em>}<Dot s={i.subject} />{i.subject}{u ? "・" + u.name : ""}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, x: false, oo: false, bad: false })}>{c.skip ? "戻す" : "やっていない"}</button></div>
           <button className="c-label tap" onClick={() => setOpen((o) => ({ ...o, [i.id]: !o[i.id] }))}>{i.label}<em className="pg"> {open[i.id] ? "閉じる" : i.failCount >= 3 ? "類題・診断 ▸" : "類題 ▸"}</em></button>
           {open[i.id] && <GradeRowDetail i={i} d={d} save={save} />}
-          {!c.skip && (<>
-            {c.self && (<div className="grow-r"><span className="j-who">子ども</span><span className="j-read">紙の○×: <b>{(JUDGE.find(([r]) => r === c.self) || [])[1]}</b></span></div>)}
-            <div className="grow-r"><span className="j-who">親</span><div className="j-btns sm">{JUDGE.map(([r, l, cls]) => (<button key={r} className={cls + (c.r === r ? " on" : "")} disabled={isTerm && r === "oo"} onClick={() => pickParent(i, r)}>{l}</button>))}</div></div>
-            {c.r === "x" && <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (c.etype === e ? " on" : "")} onClick={() => upd(i.id, { etype: e })}>{e}</button>))}</div>}
-            <div className="grow-r"><span className="j-who"></span><button className={"lnk bad-lnk" + (c.bad ? " on" : "")} onClick={() => upd(i.id, { bad: !c.bad, r: null, self: null })}>{c.bad ? "問題が変（判定せず次の紙で作り直す）" : "問題が変"}</button></div>
+          {!c.skip && !c.bad && (<>
+            <div className="grow-r chks">
+              <label className={"gchk ng" + (c.x ? " on" : "")}><input type="checkbox" checked={!!c.x} onChange={(e) => upd(i.id, { x: e.target.checked, oo: false })} />できなかった</label>
+              {hasWhy[i.id] && needsWhy(i) && <label className={"gchk ok" + (c.oo ? " on" : "")}><input type="checkbox" checked={!!c.oo} disabled={!!c.x} onChange={(e) => upd(i.id, { oo: e.target.checked })} />説明もできた</label>}
+            </div>
+            {c.x && <div className="j-et">{ETYPES.map((e) => (<button key={e} className={"et" + (et === e ? " on" : "")} onClick={() => upd(i.id, { etype: e })}>{e}</button>))}</div>}
           </>)}
+          {!c.skip && <div className="grow-r"><button className={"lnk bad-lnk" + (c.bad ? " on" : "")} onClick={() => upd(i.id, { bad: !c.bad, x: false, oo: false })}>{c.bad ? "問題が変（判定せず次の紙で作り直す）" : "問題が変"}</button></div>}
         </div>); })}</div>))}
-      <button className="btn-main" onClick={commit} disabled={!decided.length || missingE.length > 0}>まとめて確定（{judged.length}件{decided.filter((i) => dc[i.id]?.bad).length ? `＋問題が変 ${decided.filter((i) => dc[i.id]?.bad).length}` : ""}）</button>
+      <button className="btn-main" onClick={commit} disabled={missingE.length > 0}>まとめて確定（できなかった {wrong.length}・解けた {okN}{bads.length ? `・問題が変 ${bads.length}` : ""}{skipped.length ? `・やっていない ${skipped.length}` : ""}）</button>
       {missingE.length > 0 && <p className="warn-t">「できなかった」には誤答の種類を選んでください（{missingE.length}件）。</p>}
-      {set.length - decided.length > 0 && <p className="ph-note">押していない {set.length - decided.length} 件は採点待ちのまま残ります。「やっていない」を押すと次の紙に入ります。</p>}
       <p className="rule">用語は「解けた」で次へ進みます。それ以外は「説明もできた」でないと7日から先へ進みません。落とすと1日に戻り、項目は消えません。</p>
       {onNext && <p className="next-hint"><button className="lnk" onClick={onNext}>次は次の紙を作る →</button></p>}
     </>)}
@@ -2015,7 +1988,7 @@ function GuideTab({ go }) {
     <S t="毎日（平日）">
       <ol className="g-ol">
         <li><b>子ども</b>：机の上の紙を解く → 答えを見て、右の欄に自分で ○ か × を書く → 学校のワークをやる。</li>
-        <li><b>親（夜5分）</b>：ホームに出る順に。昨日の紙を撮って採点 → 次の紙を作って印刷 → ワークの×をタップして登録 → 今日の最後のページを入れる。押せば直接その画面が開きます。</li>
+        <li><b>親（夜5分）</b>：ホームに出る順に。昨日の紙の間違いに ✓ を入れて採点 → 次の紙を作って印刷 → ワークの×をタップして登録 → 今日の最後のページを入れる。押せば直接その画面が開きます。</li>
       </ol>
     </S>
     <S t="週末">
@@ -2251,7 +2224,7 @@ const CSS = `
 .next-hint{margin:12px 0 0;text-align:right}.next-hint .lnk{font-size:13px;font-weight:700;color:var(--ink);padding:6px 0}
 .c-label.tap{display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;color:var(--ink);cursor:pointer}
 .irow.pick{cursor:pointer}.irow.pick input[type=checkbox]{width:auto;margin-top:4px}.irow.pick.on{background:#F3F6F3;margin:0 -13px;padding:8px 13px}
-.grow{padding:10px 0;border-bottom:1px solid var(--line)}.grow:last-of-type{border-bottom:none}.grow.done{background:#F3F6F3;margin:0 -13px;padding:10px 13px}.grow.skip .c-label{color:var(--ink3);text-decoration:line-through}
+.grow{padding:10px 0;border-bottom:1px solid var(--line)}.grow:last-of-type{border-bottom:none}.grow.ng{background:#FBF3F2;margin:0 -13px;padding:10px 13px}.grow.skip .c-label{color:var(--ink3);text-decoration:line-through}
 .grow-r{display:flex;align-items:center;gap:8px;margin-top:5px}.grow-r .j-who{flex:0 0 40px;margin:0}.grow-r .j-btns{flex:1}.j-btns.sm button{padding:7px 2px;font-size:11px}.gskip{margin-left:auto;background:none;border:1px solid var(--line);border-radius:2px;font-size:10px;color:var(--ink3);padding:1px 6px;cursor:pointer;font-family:inherit}
 .mat-sum{font-size:12px;color:var(--ink2);line-height:1.8;margin:-4px 0 10px}.mat-sum b{color:var(--ink);margin-right:4px}
 .del-ask{background:#FBF3F2;border:1px solid #E4C4C0;border-radius:3px;padding:10px}.del-ask p{font-size:12px;color:#8E3830;margin:0 0 8px;line-height:1.6}.btn-sm.danger{background:#A8443B;border-color:#A8443B;color:#fff;font-weight:700}
@@ -2354,7 +2327,13 @@ const CSS = `
 .judge{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.j-who{font-size:10px;color:var(--ink3);margin:6px 0 4px;font-weight:700}.agree{font-style:normal;color:#2F6F5E;margin-left:6px}
 .j-btns{display:flex;gap:6px}.j-btns button{flex:1;padding:10px 4px;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink3)}
 .j-btns .ng.on{background:#A8443B;border-color:#A8443B;color:#fff}.j-btns .mid.on{background:#C08A3E;border-color:#C08A3E;color:#fff}.j-btns .okb.on{background:#2F6F5E;border-color:#2F6F5E;color:#fff}
-.j-et{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.et{padding:5px 10px;border:1px solid var(--line);background:var(--paper);border-radius:999px;font-size:11px;color:var(--ink2);cursor:pointer;font-family:inherit}.et.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.j-et{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.grow-r.chks{gap:20px;margin-top:8px}
+.gchk{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--ink2);cursor:pointer}
+.gchk input[type=checkbox]{width:24px;height:24px;margin:0;padding:0;flex:0 0 auto;accent-color:#A8443B}
+.gchk.ok input[type=checkbox]{accent-color:#2F6F5E}
+.gchk.ng.on{color:#8E3830}.gchk.ok.on{color:#2F6F5E}
+.gchk input:disabled{opacity:.3}.et{padding:5px 10px;border:1px solid var(--line);background:var(--paper);border-radius:999px;font-size:11px;color:var(--ink2);cursor:pointer;font-family:inherit}.et.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .btn-main{width:100%;padding:13px;background:var(--ink);color:#fff;border:none;border-radius:3px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px}.btn-main:disabled{opacity:.35}
 .btn-sm{padding:7px 12px;border:1px solid var(--line);background:var(--paper);border-radius:3px;font-size:12px;cursor:pointer;white-space:nowrap;font-family:inherit;color:var(--ink2)}.btn-sm:disabled{opacity:.5}.btn-sm.wide{width:100%;margin-top:7px;padding:11px}
 .btn-x{width:26px;height:26px;flex:0 0 26px;border:none;background:none;color:var(--ink3);font-size:15px;cursor:pointer}.wide-x{width:100%;font-size:11px;margin-top:8px;height:auto}

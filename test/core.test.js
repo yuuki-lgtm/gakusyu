@@ -1047,28 +1047,6 @@ describe("紙を撮って判定欄を読む", () => {
     const d = { ...m.blank(), items: [it({ id: "b", printedOn: T, printedAs: 2 }), it({ id: "a", printedOn: T, printedAs: 1 }), it({ id: "z", printedOn: T, failCount: 5 }), it({ id: "o", printedOn: day(-1), printedAs: 3 })] };
     assert.deepEqual(m.gradeSet(d).map((i) => i.id), ["o", "a", "b", "z"]);
   });
-  test("selfMarksText: 紙の順に見出しと問題番号", () => {
-    const d = F.demo(); const t = m.selfMarksText(m.gradeSet(d), (id) => m.unitById(d, id));
-    assert.ok(/^1\. 【数学・正負の数】 問1/.test(t), t);
-  });
-  test("applySelfMarks: 読めた項目だけ子ども＝親の初期値。× は前回の誤答の種類。用語の oo は o に。空は入れない", () => {
-    const items = [it({ id: "a", etype: "読み間違えた" }), it({ id: "b", fmt: "知識・用語" }), it({ id: "c" }), it({ id: "d" })];
-    const r = m.applySelfMarks(items, { 1: "x", 2: "oo", 3: "", 4: "o" });
-    assert.deepEqual(r.a, { self: "x", r: "x", etype: "読み間違えた", skip: false });
-    assert.deepEqual(r.b, { self: "o", r: "o", etype: "", skip: false });
-    assert.equal(r.c, undefined); assert.equal(r.d.r, "o");
-    assert.equal(m.judgeAll({ ...m.blank(), items: items.map((i) => ({ ...i, printedOn: T })) }, r).n, 3);
-  });
-  test("readSelfMarks: 画像と項目の一覧を渡し、印を {n: self} で返す。変な値は空", async () => {
-    const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk"); let sent = null;
-    globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"marks":[{"n":1,"self":"oo"},{"n":2,"self":"?"},{"n":"3","self":"x"}]}' }] }) }; };
-    try {
-      const fake = { name: "a.jpg" }; const origC = m.stubs; // compressImage は node では動かないので差し替え不可 → 空の画像配列で呼ぶ
-      const r = await m.readSelfMarks([], [it({ id: "a", subject: "数学", unitId: "u1" })], () => ({ name: "正負の数" }));
-      assert.deepEqual(r, { 1: "oo", 2: "", 3: "x" });
-      assert.ok(JSON.stringify(sent).includes("1. 【数学・正負の数】"));
-    } finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
-  });
 });
 
 
@@ -1128,11 +1106,10 @@ describe("説明不要の印（B-1）", () => {
     assert.equal(m.applyJudgment(item({ level: 3, noWhy: true, history: [] }), "o").level, 4);
     assert.equal(m.applyJudgment(item({ level: 3, history: [] }), "o").level, 3);
   });
-  test("類題の紙: noWhy の項目には説明の問いを付けない。採点の読み取りで oo は o に", () => {
+  test("類題の紙: noWhy の項目には説明の問いを付けない", () => {
     const u = { id: "u", name: "x" };
     const p = m.genToPaper([{ id: "1", subject: "英語", unitId: "u", label: "A", fmt: "英作文", noWhy: true, gen: { problems: [{ q: "q", a: "a" }], why: "w" } }], () => u);
     assert.equal(p.questions.length, 1); assert.ok(p.questions[0].jb === true);
-    assert.equal(m.applySelfMarks([item({ id: "a", noWhy: true, history: [] })], { 1: "oo" }).a.r, "o");
   });
   test("名前付け: AI の rote で noWhy が付く。類題生成でも同じ", async () => {
     const orig = globalThis.fetch;
@@ -1383,10 +1360,8 @@ describe("検算（数学・理科の計算、英語の文法・英作文）", (
 
 describe("問題が変", () => {
   const it = (o) => item({ history: [], ...o });
-  test("紙に「問題が変」の欄は無い（親の画面のボタンだけ）。反映の値が bad なら判定せずに作り直し", () => {
+  test("紙に「問題が変」の欄は無い（親の画面のボタンだけ）", () => {
     assert.equal(m.SELF_LINE, undefined); assert.ok(!m.SELF_NOTE.includes("問題が変"));
-    const r = m.applySelfMarks([it({ id: "a" }), it({ id: "b" })], { 1: "bad", 2: "o" });
-    assert.deepEqual(r.a, { bad: true, self: null, r: null, skip: false }); assert.equal(r.b.r, "o");
   });
   test("judgeAll: 問題が変 は判定せず、印刷と類題を消して翌日に作り直す。回数を数える", () => {
     const d = { ...m.blank(), items: [it({ id: "a", level: 2, printedOn: day(-1), gen: { problems: [] }, genOn: day(-1) }), it({ id: "b", printedOn: day(-1) })] };
@@ -1458,23 +1433,6 @@ describe("画面の状態を引き継ぐ", () => {
     assert.deepEqual(m.openScreen(o2, "week", "cum").week, { m: "cum", n: 2 }, "同じサブ画面でも指定があれば作り直す");
     assert.deepEqual(m.openScreen(o2, "today", "grade").today, { m: "grade", n: 0 });
     assert.deepEqual(m.openScreen(o2, "week").week, { m: "cum", n: 1 }, "その後バーで戻っても作り直さない");
-  });
-});
-
-
-describe("○×の欄の読み取り", () => {
-  test("selfMarksText: 項目ごとに問題番号と説明の問いの番号。読み取りは o/x/oo だけ受け付ける", async () => {
-    const u = { id: "u", name: "正負の数" }; const unitOf = () => u;
-    const items = [
-      { id: "1", subject: "数学", unitId: "u", label: "A", fmt: "計算", level: 2, gen: { problems: [{ q: "q1", a: "a1" }, { q: "q2", a: "a2" }], why: "w" } },
-      { id: "2", subject: "数学", unitId: "u", label: "B", fmt: "計算", gen: { problems: [{ q: "q3", a: "a3" }], why: "w" } }];
-    const txt = m.selfMarksText(items, unitOf);
-    assert.equal(txt, "1. 【数学・正負の数】 問1・2（説明は問3）\n2. 【数学・正負の数】 問4");
-    const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk"); let sent = null;
-    globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"marks":[{"n":1,"self":"oo"},{"n":2,"self":"bad"}]}' }] }) }; };
-    try { const r = await m.readSelfMarks([], items, unitOf); assert.deepEqual(r, { 1: "oo", 2: "" }, "bad は紙からは来ない");
-      const body = JSON.stringify(sent); assert.ok(body.includes("○ でない印") && body.includes("✓・／・△") && body.includes("問1・2（説明は問3）") && !body.includes("問題が変"), "× 以外の印も不正解として読ませる"); }
-    finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
   });
 });
 
@@ -1649,14 +1607,3 @@ describe("考え方と例題を載せる回", () => {
   });
 });
 
-describe("読み取りの返答", () => {
-  test("readSelfMarks: 途中で切れた JSON でも完成した分は拾う。何も無ければ先頭を添えて失敗", async () => {
-    const orig = globalThis.fetch; m.stubs.localStorage.setItem("anthropic_api_key", "sk");
-    const items = [{ id: "a", subject: "数学", unitId: "u", label: "A", gen: { problems: [{ q: "q", a: "a" }] } }, { id: "b", subject: "数学", unitId: "u", label: "B", gen: { problems: [{ q: "q", a: "a" }] } }];
-    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '読み取りました。{"marks":[{"n":1,"self":"o"},{"n":2,"sel' }] }) });
-    try { assert.deepEqual(await m.readSelfMarks([], items, () => null), { 1: "o" });
-      globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: "欄が見つかりません" }] }) });
-      await assert.rejects(() => m.readSelfMarks([], items, () => null), /読み取りの返答を読めませんでした（先頭: 欄が見つかりません/); }
-    finally { globalThis.fetch = orig; m.stubs.localStorage.removeItem("anthropic_api_key"); }
-  });
-});
