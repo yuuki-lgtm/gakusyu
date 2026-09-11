@@ -359,7 +359,9 @@ test("その他→登録: 落とした項目が既定で開き、メニューに
 test("夜の作業の進み具合は番号つきのステップ表示（ボタンではない）", () => {
   m.nightSave(1);
   try { const html = render(m.NightFlow, { d: F.demo(), save: noop, go: noop }).html;
-    assert.ok(html.includes('<ol class="steps"') && html.includes('<li class="done">') && html.includes('<li class="on">') && html.includes("✓"));
+    assert.ok(html.includes('<ol class="steps"') && html.includes('<li class="done">') && html.includes('<li class="on">'));
+    assert.ok(!html.includes("✓") && !html.includes("–") && ["1", "2", "3", "4"].every((n) => html.includes(`<span class="st-n">${n}</span>`)), "番号は常に 1〜4");
+    assert.ok(html.includes('<span class="st-s">済</span>') && html.includes('<span class="st-s">いま</span>'));
     assert.ok(!html.includes("night-steps")); }
   finally { m.nightSave(null); }
 });
@@ -378,6 +380,7 @@ test("夜の作業: やることが無い段階は飛ばす。空のデータな
   const e = render(m.NightFlow, { d: F.empty(), save: noop, go: noop }).html;
   assert.ok(e.includes("<strong>明日の紙</strong>") && e.includes("終わる") && !e.includes("に戻る"));
   assert.equal((e.match(/<li class="skip past">/g) || []).length, 3, "飛ばして通過した段階は線を緑にするため past を付ける");
+  assert.equal((e.match(/<span class="st-s">飛ばす<\/span>/g) || []).length, 3); assert.ok(!e.includes("–"));
   const d = F.demo(); const h = render(m.NightFlow, { d, save: noop, go: noop }).html;
   assert.ok(h.includes("<strong>昨日の採点</strong>") && h.includes("次へ：×を登録 →"));
   const noMat = { ...d, materials: [] }; const h2 = render(m.NightFlow, { d: noMat, save: noop, go: noop }).html;
@@ -453,4 +456,9 @@ test("画面冒頭の説明: 未読なら開いた状態で × 付き、既読�
 test("ホーム: 夜の作業の行は見出し「夜の作業」だけ。手順は説明文に", () => {
   const h = render(m.HomeTab, { d: F.demo(), go: noop }).html;
   assert.ok(h.includes('<div class="hero-t">夜の作業</div>') && h.includes("採点 → ×の登録 → 最後のページ → 明日の紙。"));
+});
+test("×の登録: 教材が1種類だけなら、押せない1つの表示（ボタンにしない）", () => {
+  const d = F.demo(); d.materials = d.materials.filter((mt) => mt.subject !== "数学" || mt.kind === "ワーク");
+  const h = render(m.ItemReg, { d, save: noop }).html;
+  assert.ok(h.includes('<div class="seg sm one"><span>ワーク</span></div>') && !h.includes('class="on">ワーク</button>'));
 });
