@@ -1612,3 +1612,10 @@ describe("ホームの夜の行", () => {
     const ks2 = m.nextActions(done).A.map((a) => a.k); assert.ok(!ks2.includes("items") && !ks2.includes("last"), "今日もう登録・入力していれば出ない");
   });
 });
+
+describe("+ からの受け渡し", () => {
+  test("takePending: 一度取ると空になる。isPdfFile は拡張子か型で判定", () => {
+    m.pending.mat = ["f"]; assert.deepEqual(m.takePending("mat"), ["f"]); assert.equal(m.takePending("mat"), null);
+    assert.equal(m.isPdfFile({ name: "a.PDF", type: "" }), true); assert.equal(m.isPdfFile({ name: "a.jpg", type: "image/jpeg" }), false); assert.equal(m.isPdfFile({ name: "x", type: "application/pdf" }), true);
+  });
+});

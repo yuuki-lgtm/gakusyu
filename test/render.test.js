@@ -127,7 +127,7 @@ test("デモ: 登録/教材 に取り込み済みのページ範囲が出る。�
   assert.ok(html.includes("3ページ（p.10–12）"), "数学ワークの範囲");
   assert.ok(html.includes("1ページ（p.12）"), "数学教科書の範囲");
   assert.ok(html.includes("を全部削除") && !html.includes("本当に削除する"), "確認は押すまで出ない");
-  assert.ok(html.includes("横長の画像は見開きとして2ページ") && html.includes("縦書き（右が若い）"));
+  assert.ok(html.includes("PDF か ページの画像（複数可）を選ぶ") && !html.includes("縦書き（右が若い）") && !html.includes("横長の画像は見開きとして2ページ"), "教科・番号・綴じ方向はファイルを選んだ後に出す");
   assert.ok(html.includes("消すページ"));
   const e = render(m.RegTab, { d: F.empty(), save: noop, initial: "mat" }).html;
   assert.ok(e.includes("なし") && !e.includes("を全部削除"));
@@ -442,7 +442,11 @@ test("今日: 採点の下に「次は明日の紙を作る →」、明日の�
   const p = render(m.TodayTab, { d: F.demo(), save: noop, initial: "print", go: noop }).html; assert.ok(p.includes("次はワークの×を登録する →"));
   const r = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html; assert.ok(r.includes("今日やった最後のページ番号を入れて"));
 });
-test("右下の +: 閉じた状態では丸いボタンだけ。中身の一覧は開くまで出さない", () => {
+test("右下の +: 押すとまず撮る／選ぶ（ファイル入力）。一覧は選んだ後だけ。教材の取り込みは読み込んでから教科・種別", () => {
   const h = render(m.Fab, { go: noop }).html;
-  assert.ok(h.includes('class="fab"') && h.includes('aria-label="紙を入れる"') && !h.includes("sheet-row"));
+  assert.ok(h.includes('class="fab"') && h.includes('type="file"') && h.includes('accept="image/*,application/pdf"') && !h.includes("sheet-row"));
+  const mat = render(m.RegTab, { d: F.demo(), save: noop, initial: "mat" }).html;
+  const i1 = mat.indexOf("PDF か ページの画像（複数可）を選ぶ"), i2 = mat.indexOf('class="subj-row"');
+  assert.ok(i1 > 0 && (i2 < 0 || i2 > i1), "ファイルを選ぶ前は教科・種別を出さない（または後ろ）");
+  assert.ok(mat.includes("取り込み済み（数学）"));
 });

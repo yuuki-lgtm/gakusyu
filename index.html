@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 15:14"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 15:22"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -657,20 +657,29 @@ function Hint({ k, children }) {
   return open ? (<div className="hint open"><p className="tabhint">{children}</p><button className="hint-q" onClick={() => setOpen(false)} aria-label="説明を閉じる">×</button></div>)
     : (<div className="hint"><button className="hint-q" onClick={() => setOpen(true)} aria-label="説明を見る">?</button></div>);
 }
-/* 右下の +（ホーム・テスト・その他の第一階層だけ）。「紙を入れる」入口。撮った写真は pendingShots に置き、採点の画面が開いた時に読む */
-let pendingShots = null;
+/* 右下の +（ホーム・テスト・その他の第一階層だけ）。まず撮る／選ぶ、次に「これは何ですか」。OOUI: 紙（オブジェクト）が先、操作は種類から決まる。
+   選んだファイルは pending に置き、行き先の画面が開いた時に読む（採点＝読み取り開始、用紙＝用紙を開いた時に読み取り、教材＝読み込み済みで開く、目次＝教科と種類を選んで読み取り） */
+const pending = { shots: null, answer: null, mat: null, toc: null };
+const takePending = (k) => { const v = pending[k]; pending[k] = null; return v; };
+const isPdfFile = (f) => /pdf$/i.test(f.type || f.name || "");
 function Fab({ go }) {
-  const [open, setOpen] = useState(false);
-  const pick = (t, m) => { setOpen(false); go(t, m); };
+  const [files, setFiles] = useState(null); const [urls, setUrls] = useState([]);
+  useEffect(() => { if (!files) { setUrls([]); return; } const us = files.filter((f) => !isPdfFile(f)).slice(0, 4).map((f) => { try { return URL.createObjectURL(f); } catch { return ""; } }); setUrls(us); return () => us.forEach((u) => { try { URL.revokeObjectURL(u); } catch {} }); }, [files]);
+  const close = () => setFiles(null);
+  const pick = (k, t, m) => { const fs = files; close(); pending[k] = k === "toc" ? fs[0] : fs; go(t, m); };
+  const hasPdf = !!files && files.some(isPdfFile);
   return (<>
-    <button className="fab" aria-label="紙を入れる" onClick={() => setOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
-    {open && (<div className="sheet-bg" onClick={() => setOpen(false)}><div className="sheet" onClick={(e) => e.stopPropagation()}>
-      <h4>紙を入れる</h4>
-      <label className="sheet-row">昨日の紙（類題）を撮って採点<input type="file" accept="image/*" multiple hidden onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (!fs.length) return; pendingShots = fs; pick("today", "grade"); }} /></label>
-      <button className="sheet-row" onClick={() => pick("week", "make")}>テストの答案を撮って採点（用紙を選ぶ）</button>
-      <button className="sheet-row" onClick={() => pick("reg", "mat")}>教材を取り込む（ワーク・教科書・定期テスト）</button>
-      <button className="sheet-row" onClick={() => pick("reg", "unit")}>目次を撮って単元を登録</button>
-      <button className="sheet-row cancel" onClick={() => setOpen(false)}>閉じる</button></div></div>)}
+    <label className="fab" aria-label="紙を入れる"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" /></svg>
+      <input type="file" accept="image/*,application/pdf" multiple hidden onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) setFiles(fs); }} /></label>
+    {files && (<div className="sheet-bg" onClick={close}><div className="sheet" onClick={(e) => e.stopPropagation()}>
+      <div className="sheet-pv">{urls.map((u, k) => (<img key={k} src={u} alt="" />))}<span>{hasPdf ? `PDF ${files.filter(isPdfFile).length}件` : ""}{hasPdf && files.length > files.filter(isPdfFile).length ? "・" : ""}{files.length - files.filter(isPdfFile).length ? `写真 ${files.length - files.filter(isPdfFile).length}枚` : ""}</span></div>
+      <h4>これは何ですか</h4>
+      <button className="sheet-row" disabled={hasPdf} onClick={() => pick("shots", "today", "grade")}>昨日の紙（類題）→ 採点する</button>
+      <button className="sheet-row" disabled={hasPdf} onClick={() => pick("answer", "week", "make")}>テストの答案 → 用紙を選んで採点する</button>
+      <button className="sheet-row" onClick={() => pick("mat", "reg", "mat")}>教材（ワーク・教科書・定期テスト）→ 取り込む</button>
+      <button className="sheet-row" disabled={hasPdf} onClick={() => pick("toc", "reg", "unit")}>目次 → 単元を登録する</button>
+      {hasPdf && <p className="ph-note">PDF は教材としてだけ取り込めます。採点と目次は写真で。</p>}
+      <button className="sheet-row cancel" onClick={close}>別のものを選ぶ・閉じる</button></div></div>)}
   </>);
 }
 function Snacks({ list, onClose }) {
@@ -1269,7 +1278,7 @@ function TodayGrade({ d, save, onNext }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [lastFiles, setLastFiles] = useState(null);
   const sec = useElapsed(busy);
   const upd = (id, patch) => setDc((x) => ({ ...x, [id]: { ...(x[id] || {}), ...patch } }));
-  useEffect(() => { const fs = pendingShots; if (!fs || !fs.length) return; pendingShots = null; if (!set.length) { notify("採点待ちの紙がありません。明日の紙を作ってから撮ってください。", "warn"); return; } shoot(fs); }, []); // + から撮った写真
+  useEffect(() => { const fs = takePending("shots"); if (!fs || !fs.length) return; if (!set.length) { notify("採点待ちの紙がありません。明日の紙を作ってから撮ってください。", "warn"); return; } shoot(fs); }, []); // + から撮った写真
   const shoot = async (files, model = null) => {
     if (!files.length) return; setBusy(true); setErr(""); setLastFiles(files);
     try { const marks = await readSelfMarks(files, set, unitOf, model); const patch = applySelfMarks(set, marks); const n = Object.keys(patch).length;
@@ -1482,6 +1491,7 @@ function PaperGrade({ p: paper, d, save }) {
   const [lastFile, setLastFile] = useState(null);
   const sec = useElapsed(busy);
 
+  useEffect(() => { const fs = takePending("answer"); if (fs && fs.length && paper) { setLastFile(fs[0]); read(fs[0]); } }, []); // + から撮った答案。用紙を開いた時に読む
   const read = async (f, model = null) => {
     if (!paper) return;
     setBusy(true); setErr(""); setMarks(null);
@@ -1678,7 +1688,8 @@ function UnitReg({ d, save }) {
   const field = tocKind === "ワーク" ? "wbPages" : "pages";
   const matchOf = (x) => us.find((u) => u.name === (x.match || "").trim() || u.name === (x.name || "").trim()) || null;
   const addOne = () => { if (!name.trim()) return; save({ ...d, units: [...d.units, { id: uid(), subject, name: name.trim(), pages: pages.trim(), wbPages: wb.trim(), lastTestedOn: null, updatedAt: now() }] }); setName(""); setPages(""); setWb(""); };
-  const readTOC = async (f, model = null) => { setBusy(true); setErr(""); setCands(null);
+  const [tocFile, setTocFile] = useState(() => takePending("toc") || null); // + から撮った目次。教科と種類を選んでから読む
+  const readTOC = async (f, model = null) => { setBusy(true); setErr(""); setCands(null); setTocFile(null);
     try { const b64 = await compressImage(f, 1600, 0.8);
       const t = await callAI([imgBlock(b64), { type: "text", text: `中学1年${subject}の${tocKind}の目次です。単元（章・節）を上から順に、ページ範囲つきで書き出してください。${us.length ? `\n登録済みの単元: ${us.map((u) => u.name).join("／")}\n各項目が登録済みのどれに当たるかを match に入れてください（表記が違っても同じ内容なら対応づける。該当がなければ空文字）。` : ""}` }],
         `JSONのみ: {"units":[{"name":"単元名","pages":"p.12-25","match":"登録済みの単元名か空文字"}]}。粒度は「章」ではなく「節」（テストの範囲指定に使える細かさ）。pagesは${tocKind}のページ番号。`, 2400, model);
@@ -1690,7 +1701,8 @@ function UnitReg({ d, save }) {
     <section className="sec"><SubjRow value={subject} onChange={(s) => { setSubject(s); setCands(null); setEdit(null); }} />
       <p className="lead">学期の初めに教科書の目次を撮って一括登録すれば、以後の登録は不要です。ワークの目次も撮っておくと、単元ごとにワークのページが結びつき、作問と×の登録で教材のページを自動で使えます。</p>
       <div className="seg sm">{BOOK_KINDS.map((k) => (<button key={k} className={tocKind === k ? "on" : ""} onClick={() => { setTocKind(k); setCands(null); }}>{k}の目次</button>))}</div>
-      <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : `${tocKind}の目次を撮る`}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) readTOC(f); }} /></label>
+      {tocFile ? <button className="btn-main" disabled={busy} onClick={() => readTOC(tocFile)}>{busy ? `読み取り中… ${sec}秒` : `撮った写真を「${subject}の${tocKind}の目次」として読み取る`}</button>
+        : <label className="ph-btn">{busy ? `読み取り中… ${sec}秒` : `${tocKind}の目次を撮る`}<input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) readTOC(f); }} /></label>}
       {cands && (<><p className="ph-note">{tocKind === "ワーク" ? "登録済みの単元に当たるものは「→ 単元名」と出ます。チェックしたものにワークのページを結びつけ、該当がなければ新しい単元として登録します。" : "登録する単元にチェック。既にページが入っているものは外してあります。"}</p>
         {cands.map((x, i) => { const ex = matchOf(x); return (<label className={"cand2" + (ck[i] ? " on" : "")} key={i}><input type="checkbox" checked={!!ck[i]} onChange={(e) => setCk((c) => ({ ...c, [i]: e.target.checked }))} /><span>{x.name} <em className="pg">{x.pages}</em>{ex ? <em className="pg"> → {ex.name}{ex[field] ? `（${tocKind} ${ex[field]} あり）` : ""}</em> : <em className="nv">新規</em>}</span></label>); })}
         <button className="btn-main" onClick={commit}>チェックした {Object.values(ck).filter(Boolean).length} 件を反映</button></>)}
@@ -1879,7 +1891,9 @@ function MaterialReg({ d, save }) {
   useEffect(() => { setConfirmDel(false); }, [subject, kind]);
   useEffect(() => { setStart(String(nextPageNo(d, subject, kind, role))); }, [subject, kind, role, (d.materials || []).length]); // 教科・種別・役割を変えるたびに番号を合わせる
   const isPdf = files.length === 1 && /pdf$/i.test(files[0].type || files[0].name);
-  const pick = async (e) => { setErr(""); setMsg(""); const fs = Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true })); setFiles(fs); setShapes([]); e.target.value = "";
+  const pick = (e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; pickFiles(fs); };
+  useEffect(() => { const fs = takePending("mat"); if (fs && fs.length) pickFiles(fs); }, []); // + から選んだファイル
+  const pickFiles = async (fs0) => { setErr(""); setMsg(""); const fs = [...fs0].sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true })); setFiles(fs); setShapes([]);
     if (fs.length === 1 && /pdf$/i.test(fs[0].type || fs[0].name)) return;
     const sh = []; for (const f of fs) { try { const img = await loadImg(await compressImage(f, 400, 0.5)); sh.push(isSpreadShape(img.width, img.height) ? "spread" : "single"); } catch { sh.push("single"); } }
     setShapes(sh); };
@@ -1929,20 +1943,22 @@ function MaterialReg({ d, save }) {
   return (<>
     <section className="sec">
       <p className="lead">ワークと教科書を一度だけ取り込みます。以後は作問と×の登録で写真を撮らずに済みます。返却された定期テストの答案も「テスト」として取り込めば、同じように×をタップで登録できます。画像は共有先（Supabase）にだけ置き、この端末には残しません。家庭内の私的使用に限ります。</p>
-      <SubjRow value={subject} onChange={(s) => { setSubject(s); setFiles([]); setMsg(""); }} />
-      <div className="seg sm">{MKINDS.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setFiles([]); setMsg(""); }}>{k}</button>))}</div>
-      <div className="mat-sum">{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? (k === "テスト" ? TEST_ROLES.map(([r, l]) => { const xs = ms.filter((m) => roleOf(m) === r); return xs.length ? `${l} ${xs.length}枚` : ""; }).filter(Boolean).join("、") : `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）`) : "なし"}</div>); })}</div>
-      {kind === "テスト" && (<><div className="seg sm">{TEST_ROLES.map(([r, l]) => (<button key={r} className={role === r ? "on" : ""} onClick={() => setRole(r)}>{l}</button>))}</div>
-        <p className="ph-note">問題用紙と答案が別の紙なら、問題用紙を1枚目から、答案も1枚目から、同じ順で入れます。同じ番号同士が対になり、答案の×をタップすると問題用紙も一緒にAIに渡ります。</p></>)}
-      <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>横書き（左が若い）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>縦書き（右が若い）</button></div>
-      <Fld label={kind === "テスト" ? "最初の番号（答案の1枚目なら 1。前に取り込んだ分に続けるならその次の番号）" : "最初のページ番号（横長の画像は見開きとして2ページ、縦長は1ページとして順に振ります）"}><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
-      <label className="ph-btn">{busy ? `${busy}… ${sec}秒` : "PDF か ページの画像（複数可）を選ぶ"}<input type="file" accept="image/*,application/pdf" multiple hidden disabled={!!busy} onChange={pick} /></label>
+      <label className="ph-btn">{busy ? `${busy}… ${sec}秒` : files.length ? "別の PDF・画像を選び直す" : "PDF か ページの画像（複数可）を選ぶ"}<input type="file" accept="image/*,application/pdf" multiple hidden disabled={!!busy} onChange={pick} /></label>
       {files.length > 0 && !busy && (<div className="mat-pre">
+        <div className="mat-head">{isPdf ? `PDF「${files[0].name}」` : `画像 ${files.length} 枚`}{!isPdf && shapes.length === files.length ? `（見開き ${shapes.filter((x) => x === "spread").length}枚、片ページ ${shapes.filter((x) => x === "single").length}枚）` : isPdf ? "（ページ数と見開きはPDFから判定）" : "（形を確認中…）"}</div>
+        <p className="ph-note">これは何の教材ですか。教科・種別・最初の番号を決めて保存します。</p>
+        <SubjRow value={subject} onChange={(s) => { setSubject(s); setMsg(""); }} />
+        <div className="seg sm">{MKINDS.map((k) => (<button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setMsg(""); }}>{k}</button>))}</div>
+        {kind === "テスト" && (<><div className="seg sm">{TEST_ROLES.map(([r, l]) => (<button key={r} className={role === r ? "on" : ""} onClick={() => setRole(r)}>{l}</button>))}</div>
+          <p className="ph-note">問題用紙と答案が別の紙なら、問題用紙を1枚目から、答案も1枚目から、同じ順で入れます。同じ番号同士が対になり、答案の×をタップすると問題用紙も一緒にAIに渡ります。</p></>)}
+        <div className="seg sm"><button className={!rightFirst ? "on" : ""} onClick={() => setRightFirst(false)}>横書き（左が若い）</button><button className={rightFirst ? "on" : ""} onClick={() => setRightFirst(true)}>縦書き（右が若い）</button></div>
+        <Fld label={kind === "テスト" ? "最初の番号（答案の1枚目なら 1。前に取り込んだ分に続けるならその次の番号）" : "最初のページ番号（横長の画像は見開きとして2ページ、縦長は1ページとして順に振ります）"}><input type="number" inputMode="numeric" value={start} onChange={(e) => setStart(e.target.value)} /></Fld>
         {(() => { const s1 = parseInt(start, 10) || 0; const ps = shapes.length === files.length ? assignPages(s1, shapes) : null; const last = ps && ps.length ? ps[ps.length - 1][ps[ps.length - 1].length - 1] : null; return (<>
-        <div>{isPdf ? `PDF「${files[0].name}」` : `画像 ${files.length} 枚`} → {subject}の{kind} p.{start}{isPdf ? "〜（ページ数と見開きはPDFから判定）" : ps ? `〜${last}（見開き ${shapes.filter((x) => x === "spread").length}枚、片ページ ${shapes.filter((x) => x === "single").length}枚）` : "〜（形を確認中…）"}</div>
+        <div>→ {subject}の{kind}{kind === "テスト" ? `（${(TEST_ROLES.find(([r]) => r === role) || ["", ""])[1]}）` : ""} {kind === "テスト" ? "" : "p."}{start}{isPdf ? "〜" : ps ? `〜${last}` : "〜"}</div>
         {!isPdf && ps && <ol className="mat-files">{files.slice(0, 6).map((f, k) => (<li key={k}>p.{ps[k].join("・")}　{f.name}</li>))}{files.length > 6 && <li>…ほか {files.length - 6} 枚</li>}</ol>}</>); })()}
         <p className="ph-note">ページ番号が違うときは、上の番号を直してから保存。同じページを入れ直すと上書きされます。</p>
         <button className="btn-main" onClick={upload}>この内容で保存する</button></div>)}
+      <div className="mat-sum"><b>取り込み済み（{subject}）</b>{MKINDS.map((k) => { const ms = matsOf(d, subject, k); return (<div key={k}><b>{k}</b> {ms.length ? (k === "テスト" ? TEST_ROLES.map(([r, l]) => { const xs = ms.filter((m) => roleOf(m) === r); return xs.length ? `${l} ${xs.length}枚` : ""; }).filter(Boolean).join("、") : `${ms.length}ページ（p.${pagesToRanges(ms.map((m) => m.page))}）`) : "なし"}</div>); })}</div>
     </section>
     {mine.length > 0 && (<section className="sec"><h3 className="s-h">{subject}の{kind} <span className="cnt">{mine.length}ページ</span></h3>
       <p className="lead">p.{pagesToRanges(mine.map((m) => m.page))}。ページ番号を間違えたときは、同じ番号で入れ直すと上書きされます。余分なページは下で消せます。</p>
@@ -2215,7 +2231,8 @@ const CSS = `
 .mpop.pop .q-btns{margin-top:8px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}
 .fab{position:fixed;right:16px;bottom:calc(74px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;border:none;background:var(--ink);display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 6px 16px rgba(30,35,33,.32);z-index:25;cursor:pointer;-webkit-tap-highlight-color:transparent}.fab svg{width:32px;height:32px;display:block}.fab:active{transform:scale(.96)}
-.sheet-bg{position:fixed;inset:0;background:rgba(30,35,33,.4);z-index:35;display:flex;align-items:flex-end}.sheet{width:100%;background:var(--card);border-radius:12px 12px 0 0;padding:14px 8px calc(16px + env(safe-area-inset-bottom))}.sheet h4{margin:0 8px 6px;font-size:12px;color:var(--ink3);font-weight:400}
+.sheet-bg{position:fixed;inset:0;background:rgba(30,35,33,.4);z-index:35;display:flex;align-items:flex-end}.sheet{width:100%;background:var(--card);border-radius:12px 12px 0 0;padding:14px 8px calc(16px + env(safe-area-inset-bottom))}.sheet h4{margin:0 8px 6px;font-size:12px;color:var(--ink3);font-weight:400}.sheet-pv{display:flex;align-items:center;gap:6px;margin:0 8px 12px;font-size:12px;color:var(--ink2)}.sheet-pv img{width:44px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--line)}.sheet-row:disabled{color:var(--ink3);opacity:.5}
+.mat-head{font-size:13px;font-weight:700;margin-bottom:6px}
 .sheet-row{display:block;width:100%;text-align:left;padding:14px 10px;border:none;border-bottom:1px solid var(--line);background:none;font-size:15px;color:var(--ink);font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}.sheet-row:active{background:var(--paper)}.sheet-row.cancel{border-bottom:none;color:var(--ink3);text-align:center;margin-top:4px}
 .snacks{position:fixed;left:10px;right:10px;top:calc(8px + env(safe-area-inset-top));z-index:40;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 @keyframes snack-in{from{transform:translateY(-120%);opacity:0}to{transform:none;opacity:1}}@keyframes snack-out{to{transform:translateY(-60%);opacity:0}}
