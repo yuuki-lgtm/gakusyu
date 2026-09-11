@@ -442,3 +442,7 @@ test("今日: 採点の下に「次は明日の紙を作る →」、明日の�
   const p = render(m.TodayTab, { d: F.demo(), save: noop, initial: "print", go: noop }).html; assert.ok(p.includes("次はワークの×を登録する →"));
   const r = render(m.RegTab, { d: F.demo(), save: noop, initial: "item" }).html; assert.ok(r.includes("今日やった最後のページ番号を入れて"));
 });
+test("右下の +: 閉じた状態では丸いボタンだけ。中身の一覧は開くまで出さない", () => {
+  const h = render(m.Fab, { go: noop }).html;
+  assert.ok(h.includes('class="fab"') && h.includes('aria-label="紙を入れる"') && !h.includes("sheet-row"));
+});

@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 15:09"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 15:11"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -657,6 +657,22 @@ function Hint({ k, children }) {
   return open ? (<div className="hint open"><p className="tabhint">{children}</p><button className="hint-q" onClick={() => setOpen(false)} aria-label="説明を閉じる">×</button></div>)
     : (<div className="hint"><button className="hint-q" onClick={() => setOpen(true)} aria-label="説明を見る">?</button></div>);
 }
+/* 右下の +（ホーム・テスト・その他の第一階層だけ）。「紙を入れる」入口。撮った写真は pendingShots に置き、採点の画面が開いた時に読む */
+let pendingShots = null;
+function Fab({ go }) {
+  const [open, setOpen] = useState(false);
+  const pick = (t, m) => { setOpen(false); go(t, m); };
+  return (<>
+    <button className="fab" aria-label="紙を入れる" onClick={() => setOpen(true)}>+</button>
+    {open && (<div className="sheet-bg" onClick={() => setOpen(false)}><div className="sheet" onClick={(e) => e.stopPropagation()}>
+      <h4>紙を入れる</h4>
+      <label className="sheet-row">昨日の紙（類題）を撮って採点<input type="file" accept="image/*" multiple hidden onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (!fs.length) return; pendingShots = fs; pick("today", "grade"); }} /></label>
+      <button className="sheet-row" onClick={() => pick("week", "make")}>テストの答案を撮って採点（用紙を選ぶ）</button>
+      <button className="sheet-row" onClick={() => pick("reg", "mat")}>教材を取り込む（ワーク・教科書・定期テスト）</button>
+      <button className="sheet-row" onClick={() => pick("reg", "unit")}>目次を撮って単元を登録</button>
+      <button className="sheet-row cancel" onClick={() => setOpen(false)}>閉じる</button></div></div>)}
+  </>);
+}
 function Snacks({ list, onClose }) {
   if (!list.length) return null;
   return (<div className="snacks">{list.map((sn) => (<div key={sn.id} className={"snack " + sn.kind + (sn.out ? " out" : "")}>{SNACK_ICON[sn.kind] || SNACK_ICON.ok}<span>{sn.text}</span>{sn.kind === "err" && <button onClick={() => onClose(sn.id)} aria-label="閉じる">×</button>}</div>))}</div>);
@@ -1111,6 +1127,7 @@ function App() {
           {k === "export" && <ExportTab d={d} />}
           {k === "set" && <Settings d={d} save={save} setSync={setSync} />}</div>); })}
         <Snacks list={snacks} onClose={(id) => setSnacks((l) => l.filter((x) => x.id !== id))} />
+        {(tab === "home" || tab === "week" || tab === "more") && <Fab go={go} />}
       </main></div>
   );
 }
@@ -1252,6 +1269,7 @@ function TodayGrade({ d, save, onNext }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [lastFiles, setLastFiles] = useState(null);
   const sec = useElapsed(busy);
   const upd = (id, patch) => setDc((x) => ({ ...x, [id]: { ...(x[id] || {}), ...patch } }));
+  useEffect(() => { const fs = pendingShots; if (!fs || !fs.length) return; pendingShots = null; if (!set.length) { notify("採点待ちの紙がありません。明日の紙を作ってから撮ってください。", "warn"); return; } shoot(fs); }, []); // + から撮った写真
   const shoot = async (files, model = null) => {
     if (!files.length) return; setBusy(true); setErr(""); setLastFiles(files);
     try { const marks = await readSelfMarks(files, set, unitOf, model); const patch = applySelfMarks(set, marks); const n = Object.keys(patch).length;
@@ -2196,6 +2214,9 @@ const CSS = `
 .mpop.pop{position:absolute;z-index:5;margin:0;width:240px;max-width:92%;background:var(--card);box-shadow:0 4px 16px rgba(30,35,33,.18);cursor:default}
 .mpop.pop .q-btns{margin-top:8px}.mpop .c-label{font-size:13px}.tap-sum{font-size:12px;color:var(--ink2);margin:8px 0 0}
 .msg.naming{color:#C08A3E}
+.fab{position:fixed;right:16px;bottom:calc(74px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;border:none;background:var(--ink);color:#fff;font-size:32px;line-height:1;font-weight:400;font-family:inherit;box-shadow:0 6px 16px rgba(30,35,33,.32);z-index:25;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0 0 3px}.fab:active{transform:scale(.96)}
+.sheet-bg{position:fixed;inset:0;background:rgba(30,35,33,.4);z-index:35;display:flex;align-items:flex-end}.sheet{width:100%;background:var(--card);border-radius:12px 12px 0 0;padding:14px 8px calc(16px + env(safe-area-inset-bottom))}.sheet h4{margin:0 8px 6px;font-size:12px;color:var(--ink3);font-weight:400}
+.sheet-row{display:block;width:100%;text-align:left;padding:14px 10px;border:none;border-bottom:1px solid var(--line);background:none;font-size:15px;color:var(--ink);font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}.sheet-row:active{background:var(--paper)}.sheet-row.cancel{border-bottom:none;color:var(--ink3);text-align:center;margin-top:4px}
 .snacks{position:fixed;left:10px;right:10px;top:calc(8px + env(safe-area-inset-top));z-index:40;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 @keyframes snack-in{from{transform:translateY(-120%);opacity:0}to{transform:none;opacity:1}}@keyframes snack-out{to{transform:translateY(-60%);opacity:0}}
 .snack{animation:snack-in .28s ease-out}.snack.out{animation:snack-out .35s ease-in forwards}
