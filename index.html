@@ -26,7 +26,7 @@ input,select,textarea{font-size:14px !important} /* 14px に揃える。iOS の�
 
 /* ---- 定数 ---- */
 const { useState, useEffect, useMemo, useRef } = React;
-const VERSION = "2026-09-11 22:35"; // コミット時に tools/pre-commit が自動で更新する
+const VERSION = "2026-09-11 22:57"; // コミット時に tools/pre-commit が自動で更新する
 const KEY = "gakushu_loop_v3";
 const SUBJECTS = ["数学", "英語", "社会", "理科", "国語"];
 const HUE = { 数学: "#3D6B8E", 英語: "#8E5A3D", 社会: "#6B7A3D", 理科: "#3D8E7A", 国語: "#7A3D6B" };
@@ -1258,7 +1258,7 @@ function TodayMake({ d, save, go }) {
   </>);
 }
 /* 採点行の展開部: 類題と解答、3回以上落ちていれば診断 */
-function GradeRowDetail({ i, d, save }) {
+function GradeRowDetail({ i, d, save, ns }) {
   const [showA, setShowA] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const sec = useElapsed(busy);
   const g = i.gen; const u = unitById(d, i.unitId);
@@ -1266,7 +1266,7 @@ function GradeRowDetail({ i, d, save }) {
   return (<div className="qbox">
     {needsGuide(i) && i.guide && i.guide.explain && <div className="q-why"><b>考え方</b>{i.guide.pages ? `（${i.guide.pages}）` : ""}<br />{i.guide.explain}{i.guide.example && <><br /><b>例題</b> {i.guide.example.q}</>}</div>}
     {g && g.problems ? (<>{g.passage && <div className="tr">{g.passage}</div>}
-      {g.problems.map((pr, n) => (<div className="qitem" key={n}><div className="q-n">問{n + 1}</div><div className="q-q">{pr.q}</div>{showA && <div className="q-a">{pr.a}</div>}</div>))}
+      {g.problems.map((pr, n) => (<div className="qitem" key={n}><div className="q-n">問{(ns && ns[n]) || n + 1}</div><div className="q-q">{pr.q}</div>{showA && <div className="q-a">{pr.a}</div>}</div>))}
       {g.why && needsWhy(i) && <div className="q-why">説明させる問い：{g.why}</div>}
       {showA && g.script && <div className="q-s">声かけ例：{g.script}</div>}
       <div className="q-btns"><button className="btn-sm" onClick={() => setShowA(!showA)}>{showA ? "解答を隠す" : "解答を見る"}</button></div></>) : <p className="empty">{i.printedOrig ? `類題を作れなかったので、元の問題（${srcLabel(i.src)}）をもう一度解いています。解答はワークで。` : "類題はありません。"}</p>}
@@ -1289,6 +1289,11 @@ function TodayGrade({ d, save, onNext }) {
   const qlabel = (i) => { const ns = marks(i)?.ns; return ns && ns.length ? (ns.length === 1 ? `問${ns[0]}` : `問${ns[0]}〜${ns[ns.length - 1]}`) : ""; };
   const hasWhy = (i) => !!marks(i)?.why;
   const first = (i) => (marks(i)?.ns?.length ? marks(i).ns[0] : 1e9);
+  const lines = (i) => { const ns = marks(i)?.ns || []; const g = i.gen; const out = []; // 紙に出た問題の一覧（番号と本文の先頭）
+    if (g && g.problems && g.problems.length) g.problems.forEach((pr, k) => out.push([ns[k] ?? k + 1, pr.q]));
+    else if (i.printedOrig) out.push([ns[0] ?? 1, "元の問題をもう一度解く"]);
+    if (marks(i)?.why) out.push([marks(i).why, "説明：なぜそうなるかを自分の言葉で"]);
+    return out; };
   const set = [...set0].sort((a, b) => (printKey(a) < printKey(b) ? -1 : printKey(a) > printKey(b) ? 1 : 0) || first(a) - first(b) || (a.printedAs || 0) - (b.printedAs || 0)); // 紙ごとに、紙の問番号の順（紙を上から見ながら ✓ を入れる）
   const groups = set.map(printKey).filter((x, k, arr) => arr.indexOf(x) === k);
   const gTitle = (g) => { const [day, b] = g.split("|"); const same = groups.filter((x) => x.startsWith(day + "|")); return `印刷 ${day.slice(5)} の紙${same.length > 1 ? `（${same.indexOf(g) + 1}枚目${b ? " " + new Date(b).toTimeString().slice(0, 5) : ""}）` : ""}`; };
@@ -1315,7 +1320,8 @@ function TodayGrade({ d, save, onNext }) {
         <div className={"grow" + (c.skip ? " skip" : c.x ? " ng" : "")} key={i.id}>
           <div className="c-meta">{qlabel(i) && <em className="qno">{qlabel(i)}</em>}<Dot s={i.subject} />{i.subject}{u ? "・" + u.name : ""}{i.fmt && <em className="tag">{i.fmt}</em>}{i.failCount >= 3 && <em className="flag">{i.failCount}回目</em>}{i.printedOrig && <em className="tag">元の問題</em>}<button className="gskip" onClick={() => upd(i.id, { skip: !c.skip, x: false, oo: false, bad: false })}>{c.skip ? "戻す" : "やっていない"}</button></div>
           <button className="c-label tap" onClick={() => setOpen((o) => ({ ...o, [i.id]: !o[i.id] }))}>{i.label}<em className="pg"> {open[i.id] ? "閉じる" : i.failCount >= 3 ? "類題・診断 ▸" : "類題 ▸"}</em></button>
-          {open[i.id] && <GradeRowDetail i={i} d={d} save={save} />}
+          <div className="gqs">{lines(i).map(([n, q]) => (<div className="gq" key={n}><b>問{n}</b><span>{q}</span></div>))}</div>
+          {open[i.id] && <GradeRowDetail i={i} d={d} save={save} ns={marks(i)?.ns} />}
           {!c.skip && !c.bad && (<>
             <div className="grow-r chks">
               <label className={"gchk ng" + (c.x ? " on" : "")}><input type="checkbox" checked={!!c.x} onChange={(e) => upd(i.id, { x: e.target.checked, oo: false })} />できなかった</label>
@@ -2337,6 +2343,10 @@ const CSS = `
 .j-btns{display:flex;gap:6px}.j-btns button{flex:1;padding:10px 4px;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink3)}
 .j-btns .ng.on{background:#A8443B;border-color:#A8443B;color:#fff}.j-btns .mid.on{background:#C08A3E;border-color:#C08A3E;color:#fff}.j-btns .okb.on{background:#2F6F5E;border-color:#2F6F5E;color:#fff}
 .j-et{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.gqs{margin:0 0 2px}
+.gq{display:flex;gap:6px;font-size:12px;color:var(--ink2);line-height:1.6;min-width:0}
+.gq b{flex:0 0 auto;color:var(--ink3)}
+.gq span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .grow-r.chks{gap:20px;margin-top:8px}
 .gchk{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--ink2);cursor:pointer}
 .gchk input[type=checkbox]{width:24px;height:24px;margin:0;padding:0;flex:0 0 auto;accent-color:#A8443B}

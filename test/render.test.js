@@ -506,3 +506,10 @@ test("採点待ち: 印刷時に控えた問番号（printedQ）をそのまま�
   assert.ok(h.includes(`印刷 ${F.day(-1).slice(5)} の紙（1枚目`) && h.includes("（2枚目"), "同じ日の2回目の印刷は別の紙");
   assert.equal((h.match(/class="gchk ok"/g) || []).length, 2, "printedQ.why で説明の問いの有無を決める");
 });
+test("採点待ち: 各行に紙の問題文を紙の問番号つきで1行ずつ。展開した類題も紙の番号", () => {
+  const d = F.demo(); d.items = d.items.map((i, k) => (k === 0 ? { ...i, printedOn: F.day(-1), printedAs: 1, printedQ: { ns: [7, 8, 9], why: 9 }, gen: { problems: [{ q: "3x+2=11 を解く", a: "3" }, { q: "2y-5=1 を解く", a: "3" }] } } : { ...i, printedOn: null }));
+  const h = render(m.PaperTab, { d, save: noop, initial: "grade" }).html;
+  assert.ok(h.includes('<div class="gq"><b>問7</b><span>3x+2=11 を解く</span>') && h.includes("<b>問8</b><span>2y-5=1") && h.includes("<b>問9</b><span>説明："), h.match(/class="gq">.*?<\/div>/g));
+  const det = render(m.GradeRowDetail, { i: d.items[0], d, save: noop, ns: [7, 8, 9] }).html;
+  assert.ok(det.includes('class="q-n">問7<') && det.includes('class="q-n">問8<') && !det.includes('class="q-n">問1<'));
+});
